@@ -1205,6 +1205,7 @@ plugins/codaset/
   hooks/hooks.json
   LICENSE
   THIRD_PARTY_NOTICES.md
+  THIRD_PARTY_NOTICES_GO.md         the Go licence notices, written by each release
 extension/                          manifest.json, worker, content scripts, side panel; embedded in the binary
 extension.go                        root package: go:embed of extension/
 cmd/tweak/                          main package
@@ -1217,7 +1218,7 @@ fixtures/<app>/                     fixture apps: fixture.json, expected.json, l
 .puppeteerrc.cjs                    pinned Chrome for Testing version
 package.json                        dev only: ajv, puppeteer and the test scripts
 .nvmrc                              the Node version CI and contributors use
-scripts/                            repo checks, e.g. the consistency job's version check
+scripts/                            repo checks, e.g. the consistency job's version check; notices/, the Go licence notices
 docs/  GLOSSARY.md  AGENTS.md  LICENSE
 ```
 
@@ -1294,13 +1295,28 @@ copy carries it, and each derived file starts with
 `// Portions adapted from Handle, Copyright 2026 Tonkotsu AI, Inc., MIT; see THIRD_PARTY_NOTICES.md`.
 There is no build step to strip either.
 
+The licences of the Go code compiled into the binary are generated, so they can't fall behind its
+dependencies. `scripts/notices` (a Go program with its own tests) runs `go list -deps` on
+`./cmd/tweak` for each of the five targets (with `CGO_ENABLED=0`), so platform-only modules count,
+and writes `plugins/codaset/THIRD_PARTY_NOTICES_GO.md`, which `THIRD_PARTY_NOTICES.md` points to. It
+has a section for the Go standard library (`$GOROOT/LICENSE`) and for each module: path, version,
+licence, the targets it's built into, and its licence file in full. It also copies, as found, every
+other licence-like file (`LICENSE-*`, `NOTICE`, `PATENTS`, …) in the module's folder or in the folder
+of a compiled package, such as musl's MIT notice in `modernc.org/libc`'s `LICENSE-3RD-PARTY.md` and
+the standard library's vendored `golang.org/x` licences. The module's own `LICENSE` (or `LICENCE` or
+`COPYING`) must match the text of MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0 or ISC word for word,
+apart from the copyright lines and holder's name; a missing or other licence fails the run. Those
+copied extra files aren't checked, so some mention licences of code that isn't compiled in. CI runs
+the generator on every push, so a new dependency fails there before a release finds it. Like
+`bin/checksums.txt`, the file doesn't exist until the first release.
+
 ### CI (GitHub Actions)
 
 On every push and pull request:
 
 | Job | Runs |
 |---|---|
-| `go` | `gofmt` check, `go vet`, `go test -race` on Ubuntu and macOS; a cross-compile of all five targets (Windows is build-only) |
+| `go` | `gofmt` check, `go vet`, `go test -race` on Ubuntu and macOS; a cross-compile of all five targets (Windows is build-only); the Go licence check (`scripts/notices`) |
 | `js` | `node --test` for the extension's unit and contract tests |
 | `e2e` | Puppeteer and pinned Chrome for Testing (new headless) on Ubuntu, with the test copy of the unpacked extension loaded, against the fixture apps and a real development bridge (branded Chrome 137+ no longer loads unpacked extensions from the command line); needs Node and Ruby; see [Testing](#testing) |
 | `consistency` | the version in `plugin.json`, `manifest.json` and the launcher agree; `claude plugin validate plugins/codaset` passes |
@@ -1315,7 +1331,9 @@ never edited by hand. It:
 3. stamps the version (`plugin.json`, `manifest.json`, the `VERSION=` line in both launchers), before
    building, since the binary embeds the manifest;
 4. builds the five binaries with the version, checks the built binary reports it, and writes
-   `checksums.txt` (attached to the release and committed as `bin/checksums.txt`);
+   `checksums.txt` (attached to the release and committed as `bin/checksums.txt`) and the Go licence
+   notices (attached, and committed as `THIRD_PARTY_NOTICES_GO.md`; see
+   [Third-party notices](#third-party-notices));
 5. commits the stamp and tags that commit `vX.Y.Z`, after checking `main` hasn't moved since CI;
 6. pushes the tag, creates the GitHub Release on it with the binaries and `checksums.txt`, and only
    then pushes the stamp commit to `main`.

@@ -47,6 +47,11 @@ jobs:
               -o "dist/tweak-$os-$arch$ext" ./cmd/tweak
           done
           ls -l dist
+      # The release's licence check, so a new dependency's licence fails here
+      # first: every module compiled for any target needs an allowlisted one.
+      - name: Go licence notices
+        if: runner.os == 'Linux'
+        run: go run ./scripts/notices >/dev/null
 
   js:
     runs-on: ubuntu-latest

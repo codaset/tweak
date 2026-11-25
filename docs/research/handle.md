@@ -40,7 +40,7 @@ only read. Statements marked **(inference)** are my reading, not something the c
 
 ## 2. Architecture
 
-Monorepo of three packages (`package.json` workspaces; `README.md:46-56`).
+Monorepo of three packages (`package.json` workspaces; `README.md:56-65`).
 
 ```
 Chrome page                      Extension                              MCP server (stdio, per agent session)

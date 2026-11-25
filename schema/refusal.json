@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/refusal.json",
+  "title": "refusal",
+  "description": "The bridge refusing a WebSocket message. The bridge closes the socket after a refusal of hello. message is shown to the user as-is.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "refusal"
+    },
+    "error": {
+      "enum": [
+        "protocol",
+        "bad-request"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "type",
+    "error",
+    "message"
+  ],
+  "additionalProperties": false
+}

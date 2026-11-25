@@ -30,7 +30,10 @@ type Options struct {
 	// IdleTimeout is how long the bridge stays up with no claims and no
 	// browser connected (30 minutes when zero); IdleCheck is how often it looks.
 	IdleTimeout, IdleCheck time.Duration
-	Log                    io.Writer
+	// SocketIdle is how long an extension socket may stay silent before the
+	// bridge drops it (60 seconds when zero: three missed keepalives).
+	SocketIdle time.Duration
+	Log        io.Writer
 }
 
 // ErrAlreadyRunning means another bridge holds the port: the caller should
@@ -47,6 +50,13 @@ type Bridge struct {
 	browsers atomic.Int64
 	stop     chan struct{}
 	stopOnce sync.Once
+
+	// closing ends every extension socket on shutdown; sockets counts them.
+	closing     context.Context
+	stopSockets context.CancelFunc
+	sockets     sync.WaitGroup
+	changeMu    sync.Mutex
+	change      chan struct{} // closed and replaced on each event-log change
 }
 
 // Info is bridge.json, and the body of GET /bridge.
@@ -65,6 +75,9 @@ func Start(o Options) (*Bridge, error) {
 	if o.IdleCheck == 0 {
 		o.IdleCheck = time.Minute
 	}
+	if o.SocketIdle == 0 {
+		o.SocketIdle = time.Minute
+	}
 	if o.Log == nil {
 		o.Log = os.Stderr
 	}
@@ -72,7 +85,8 @@ func Start(o Options) (*Bridge, error) {
 	if err != nil {
 		return nil, whyNotListening(o.Config.Port, err)
 	}
-	b := &Bridge{opts: o, listener: l, log: log.New(o.Log, "bridge: ", log.LstdFlags), stop: make(chan struct{})}
+	b := &Bridge{opts: o, listener: l, log: log.New(o.Log, "bridge: ", log.LstdFlags), stop: make(chan struct{}), change: make(chan struct{})}
+	b.closing, b.stopSockets = context.WithCancel(context.Background())
 	b.opts.Config.Port = l.Addr().(*net.TCPAddr).Port
 
 	fail := func(err error) (*Bridge, error) {
@@ -142,6 +156,10 @@ func (b *Bridge) Serve() error {
 	case <-b.stop:
 	case err = <-served:
 	}
+	// Hijacked connections outlive server.Shutdown: close the sockets
+	// ("restarting") and wait for their handlers before the store goes.
+	b.stopSockets()
+	b.sockets.Wait()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	b.server.Shutdown(ctx)

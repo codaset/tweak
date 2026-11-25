@@ -5,7 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/codaset/tweak/internal/version"
 )
 
 // Chrome derives an extension's ID from its public key: the first 16 bytes of
@@ -41,5 +45,17 @@ func TestEmbeddedManifestKeyGivesExtensionID(t *testing.T) {
 	}
 	if got := extensionIDFromKey(t, m.Key); got != ExtensionID {
 		t.Fatalf("manifest key gives extension ID %s, want %s", got, ExtensionID)
+	}
+}
+
+// The extension says hello in the bridge's protocol: both ship together.
+func TestExtensionSpeaksTheBridgesProtocol(t *testing.T) {
+	src, err := Extension.ReadFile("extension/lib/bridge.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("export const PROTOCOL = %d;", version.Protocol)
+	if !strings.Contains(string(src), want) {
+		t.Fatalf("extension/lib/bridge.js should say %q", want)
 	}
 }

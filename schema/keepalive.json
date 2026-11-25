@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/keepalive.json",
+  "title": "keepalive",
+  "description": "Sent by the extension's service worker every 20 seconds. WebSocket traffic keeps the worker awake (Chrome 116+), and the bridge drops a socket silent for 60 seconds.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "keepalive"
+    }
+  },
+  "required": [
+    "type"
+  ],
+  "additionalProperties": false
+}

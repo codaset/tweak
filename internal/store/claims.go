@@ -127,10 +127,14 @@ func (s *Store) Claim(sessionID string, p pattern.Pattern) (Claim, error) {
 		return Claim{}, err
 	}
 	id, _ := r.LastInsertId()
+	c := Claim{ID: id, Pattern: want, Session: se, Created: fromMillis(created)}
+	if err := logClaimEvent(tx, EventClaimMade, c); err != nil {
+		return Claim{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Claim{}, err
 	}
-	return Claim{ID: id, Pattern: want, Session: se, Created: fromMillis(created)}, nil
+	return c, nil
 }
 
 // Claims lists every claim, oldest first, with its session.
@@ -152,33 +156,25 @@ func (s *Store) Release(sessionID, pat string) ([]string, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	q, args := `SELECT pattern FROM claims WHERE session = ? ORDER BY id`, []any{sessionID}
-	if pat != "" {
-		q, args = `SELECT pattern FROM claims WHERE session = ? AND pattern = ?`, []any{sessionID, pat}
-	}
-	rows, err := tx.Query(q, args...)
+	claims, err := listClaims(tx)
 	if err != nil {
 		return nil, err
 	}
 	var released []string
-	for rows.Next() {
-		var p string
-		if err := rows.Scan(&p); err != nil {
-			rows.Close()
+	for _, c := range claims {
+		if c.Session.ID != sessionID || (pat != "" && c.Pattern != pat) {
+			continue
+		}
+		if _, err := tx.Exec(`DELETE FROM claims WHERE id = ?`, c.ID); err != nil {
 			return nil, err
 		}
-		released = append(released, p)
+		if err := logClaimEvent(tx, EventClaimReleased, c); err != nil {
+			return nil, err
+		}
+		released = append(released, c.Pattern)
 	}
-	rows.Close()
 	if pat != "" && len(released) == 0 {
 		return nil, ErrNotClaimed
-	}
-	q = `DELETE FROM claims WHERE session = ?`
-	if pat != "" {
-		q += ` AND pattern = ?`
-	}
-	if _, err := tx.Exec(q, args...); err != nil {
-		return nil, err
 	}
 	return released, tx.Commit()
 }

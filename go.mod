@@ -3,6 +3,7 @@ module github.com/codaset/tweak
 go 1.27
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	modernc.org/sqlite v1.63.0
 )

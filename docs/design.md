@@ -148,7 +148,7 @@ can't wake an idle session until Claude Code supports MCP Events, and the watche
 shell commands anyway. v1 is CLI only; an MCP server comes with MCP Events, when it can replace the
 watcher rather than sit beside it.
 
-Built for macOS arm64 and Intel, Linux x64 and arm64, and Windows x64 (about 8 MB each). The
+Built for macOS arm64 and Intel, Linux x64 and arm64, and Windows x64 (about 11 MB each, most of it the pure-Go SQLite). The
 binaries aren't in the plugin or the repo: they are attached to each GitHub Release, and the plugin's
 small launcher downloads the right one on first run (see [Repo, build and release](#repo-build-and-release)).
 Windows is marked untested until someone runs it there.
@@ -478,6 +478,9 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
   overlaps exactly in Go. (Chosen over `URLPattern`, which Go lacks and Chrome's registration API
   doesn't accept.) Ports work (checked in Chrome 158): no port matches every port, `:3000` only that
   one, and `:*` is stored as no port; the path glob also sees the query, never the hash.
+- Claims take `http`, `https` or `*` as the scheme. The bridge stores each pattern normalised (scheme
+  and host lower-cased, `:*` dropped, a bare origin given `/*`), and that form is what the extension
+  registers. Claiming the identical pattern again returns the existing claim.
 - Overlapping claims are refused. If any URL could match both an existing claim and the new one, the
   new claim is rejected, and the message names the pattern and session holding it. Every page has
   exactly one owner.

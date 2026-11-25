@@ -16,6 +16,18 @@ _Avoid_: edit, fix, patch (for the concept as a whole)
 A session's exclusive ownership of the pages matching a URL pattern, so their tweaks go to that session.
 _Avoid_: subscription, binding, registration
 
+**Session**:
+One agent conversation (in v1, a Claude Code session) that can claim pages and receive their tweaks.
+_Avoid_: client, worker, listener
+
+**Done**:
+A tweak whose change Claude has finished and reported.
+_Avoid_: complete, fixed
+
+**Resolved**:
+A tweak you have finished with, whatever its outcome; its pin leaves the page.
+_Avoid_: closed, dismissed, archived
+
 **Brief**:
 Everything Claude receives about a tweak: the request, what it points at, where that lives in the source, and how it looks and is built.
 _Avoid_: context, payload, prompt

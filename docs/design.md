@@ -100,14 +100,85 @@ patches and screenshots are deleted 7 days after resolution.
 ### Security
 
 - Listen on `127.0.0.1` only.
-- Every request carries the extension's custom header (`x-tweak: 1`). A web page cannot send it to
+- Every HTTP request carries the custom header `x-tweak: 1`. A web page cannot send it to
   localhost without a CORS preflight, which the bridge never approves.
+- The WebSocket (which can't carry custom headers) is accepted only from the extension's exact
+  origin, `chrome-extension://<id>`. The manifest pins a `key`, so the ID is the same for every
+  install, and the binary knows it.
 - Refuse requests with a web `Origin`. Only `chrome-extension://` origins, or none for the CLI, are
   accepted.
 - Check the `Host` header is `127.0.0.1:<port>` or `localhost:<port>`. This blocks DNS rebinding,
   where a hostile page makes itself same-origin with the bridge.
 - Content inside a brief that came from the page (text, HTML, class names) is presented to Claude as
   data describing the element. Only the tweak's text is the developer's request.
+
+### Bridge contract
+
+Decided in [Bridge contract: API, message schema and data model](https://github.com/codaset/tweak/issues/9).
+
+- **Finding the bridge**: fixed default port **47391**, overridable with `TWEAK_PORT`. The CLI reads
+  `~/.local/state/codaset-tweak/bridge.json` (port, PID, version) to find a running bridge. The
+  extension tries the default port, with a port field in the side panel.
+- **Extension ↔ bridge**: one WebSocket (`/ws`) from the service worker, kept awake by a keepalive
+  every 20 seconds (documented since Chrome 116; checked first while building, long-polling as the
+  fallback). The worker relays to tabs. Screenshots are uploaded separately over HTTP
+  (`PUT /tweaks/:n/screenshot`, PNG) after the tweak is created, and stored as files beside the
+  database.
+- **CLI ↔ bridge**: plain HTTP. Every request carries `x-tweak: 1`, `x-tweak-protocol: <n>` and the
+  session ID. Endpoints: `POST /sessions` (register and check in), `GET/POST/DELETE /claims`,
+  `GET /inbox?after=<seq>` (long-poll; one line of at most 500 characters per event) and
+  `POST /inbox/ack`, `GET /tweaks/:n/brief` (text), `POST /tweaks/:n/status`, and
+  `POST /edits/before` (record a file's contents before an agent edits it; the bridge decides which
+  tweak it belongs to). Command names and event-line format are decided in
+  [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
+- **WebSocket messages**: to the bridge `hello {protocol, lastSeq}`, `create`, `reply`, `resolve`,
+  `undo`; from the bridge a snapshot or events, and refusals.
+- **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
+  sequence. Clients remember the last sequence seen and get everything newer on reconnect, or a
+  fresh snapshot if too far behind. Inbox acknowledgement and redelivery use the same log.
+- **Versioning**: one integer protocol version, in the WebSocket `hello` and every CLI request. The
+  bridge accepts only its own and refuses anything else with a clear message ("This extension
+  speaks protocol 2; the bridge speaks 3. Reload the extension."). No negotiation: binary, extension
+  and plugin ship together.
+- **Schema**: JSON Schema files in `schema/` plus a folder of example messages are the source of
+  truth. Go and JavaScript tests both check against the examples. No code generation.
+- **Not tied to one agent**: a session records which agent it is (`agent: claude-code` in v1). The
+  CLI takes the session ID from the agent's environment (`CLAUDE_CODE_SESSION_ID`) or `--session`.
+
+**Tweak numbers** are bridge-wide and permanent: "Tweak 12" on pins and cards, `12` in the CLI.
+
+**Statuses** and who sets them:
+
+| Status | Set by | Shown as |
+|---|---|---|
+| `sent` | bridge, on creation and after your reply | Waiting for a session |
+| `delivered` | bridge, when the watcher acknowledges | Claude has it |
+| `queued` | Claude, only when finishing other work first | Queued |
+| `working` | Claude, with its plan | Claude is working on it |
+| `question` | Claude | Claude has a question |
+| `done` | Claude, with its summary | Change saved |
+| `declined` | Claude, with its reason | Declined |
+
+**Resolved** is separate from status: you've finished with the tweak, and its pin leaves the page.
+A change has its own state: `recorded`, `undone` or `undo-requested`.
+
+**Conversation entries**: `{from: you|claude, kind, text, at}`, where kind is `request`, `plan`,
+`question`, `reply`, `summary`, `reason` or `undo`.
+
+**Data model (SQLite)**:
+
+| Table | Key fields |
+|---|---|
+| `sessions` | id (agent session ID), agent, folder, label, last check-in |
+| `claims` | id, session, pattern, created |
+| `tweaks` | number, session, page URL, status, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
+| `entries` | tweak, from, kind, text, at |
+| `changes` | tweak, file, contents before, patch, state |
+| `events` | sequence, type, tweak or claim, payload (JSON), at |
+| `deliveries` | session, last acknowledged sequence |
+
+Targets (elements, selected text, area, with their context) are JSON, shaped by
+[Mapper interface and the brief](https://github.com/codaset/tweak/issues/13).
 
 ### No lost tweaks
 
@@ -117,11 +188,15 @@ redelivers anything unconfirmed when a watcher reconnects.
 ## Claims
 
 - `/tweak <URL>` claims pages for this session. The URL is required.
-- Patterns use `URLPattern` syntax, e.g. `https://*.bert.localhost/*` or
-  `https://ernie.localhost/admin/*`. A bare origin means the whole site (`/*`).
+- Patterns use Chrome's **match pattern** syntax (scheme, a host with an optional leading `*.`, a
+  path where `*` matches anything), e.g. `https://*.bert.localhost/*` or
+  `https://ernie.localhost/admin/*`. A bare origin means the whole site (`/*`). The extension uses a
+  claim's pattern as-is for its content-script registration, and the bridge matches and checks
+  overlaps exactly in Go. (Chosen over `URLPattern`, which Go lacks and Chrome's registration API
+  doesn't accept.) Port support in match patterns is to be confirmed while building.
 - Overlapping claims are refused. If any URL could match both an existing claim and the new one, the
-  new claim is rejected, and the message names the pattern and session holding it. When overlap
-  can't be ruled out, it is refused. Every page has exactly one owner.
+  new claim is rejected, and the message names the pattern and session holding it. Every page has
+  exactly one owner.
 - A claim lapses after about 60 seconds without its watcher checking in, or at once with
   `/tweak release`.
 - `/tweak` with no URL lists current claims and their sessions, and claims nothing.

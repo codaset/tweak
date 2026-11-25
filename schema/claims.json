@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/claims.json",
+  "title": "claims",
+  "description": "GET /claims: every claim, oldest first, with its session.",
+  "type": "object",
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    }
+  },
+  "required": [
+    "claims"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "claim": {
+      "description": "A claim: a session's ownership of the pages matching a pattern.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pattern": {
+          "description": "The normalised Chrome match pattern, as the extension registers it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "session": {
+          "$ref": "#/$defs/session"
+        },
+        "created": {
+          "type": "string",
+          "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        }
+      },
+      "required": [
+        "id",
+        "pattern",
+        "session",
+        "created"
+      ],
+      "additionalProperties": false
+    },
+    "session": {
+      "description": "A session: one agent conversation.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "folder": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastCheckIn": {
+          "type": "string",
+          "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        }
+      },
+      "required": [
+        "id",
+        "agent",
+        "folder",
+        "label",
+        "lastCheckIn"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

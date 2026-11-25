@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/claim-request.json",
+  "title": "claim-request",
+  "description": "POST /claims: claim the pages matching a Chrome match pattern for the session in x-tweak-session. A bare origin means the whole site.",
+  "type": "object",
+  "properties": {
+    "pattern": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "pattern"
+  ],
+  "additionalProperties": false
+}

@@ -321,8 +321,8 @@ changes and screenshots are deleted 7 days after resolution.
 - The WebSocket (which can't carry custom headers) is accepted only from the extension's exact
   origin, `chrome-extension://<id>`. The manifest pins a `key`, so the ID is the same for every
   install, and the binary knows it.
-- Refuse requests with a web `Origin`. Only `chrome-extension://` origins, or none for the CLI, are
-  accepted.
+- Refuse requests with a web `Origin`. Only the Codaset Tweak extension's exact origin,
+  `chrome-extension://<id>`, or none for the CLI, is accepted.
 - Check the `Host` header is `127.0.0.1:<port>` or `localhost:<port>`. This blocks DNS rebinding,
   where a hostile page makes itself same-origin with the bridge.
 - Content inside a brief that came from the page (text, HTML, class names) is presented to Claude as
@@ -476,7 +476,8 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
   `https://ernie.localhost/admin/*`. A bare origin means the whole site (`/*`). The extension uses a
   claim's pattern as-is for its content-script registration, and the bridge matches and checks
   overlaps exactly in Go. (Chosen over `URLPattern`, which Go lacks and Chrome's registration API
-  doesn't accept.) Port support in match patterns is to be confirmed while building.
+  doesn't accept.) Ports work (checked in Chrome 158): no port matches every port, `:3000` only that
+  one, and `:*` is stored as no port; the path glob also sees the query, never the hash.
 - Overlapping claims are refused. If any URL could match both an existing claim and the new one, the
   new claim is rejected, and the message names the pattern and session holding it. Every page has
   exactly one owner.

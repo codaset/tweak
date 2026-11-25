@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/released.json",
+  "title": "released",
+  "description": "The reply to DELETE /claims (optionally ?pattern=): the patterns released.",
+  "type": "object",
+  "properties": {
+    "released": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "released"
+  ],
+  "additionalProperties": false
+}

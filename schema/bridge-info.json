@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/bridge-info.json",
+  "title": "bridge-info",
+  "description": "GET /bridge: the running bridge. Exempt from the protocol check, so any CLI can find and replace an older bridge.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "protocol": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "pid": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    }
+  },
+  "required": [
+    "version",
+    "protocol",
+    "pid",
+    "port"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/register.json",
+  "title": "register",
+  "description": "POST /sessions: the CLI registers its session (the ID is in the x-tweak-session header) and checks in.",
+  "type": "object",
+  "properties": {
+    "agent": {
+      "enum": [
+        "claude-code"
+      ]
+    },
+    "folder": {
+      "type": "string",
+      "minLength": 1
+    },
+    "label": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "folder"
+  ],
+  "additionalProperties": false
+}

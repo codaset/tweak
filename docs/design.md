@@ -1236,9 +1236,11 @@ bridge contract changes (see [Bridge contract](#bridge-contract)).
 release stamps `VERSION=X.Y.Z` into it, and `checksums.txt` sits beside it. On every run it:
 
 1. picks `<os>-<arch>` from `uname` (`darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`);
-2. if `~/.local/state/codaset-tweak/bin/X.Y.Z/tweak` exists, `exec`s it with the same arguments;
+2. if `~/.local/state/codaset-tweak/bin/X.Y.Z/tweak` exists (under `TWEAK_STATE_DIR` when that is set),
+   `exec`s it with the same arguments;
 3. otherwise downloads the bare binary (no archive) from
-   `https://github.com/codaset/tweak/releases/download/vX.Y.Z/tweak-<os>-<arch>` with `curl -fsSL` into
+   `https://github.com/codaset/tweak/releases/download/vX.Y.Z/tweak-<os>-<arch>` with `curl -fsSL`
+   (a 20-second connect timeout, so a hook can't hang) into
    a temporary file in that folder, checks its SHA-256 against `checksums.txt` (`shasum -a 256` or
    `sha256sum`), makes it executable and renames it into place, then `exec`s it. The rename is atomic,
    so two sessions fetching at once is safe.
@@ -1246,7 +1248,10 @@ release stamps `VERSION=X.Y.Z` into it, and `checksums.txt` sits beside it. On e
 On failure it prints one line on stderr and exits 1:
 `couldn't download tweak X.Y.Z (<reason>): check your connection and run the command again`. A
 checksum mismatch deletes the download and says so. `bin/tweak.cmd` does the same on Windows with
-PowerShell (`Invoke-WebRequest`, `Get-FileHash`), for `windows-amd64`.
+PowerShell (`Invoke-WebRequest`, `Get-FileHash`), for `windows-amd64`, keeping `bin\X.Y.Z\tweak.exe`.
+Tests point both launchers at a local server with `TWEAK_TEST_DOWNLOAD_URL`, which replaces the
+release download URL and is for tests only. Until the first release there is no `bin/checksums.txt`,
+so only `TWEAK_BIN` runs work.
 
 The launcher uses its own state folder, not `${CLAUDE_PLUGIN_DATA}`, because Claude Code doesn't set
 the plugin variables for commands run through the Bash tool. Removing old versions' binaries, and a
@@ -1301,13 +1306,21 @@ On every push and pull request:
 Only through the `release` workflow (`workflow_dispatch`, with the version as input); versions are
 never edited by hand. It:
 
-1. runs every CI job and stops on any failure;
-2. builds the five binaries with the version and writes `checksums.txt`;
-3. creates the GitHub Release `vX.Y.Z` with the binaries and `checksums.txt` attached;
-4. only then commits the version stamp to `main` (`plugin.json`, `manifest.json`, the launcher's
-   `VERSION=` line, `bin/checksums.txt`) and tags that commit `vX.Y.Z`.
+1. checks it runs on `main`, the version is `X.Y.Z` above the current one, and the tag doesn't exist;
+2. runs every CI job (the CI workflow, called) and stops on any failure;
+3. stamps the version (`plugin.json`, `manifest.json`, the `VERSION=` line in both launchers), before
+   building, since the binary embeds the manifest;
+4. builds the five binaries with the version, checks the built binary reports it, and writes
+   `checksums.txt` (attached to the release and committed as `bin/checksums.txt`);
+5. commits the stamp and tags that commit `vX.Y.Z`, after checking `main` hasn't moved since CI;
+6. pushes the tag, creates the GitHub Release on it with the binaries and `checksums.txt`, and only
+   then pushes the stamp commit to `main`.
 
-That order means no plugin version ever points at a release that doesn't exist yet.
+That order means `main`, which the marketplace reads, never points at a release that doesn't exist
+yet. The tag goes up before the Release so the Release is created on the stamp commit. The stamp
+commit gets no CI run of its own (pushes made with `GITHUB_TOKEN` don't trigger workflows), and
+`main`'s branch protection must let the workflow push. If a run fails after pushing the tag, delete
+the tag and any draft Release, then run it again.
 
 ## Before building
 

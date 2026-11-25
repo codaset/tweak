@@ -1,0 +1,9 @@
+{
+  "name": "codaset",
+  "description": "Codaset Tweak: point at things in your running app in Chrome and have Claude Code change them.",
+  "version": "0.1.0",
+  "author": { "name": "Codaset" },
+  "homepage": "https://github.com/codaset/tweak",
+  "repository": "https://github.com/codaset/tweak",
+  "license": "MIT"
+}

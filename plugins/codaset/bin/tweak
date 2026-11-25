@@ -1,0 +1,13 @@
+#!/bin/sh
+# Codaset Tweak launcher: what PATH finds and what the plugin's hooks call.
+# It runs the tweak binary for this plugin version. The release workflow stamps
+# VERSION; see docs/design.md, "The launcher".
+VERSION=0.1.0
+
+# Working on Tweak itself: run a local build and skip any download.
+if [ -n "${TWEAK_BIN:-}" ]; then
+  exec "$TWEAK_BIN" "$@"
+fi
+
+echo "couldn't download tweak $VERSION (no release download yet): set TWEAK_BIN to a local build" >&2
+exit 1

@@ -1,0 +1,16 @@
+{
+  "name": "codaset-tweak-dev",
+  "private": true,
+  "description": "Development only: the extension's tests. The shipped extension has no dependencies.",
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "test": "node --test \"test/extension/**/*.test.js\"",
+    "check:consistency": "node scripts/check-consistency.js"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0"
+  }
+}

@@ -1212,6 +1212,8 @@ test/e2e/                           end-to-end runner, one test file per fixture
 fixtures/<app>/                     fixture apps: fixture.json, expected.json, lockfile (see Testing)
 .puppeteerrc.cjs                    pinned Chrome for Testing version
 package.json                        dev only: ajv, puppeteer and the test scripts
+.nvmrc                              the Node version CI and contributors use
+scripts/                            repo checks, e.g. the consistency job's version check
 docs/  GLOSSARY.md  AGENTS.md  LICENSE
 ```
 

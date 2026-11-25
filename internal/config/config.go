@@ -3,7 +3,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strconv"
 )
@@ -30,17 +32,47 @@ func Resolve(getenv func(string) string, home string) (Config, error) {
 		c.Port = n
 	}
 	if d := getenv("TWEAK_STATE_DIR"); d != "" {
-		c.StateDir = filepath.Clean(d)
+		// Absolute, so a bridge started detached in another folder finds it.
+		abs, err := filepath.Abs(d)
+		if err != nil {
+			return c, fmt.Errorf("TWEAK_STATE_DIR=%s: %v", d, err)
+		}
+		c.StateDir = abs
 	}
 	if getenv("TWEAK_BIN") != "" {
 		if c.Port == DefaultPort {
 			return c, fmt.Errorf("TWEAK_BIN is set, so this is a development build: set TWEAK_PORT to a port other than %d", DefaultPort)
 		}
-		if c.StateDir == DefaultStateDir(home) {
+		if sameFolder(c.StateDir, DefaultStateDir(home)) {
 			return c, fmt.Errorf("TWEAK_BIN is set, so this is a development build: set TWEAK_STATE_DIR to a folder other than %s", c.StateDir)
 		}
 	}
 	return c, nil
+}
+
+// sameFolder reports whether a and b name the same folder once symlinks are
+// followed, so no alias for the live state folder gets past the guard.
+func sameFolder(a, b string) bool {
+	return canonical(a) == canonical(b)
+}
+
+// canonical resolves symlinks in the longest part of path that exists, and
+// keeps the rest as written (the folder may not have been created yet).
+func canonical(path string) string {
+	path = filepath.Clean(path)
+	var rest []string
+	for {
+		real, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			return filepath.Join(append([]string{real}, rest...)...)
+		}
+		parent := filepath.Dir(path)
+		if !errors.Is(err, fs.ErrNotExist) || parent == path {
+			return filepath.Join(append([]string{path}, rest...)...)
+		}
+		rest = append([]string{filepath.Base(path)}, rest...)
+		path = parent
+	}
 }
 
 // DefaultStateDir is the live state folder.

@@ -181,9 +181,11 @@ func (b *Bridge) release(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// No pattern parameter releases all of the session's claims; one that is
+	// present, even empty, must be a valid pattern.
 	want := ""
-	if raw := r.URL.Query().Get("pattern"); raw != "" {
-		p, err := pattern.Parse(raw)
+	if raw, given := r.URL.Query()["pattern"]; given {
+		p, err := pattern.Parse(raw[0])
 		if err != nil {
 			refuse(w, 400, "bad-pattern", err.Error())
 			return

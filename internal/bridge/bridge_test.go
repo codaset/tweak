@@ -332,6 +332,10 @@ func TestClaimsOverHTTP(t *testing.T) {
 	if string(body) != `{"released":["https://ernie.localhost/*"]}`+"\n" {
 		t.Fatalf("released %s", body)
 	}
+	// An explicitly empty pattern (an empty shell variable) is a bad pattern,
+	// never "release everything".
+	resp, body = h.do(as("s2", req{method: "DELETE", path: "/claims?pattern="}))
+	refused(t, resp, body, 400, "bad-pattern")
 	resp, body = h.do(as("s2", req{method: "DELETE", path: "/claims"}))
 	if string(body) != `{"released":["https://bert.localhost/*"]}`+"\n" {
 		t.Fatalf("release all: %s", body)

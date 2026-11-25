@@ -9,6 +9,7 @@ const versions = {
   "plugins/codaset/.claude-plugin/plugin.json": JSON.parse(read("plugins/codaset/.claude-plugin/plugin.json")).version,
   "extension/manifest.json": JSON.parse(read("extension/manifest.json")).version,
   "plugins/codaset/bin/tweak": read("plugins/codaset/bin/tweak").match(/^VERSION=(.*)$/m)?.[1],
+  "plugins/codaset/bin/tweak.cmd": read("plugins/codaset/bin/tweak.cmd").match(/^set "VERSION=(.*)"\r?$/m)?.[1],
 };
 
 for (const [file, v] of Object.entries(versions)) {

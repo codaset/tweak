@@ -1,0 +1,124 @@
+# The only way to cut a release (docs/design.md, "Releasing"). The GitHub
+# Release, with its binaries, exists before main's plugin version points at it.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release: X.Y.Z, above the current one (no v, no suffix)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One release at a time, never cancelled halfway.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release from main only
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run the release workflow on main, not $GITHUB_REF"
+          exit 1
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Version is X.Y.Z and above the current one
+        run: node scripts/release.js check "$VERSION"
+      - name: Tag doesn't exist yet
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::v$VERSION is already tagged"
+            exit 1
+          fi
+
+  ci:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # The commit CI just tested.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      # Stamp before building: the binary embeds extension/manifest.json.
+      - name: Stamp the version
+        run: node scripts/release.js stamp "$VERSION"
+
+      - name: Build the five binaries
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}
+            ext=""; [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/codaset/tweak/internal/version.Version=$VERSION" \
+              -o "dist/tweak-$os-$arch$ext" ./cmd/tweak
+          done
+          ls -l dist
+          dist/tweak-linux-amd64 version | grep -qx "binary $VERSION"
+
+      - name: Write checksums.txt
+        run: node scripts/release.js checksums dist
+
+      - name: Versions agree
+        run: node scripts/check-consistency.js
+
+      - name: Commit the version stamp
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins/codaset/.claude-plugin/plugin.json extension/manifest.json \
+            plugins/codaset/bin/tweak plugins/codaset/bin/tweak.cmd plugins/codaset/bin/checksums.txt
+          git commit -m "Release v$VERSION"
+          git tag -a "v$VERSION" -m "Codaset Tweak v$VERSION"
+
+      - name: Main hasn't moved since CI
+        run: |
+          main=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$main" != "$GITHUB_SHA" ]; then
+            echo "::error::main moved to $main while releasing $GITHUB_SHA: run the release again"
+            exit 1
+          fi
+
+      # The tag goes up first, so the Release can be created on the stamp
+      # commit; main, which the marketplace reads, moves only once the Release
+      # and its binaries exist.
+      - name: Push the tag
+        run: git push origin "refs/tags/v$VERSION"
+
+      - name: Create the GitHub Release
+        run: |
+          gh release create "v$VERSION" dist/* \
+            --verify-tag --title "v$VERSION" --generate-notes
+
+      - name: Push the version stamp to main
+        run: git push origin "HEAD:refs/heads/main"

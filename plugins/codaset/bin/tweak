@@ -1,7 +1,8 @@
 #!/bin/sh
 # Codaset Tweak launcher: what PATH finds and what the plugin's hooks call.
-# It runs the tweak binary for this plugin version. The release workflow stamps
-# VERSION; see docs/design.md, "The launcher".
+# It runs the tweak binary for this plugin version, downloading it from the
+# GitHub Release on first run. The release workflow stamps VERSION; see
+# docs/design.md, "The launcher". Plain POSIX sh: no bashisms.
 VERSION=0.1.0
 
 # Working on Tweak itself: run a local build and skip any download.
@@ -9,5 +10,70 @@ if [ -n "${TWEAK_BIN:-}" ]; then
   exec "$TWEAK_BIN" "$@"
 fi
 
-echo "couldn't download tweak $VERSION (no release download yet): set TWEAK_BIN to a local build" >&2
-exit 1
+fail() {
+  echo "couldn't download tweak $VERSION ($1): check your connection and run the command again" >&2
+  exit 1
+}
+
+case "$(uname -s 2>/dev/null)" in
+  Darwin) os=darwin ;;
+  Linux) os=linux ;;
+  *) os= ;;
+esac
+case "$(uname -m 2>/dev/null)" in
+  arm64 | aarch64) arch=arm64 ;;
+  x86_64 | amd64) arch=amd64 ;;
+  *) arch= ;;
+esac
+if [ -z "$os" ] || [ -z "$arch" ]; then
+  fail "no build for $(uname -s 2>/dev/null) $(uname -m 2>/dev/null)"
+fi
+name="tweak-$os-$arch"
+
+# TWEAK_STATE_DIR moves the whole state folder (docs/design.md, "Working on
+# Tweak itself").
+dir="${TWEAK_STATE_DIR:-$HOME/.local/state/codaset-tweak}/bin/$VERSION"
+kept="$dir/tweak"
+if [ -x "$kept" ]; then
+  exec "$kept" "$@"
+fi
+
+here=$(CDPATH='' cd "$(dirname "$0")" 2>/dev/null && pwd) || fail "can't find the launcher's folder"
+want=$(awk -v name="$name" '$2 == name || $2 == "*" name { print $1; exit }' "$here/checksums.txt" 2>/dev/null)
+[ -n "$want" ] || fail "no checksum for $name in $here/checksums.txt"
+
+command -v curl >/dev/null 2>&1 || fail "curl not found"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha() { sha256sum "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha() { shasum -a 256 "$1"; }
+else
+  fail "neither sha256sum nor shasum found"
+fi
+
+mkdir -p "$dir" 2>/dev/null || fail "can't create $dir"
+# Each launcher downloads to its own file in the same folder, so the rename
+# into place is atomic and two sessions fetching at once are safe.
+tmp="$dir/.tweak.$$.download"
+trap 'rm -f "$tmp"' EXIT
+trap 'rm -f "$tmp"; exit 1' HUP INT TERM
+
+# TWEAK_TEST_DOWNLOAD_URL is for the launcher's tests only: it stands in for
+# the GitHub Releases download URL.
+base="${TWEAK_TEST_DOWNLOAD_URL:-https://github.com/codaset/tweak/releases/download}"
+url="$base/v$VERSION/$name"
+if ! err=$(curl -fsSL --connect-timeout 20 -o "$tmp" "$url" 2>&1); then
+  reason=$(printf '%s\n' "$err" | sed -n '1s/^curl: ([0-9]*) //p')
+  fail "${reason:-curl failed} for $url"
+fi
+
+got=$(sha "$tmp" 2>/dev/null | awk '{ print $1 }')
+if [ "$got" != "$want" ]; then
+  rm -f "$tmp"
+  fail "checksum mismatch for $name, download deleted"
+fi
+
+chmod 755 "$tmp" 2>/dev/null || fail "can't make $tmp executable"
+mv -f "$tmp" "$kept" 2>/dev/null || fail "can't move the download to $kept"
+trap - EXIT HUP INT TERM
+exec "$kept" "$@"

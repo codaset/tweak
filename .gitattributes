@@ -1,0 +1,4 @@
+# cmd misreads labels in a batch file with LF line endings.
+*.cmd text eol=crlf
+# The POSIX launcher must keep LF, or sh reads a stray carriage return.
+plugins/codaset/bin/tweak text eol=lf

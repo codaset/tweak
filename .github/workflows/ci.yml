@@ -3,12 +3,16 @@ name: CI
 on:
   push:
   pull_request:
+  # The release workflow runs every job here first.
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Called from the release workflow, github.workflow is "Release", so the
+  # release's CI run never cancels, or is cancelled by, a push to main.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

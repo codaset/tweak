@@ -7,7 +7,7 @@
     "node": ">=26"
   },
   "scripts": {
-    "test": "node --test \"test/extension/**/*.test.js\"",
+    "test": "node --test \"test/extension/**/*.test.js\" \"test/scripts/**/*.test.js\"",
     "check:consistency": "node scripts/check-consistency.js"
   },
   "devDependencies": {

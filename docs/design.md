@@ -314,13 +314,15 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
 | `question` | Claude | Claude has a question |
 | `done` | Claude, with its summary | Change saved |
 | `declined` | Claude, with its reason | Declined |
+| `withdrawn` | you, from the card, before Claude finished; also resolves the tweak | Withdrawn |
 
 **Resolved** is separate from status: you've finished with the tweak, and its pin leaves the page.
 A change has its own state: `recorded`, `nothing-recorded`, `undo-requested` or `undone` (see
 [Undo](#undo)).
 
-**Conversation entries**: `{from: you|claude, kind, text, at}`, where kind is `request`, `plan`,
-`question`, `reply`, `summary`, `reason` or `undo`.
+**Conversation entries**: `{from: you|claude|bridge, kind, text, at}`, where kind is `request`, `plan`,
+`question`, `reply`, `summary`, `reason`, `undo` or `notice` (written by the bridge, for example
+when a tweak passes to another session; see [When the session goes quiet](#when-the-session-goes-quiet)).
 
 **Data model (SQLite)**:
 
@@ -347,7 +349,60 @@ Monitor research saw a burst lose one line and cut another):
   acknowledges each line once printed. That sets `delivered`, and the bridge redelivers anything
   unacknowledged when a watcher reconnects.
 - A printed tweak is confirmed only when Claude runs `tweak work` or `tweak queue` on it. Otherwise
-  the bridge redelivers it a few minutes later as an `again:` line.
+  the bridge redelivers it as an `again:` line after 3 minutes, at most twice. After the second goes
+  unanswered, the card says "Claude hasn't picked this up. The session may be busy." with a
+  **Send again** button that sends one more `again:`. The status stays `delivered`; the card works
+  out the text from the wait and the number of resends.
+
+### When the session goes quiet
+
+Decided in [Failure states: when the Claude side goes quiet](https://github.com/codaset/tweak/issues/21).
+The bridge has two signals about a session: a fast one, whether its watcher's long-poll is
+connected, and a slow one, the [claim lapse](#claims) after 10 minutes with no check-in. Because the
+watcher counts as checking in, a lapse in practice means the watcher has been gone for 10 minutes.
+
+- **No watcher**: after about 60 seconds without a connected watcher, while the session still has
+  claims, every `tweak` command from it prints `no watcher running: start a Monitor with tweak watch`
+  on stderr (the skill re-arms), and the card of a tweak waiting on it says "Waiting for the session
+  in `<folder>`, which isn't listening right now". The badge doesn't change.
+- **Tweaks follow the page, not the session**: when a session loses a claim (released, lapsed or
+  ended), its open tweaks on those pages (`sent`, `delivered`, `queued`, `working`, `question`) go
+  back to `sent` and are delivered as `new` to whichever session claims the page next, as undo
+  conflicts already are. A `reply` goes only to the session that asked the question; any other
+  session gets the tweak as `new`, with the whole conversation in its brief.
+- **A lapse ends capture**: the bridge deletes the marker file, reads the after contents and runs the
+  git check, as at `done`. A crashed session can't leave its edit hook recording.
+- **Handed over part-way**: a `working` tweak that passes to another session keeps its one change.
+  The next `tweak work` extends it, keeping the first before copies. The bridge adds a `notice` entry
+  to the conversation, shown on the card and in the brief: "The session in `~/dev/ernie` stopped
+  responding. Files already changed: `app/views/x.rb`."
+- **While lapsed**, the card of each tweak it held says "The session stopped responding · Waiting for
+  a session", plus "Files already changed: …" if there are any (no Undo there: the tweak isn't
+  finished). The page counts as unclaimed (grey `!` badge), and the side panel's claim status says
+  "The session in `~/dev/ernie` stopped responding 3 min ago. It gets this page back if it returns,
+  or claim it from another session with `/tweak https://ernie.localhost/*`", with the command to copy.
+- **The same session comes back**: a lapsed claim is kept for 24 hours and restored at the session's
+  next check-in, unless another session has since claimed an overlapping pattern. `tweak watch`
+  prints `claim restored: <pattern>`. The session's tweaks return to it with their status from before
+  the lapse, with no `again:` line; a `working` tweak starts capture again, extending the same change.
+  Edits made during the lapse passed the hook with no marker, so the git check (whose baseline is
+  still the tree from when the tweak first entered `working`) lists them as unrecorded files.
+- **Someone else claimed it meanwhile**: the session's next command, or its watcher, says
+  `claim lost: <pattern> is now claimed by the session in <folder>`, and its status commands on those
+  tweaks are refused with the same message.
+- **Working with no end**: no timeout while the session is alive, since real changes can take long.
+  The card shows the time: "Claude is working on it · 6 min".
+- **Withdraw**: the card of any open tweak has **Withdraw**. It sets `withdrawn` and resolves the
+  tweak (shown with resolved tweaks, with Undo if edits were recorded). A `sent` tweak is simply
+  resolved. One that already reached the session (`delivered`, `queued`, `question`, `working`) also
+  sends `tweak <n> withdrawn`; the skill stops and runs `tweak decline <n> 'withdrawn'`, which ends
+  capture. Capture isn't ended at the click, which would lose edits Claude has started without
+  flagging them. A later `done`, `ask` or `decline` on a withdrawn tweak ends capture, keeps the
+  change, exits 0 and prints `tweak 12: withdrawn, change kept for Undo`; `tweak work` on one prints
+  `tweak 12: withdrawn, skip it` and starts no capture. If Claude runs nothing more on it, capture
+  ends at the next `tweak work`, a lapse, or the session ending.
+- **The Monitor ends unexpectedly** (crash, killed, non-zero exit): the skill starts it again once;
+  if it ends again within a minute, it tells the developer with the error and stops.
 
 ## Claims
 
@@ -367,7 +422,9 @@ Monitor research saw a burst lose one line and cut another):
   `/tweak <URL>` again afterwards.
 - As a backstop for crashes and missed hooks, a claim lapses after 10 minutes with no check-in from
   its session. Any `tweak` command, the watcher and the edit hook all count as checking in, so a
-  late re-arm after a long turn doesn't lose the claim. Tweaks sent in the gap wait in the inbox.
+  late re-arm after a long turn doesn't lose the claim. Tweaks sent in the gap wait in the inbox. A
+  lapsed claim comes back if the same session returns within 24 hours and nobody has claimed those
+  pages meanwhile (see [When the session goes quiet](#when-the-session-goes-quiet)).
 - `/tweak` with no URL lists current claims and their sessions, and claims nothing.
 - On an unclaimed page that looks like a dev server (`localhost`, `127.0.0.1`, `*.localhost`,
   `*.test`, `lvh.me`, or any origin claimed before), the toolbar badge shows a grey `!`. Other
@@ -653,6 +710,9 @@ tweak 12 undo-conflict: no edits recorded, undo by hand
 tweak 12 again: <the line it repeats>
 claim released: https://ernie.localhost/*
 bridge updated: run /reload-plugins, then /tweak https://ernie.localhost/* again
+tweak 12 withdrawn
+claim restored: https://ernie.localhost/*
+claim lost: https://ernie.localhost/* is now claimed by the session in ~/dev/ernie-2
 ```
 
 Only the developer's own words appear, cut at 300 characters with `…`. Page text (element labels,
@@ -713,7 +773,9 @@ Each Monitor line starts with `tweak <n>`. Handle one tweak at a time, lowest nu
   2. `tweak work <n>`. This prints the brief and shows the developer you're on it.
   3. Optional: if the change isn't obvious from the request, post a short plan naming the file with
      `tweak plan <n> '…'`.
-  4. Make the change. Exact source locations, when the brief has them, are where to start. Otherwise
+  4. Make the change. If the brief has a notice that an earlier session already changed files, check
+     those files first and finish the work rather than starting over. Exact source locations, when the
+     brief has them, are where to start. Otherwise
      search the project for the brief's search clues. View the screenshot when the request is about
      how something looks.
   5. Finish with exactly one of:
@@ -736,6 +798,11 @@ Each Monitor line starts with `tweak <n>`. Handle one tweak at a time, lowest nu
 - **`bridge updated: …`**: a newer Tweak took over and this session's plugin is too old for it. Tell
   the developer in one line to run `/reload-plugins`, then `/tweak` again. The watcher stops by
   itself.
+- **`tweak <n> withdrawn`**: the developer took the tweak back. If you're working on it, stop and run
+  `tweak decline <n> 'withdrawn'`; any edits stay undoable. If you haven't started it, drop it.
+- **`claim restored: …`**: carry on without comment.
+- **`claim lost: …`** (as an event, or printed by a command): tell the developer in one line that
+  another session now has those pages. Stop work on their tweaks and run no more commands on them.
 
 ### While you're busy
 
@@ -746,8 +813,10 @@ tweak's edits separate from other work.
 
 ## Staying on
 
-When the Monitor reports `[Monitor expired`, start it again with the same arguments, without
-comment.
+When the Monitor reports `[Monitor expired`, or a `tweak` command warns `no watcher running`, start
+the Monitor again with the same arguments, without comment. If it ends any other way (not after
+`claim released` or `bridge updated`), start it again once. If it ends again within a minute, tell
+the developer in one line with the error and stop restarting it.
 
 ## Stopping
 
@@ -767,8 +836,8 @@ Don't stop the Monitor yourself.
 ### Live card
 
 Opens when you send a tweak, in place of the composer, and stays open until **esc** or **×**.
-Clicking around the page leaves it open. It shows the status, Claude's plan, any question with a
-reply box, and the summary. It reopens in place after a reload.
+Clicking around the page leaves it open. It shows the status (with the time spent while working),
+Claude's plan, any question with a reply box, the summary, and **Withdraw** while the tweak is open. It reopens in place after a reload.
 
 ### Pins
 
@@ -844,8 +913,9 @@ why the hook records and git only checks is in
 ### Capture
 
 - At most one tweak per session is **capturing**. `tweak work <n>` makes it tweak *n*, replacing any
-  other. Capture ends at `tweak done`, `ask`, `decline`, `queue` or `release`, and when the session
-  ends (exit or `/clear`, through `tweak hook session-end`).
+  other. Capture ends at `tweak done`, `ask`, `decline`, `queue` or `release`, when the session
+  ends (exit or `/clear`, through `tweak hook session-end`), and when its claim lapses (the backstop
+  for a session that dies without its hook).
 - While a tweak is capturing, the bridge keeps a marker file at
   `~/.local/state/codaset-tweak/capturing/<session-id>`.
 - **The edit hook** (`tweak hook pre-edit`, a `PreToolUse` hook on `^(Edit|Write|NotebookEdit)$`)

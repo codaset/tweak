@@ -16,6 +16,10 @@ _Avoid_: edit, fix, patch (for the concept as a whole)
 A session's exclusive ownership of the pages matching a URL pattern, so their tweaks go to that session.
 _Avoid_: subscription, binding, registration
 
+**Lapsed claim**:
+A claim that ended because its session stopped responding. The session gets it back if it returns before another session claims those pages.
+_Avoid_: expired claim, stale claim
+
 **Session**:
 One agent conversation (in v1, a Claude Code session) that can claim pages and receive their tweaks. It ends when the conversation does, including when it is cleared, and its claims end with it.
 _Avoid_: client, worker, listener
@@ -35,6 +39,10 @@ _Avoid_: complete, fixed
 **Resolved**:
 A tweak you have finished with, whatever its outcome; its pin leaves the page.
 _Avoid_: closed, dismissed, archived
+
+**Withdrawn**:
+A tweak you took back before Claude finished it. It is resolved, and any edits already made stay undoable.
+_Avoid_: cancelled, aborted, deleted
 
 **Brief**:
 Everything Claude receives about a tweak: the request, what it points at, where that lives in the source, and how it looks and is built.

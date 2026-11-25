@@ -100,7 +100,7 @@ its unresolved tweaks. Events go to every tab showing that page, so pins and bad
 everywhere. The card opens, and a question pops up, only in the tab the tweak was sent from; if that
 tab is gone, the question shows as a toast in the others. On client-side navigation, the content
 script hears the Navigation API (`navigatesuccess` and `currententrychange`, expected to fire for
-the page's own `pushState` too; to confirm on a fixture while building) and loads the pins for the
+the page's own `pushState` too; asserted on the `static` fixture, see [Testing](#testing)) and loads the pins for the
 new URL. On a URL outside every claim it goes dormant: no
 picker, no pins.
 
@@ -122,8 +122,8 @@ start. Pages still can't reach it.
 one opens (a capture-phase `toggle` listener on `document`, with a `MutationObserver` on `open` as a
 fallback), the host moves inside the dialog and is shown again. It then sits above the dialog and
 isn't inert, and it moves back when the dialog closes. Whenever the page puts something new in the
-top layer (its own popovers), the host is shown again so it stays on top. To check against a fixture
-while building.
+top layer (its own popovers), the host is shown again so it stays on top. Asserted on the `static` fixture (see
+[Testing](#testing)).
 
 **Code shape**: no build step. The worker and side panel are ES modules (`"type": "module"`).
 Content scripts can't be modules when registered at runtime, so they are a few classic files listed
@@ -967,7 +967,7 @@ enters `working`:
 - a full reload (the open card is kept in `chrome.storage.session`, so it notices)
 - a `<link>` or `<style>` swap
 - on Vite pages (detected by `/@vite/client`), `vite:afterUpdate` from a `createHotContext` the page
-  probe opens (to confirm on the Vite fixture while building)
+  probe opens (asserted by the `vite-react19` round trip, see [Testing](#testing))
 
 When `done` arrives, it waits about a second. If any signal arrived since `working`, it doesn't
 reload; otherwise it reloads. Hot updates that change only JavaScript outside Vite (Next's Fast
@@ -1059,18 +1059,118 @@ Test behaviour where it lives.
   the `x-tweak` header, and one with a `Host` other than `127.0.0.1:<port>` or `localhost:<port>`
   are all refused, and that a WebSocket from any origin but the extension's is refused.
 - **Message schema**: contract tests on both sides against `schema/examples/`: Go with
-  `santhosh-tekuri/jsonschema`, JavaScript with `node --test` and `ajv` (the only devDependency, in a
-  dev-only `package.json` at the root; the shipped extension has no dependencies).
-- **Extension**: end-to-end in headless Chrome against fixture apps. Each checks that clicking an
-  element yields the right source location or search clues:
-  - plain static HTML
-  - Rails without annotations
-  - Vite + React 19 (plus a React 18 case)
-  - Vite + Vue 3
-  - SvelteKit
-  - a server-rendered app with no framework clues (e.g. Django templates), relying on search clues
-- **Manual**: a final check on Bert (`london`, Phlex + Proscenium) and Ernie (`platform`, React 18 +
-  ERB + ViewComponent).
+  `santhosh-tekuri/jsonschema`, JavaScript with `node --test` and `ajv`. `ajv` and `puppeteer` are
+  the only devDependencies, in a dev-only `package.json` at the root; the shipped extension has no
+  dependencies.
+- **Extension units**: `node --test` in `test/extension/`. Mapper edge cases are tested here
+  against metadata captured from the fixtures and saved in `test/extension/fixtures/`: fiber dumps,
+  `__svelte_meta` (Svelte 4's 0-based lines included), Rails annotation HTML, and real source maps,
+  including an external webpack-style `.map` for React 19 (there is no webpack fixture). Clue order and
+  the common-class filter are tested here too.
+- **End-to-end**: proves the wiring on real dev servers and the browser-only behaviour; it doesn't
+  repeat the unit cases. See below.
+- **Manual**: the `<all_urls>` permission prompt, the real ⌥⇧N shortcut and the toolbar context menu
+  (none can be driven headlessly), and a final check on Bert (`london`, Phlex + Proscenium) and Ernie
+  (`platform`, React 18 + ERB + ViewComponent).
+
+Decided in [Fixture apps and the end-to-end runner](https://github.com/codaset/tweak/issues/20); the
+driver in [Headless Chrome for Testing with the unpacked extension: which
+driver](https://github.com/codaset/tweak/issues/19).
+
+### Fixture apps
+
+One committed, hand-written folder per app under `fixtures/<app>/`, nothing generated at test time:
+
+| Fixture | Proves |
+|---|---|
+| `static` | search clues and CSS rules with no framework; our reload on a server that never reloads; overlay layering over a modal `<dialog>` and a page `popover`; the page's own `pushState`; the `activeTab` path |
+| `rails` | Rails 8. Started twice: with `annotate_rendered_view_with_filenames` on (an env var sets it), for the Rails mapper on real `<!-- BEGIN/END -->` output; and off, for the side panel's "optional improvement" suggestion and the fall back to search clues |
+| `vite-react19` | the React 19 `_debugStack` route through an inline source map |
+| `vite-react18` | React 18 `_debugSource` (its own app: two Reacts don't share a Vite app) |
+| `vite-vue` | Vue 3 `__file`, file only |
+| `sveltekit` | Svelte 5 `__svelte_meta`, with `parent` for the usage site |
+
+There is no Django-style fixture: `static` and `rails` already cover a server-rendered page without
+framework clues.
+
+Each fixture has:
+
+- a `package.json` with **exact** versions and a committed lockfile (`rails`: `Gemfile`,
+  `Gemfile.lock`, `.ruby-version`);
+- `fixture.json`: the start command with a `{port}` placeholder, and the path to poll for readiness;
+- `expected.json`: the golden cases (below).
+
+Dependabot opens monthly update PRs, grouped per fixture. A red one is the point: it means a framework
+changed the metadata a mapper reads. Chrome for Testing is pinned in `.puppeteerrc.cjs` (new
+headless, not `chrome-headless-shell`, which doesn't load extensions) and bumped by hand. CI caches
+it with `actions/cache`, keyed on the version.
+
+### Golden data
+
+`expected.json` is a list of cases:
+
+```json
+{
+  "name": "save button",
+  "pick": { "selector": "button.save" },
+  "locations": [{ "file": "src/Toolbar.jsx", "line": 14, "role": "element", "via": "react" }],
+  "clues": ["data-testid=save"],
+  "edit": { "file": "src/Toolbar.jsx", "find": "Save", "replace": "Save draft" }
+}
+```
+
+`pick` is one of `{selector}`, `{text}` (a selection) or `{area}` (a box). Paths are project-relative.
+`edit` appears only on round-trip cases. Assertions are made against the **brief** that `tweak work`
+prints, since that is what Claude reads, and it covers the bridge's path normalisation. The listed
+locations must be the first N under "Where to look", in order, matched on `` `file:line` `` and the
+role and `via` tokens. The listed clues must all be present. The rest of the brief's layout is
+golden-tested in Go, not here.
+
+### The runner
+
+Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/`.
+Files run concurrently (node's default), each with its own Chrome. For each fixture the runner:
+
+1. copies the fixture to a temporary folder (round trips edit files), with `node_modules` symlinked;
+2. takes a free port (listen on port 0, read it, close);
+3. spawns the start command in its own process group;
+4. polls the ready path until it returns 200, for at most 60 s. On a timeout it fails, showing the
+   server's last 50 lines of output;
+5. kills the process group when the file's tests finish.
+
+Chrome loads a **test copy of the extension**: the manifest with `http://localhost/*` moved into
+`host_permissions` (a pre-grant, since the prompt can't be driven headlessly), and a test-only
+message that calls the shortcut and context-menu handlers. The side panel is tested as `panel.html`
+open in a tab. The `activeTab` path serves `static` a second time on `127.0.0.1`, which the copy has
+no grant for, and uses `page.triggerExtensionAction`, asserting the screenshot is captured.
+Captures are spaced more than 1 s apart (Chrome's 2-per-second quota). `--no-sandbox` is passed only
+on Linux CI (the ubuntu-24.04 AppArmor restriction).
+
+`npm run e2e` runs it locally. Without `ruby` on the machine, `rails` is skipped with a message
+saying so. In CI (`CI=true`) a missing toolchain fails the run instead.
+
+### Round trips
+
+E2e drives a real bridge: the locally built binary, run with `TWEAK_BIN` set, a random `TWEAK_PORT`
+and a temporary `TWEAK_STATE_DIR` (the CLI enforces these for development builds, so a test never
+reaches a live bridge). A **scripted stand-in for Claude**, a Node helper with a made-up
+`CLAUDE_CODE_SESSION_ID` and the fixture copy as its working folder:
+
+1. runs `tweak claim <url>`, then `tweak watch` as a child process, reading its lines;
+2. on `tweak <n> new`, runs `tweak work <n>` and checks the brief;
+3. runs `tweak hook pre-edit` with Claude-Code-shaped hook JSON on stdin, then applies the case's
+   `edit`;
+4. runs `tweak done <n> "…"`.
+
+The test then asserts that the card shows Done, the page updates, Undo restores the file byte for
+byte, and the card shows the change undone. Round trips run on one fixture per reload path:
+
+- `static`: our reload;
+- `vite-react19`: the `vite:afterUpdate` signal from the probe's `createHotContext`, so **no** reload
+  follows the hot update;
+- `rails`: our reload on a server-rendered page.
+
+The other fixtures test mapping only.
 
 ### Open measurements
 
@@ -1107,10 +1207,11 @@ cmd/tweak/                          main package
 internal/…                          bridge, CLI, hooks, store, brief, merge, … (split while building)
 go.mod
 schema/                             JSON Schema files, and examples/
-test/extension/                     JavaScript unit and contract tests (node --test)
-test/e2e/                           end-to-end runner
-fixtures/<app>/                     fixture apps
-package.json                        dev only: ajv and the test scripts
+test/extension/                     JavaScript unit and contract tests (node --test), captured metadata in fixtures/
+test/e2e/                           end-to-end runner, one test file per fixture
+fixtures/<app>/                     fixture apps: fixture.json, expected.json, lockfile (see Testing)
+.puppeteerrc.cjs                    pinned Chrome for Testing version
+package.json                        dev only: ajv, puppeteer and the test scripts
 docs/  GLOSSARY.md  AGENTS.md  LICENSE
 ```
 
@@ -1190,7 +1291,7 @@ On every push and pull request:
 |---|---|
 | `go` | `gofmt` check, `go vet`, `go test -race` on Ubuntu and macOS; a cross-compile of all five targets (Windows is build-only) |
 | `js` | `node --test` for the extension's unit and contract tests |
-| `e2e` | headless Chrome for Testing on Ubuntu with the unpacked extension loaded, against the fixture apps (branded Chrome 137+ no longer loads unpacked extensions from the command line) |
+| `e2e` | Puppeteer and pinned Chrome for Testing (new headless) on Ubuntu, with the test copy of the unpacked extension loaded, against the fixture apps and a real development bridge (branded Chrome 137+ no longer loads unpacked extensions from the command line); needs Node and Ruby; see [Testing](#testing) |
 | `consistency` | the version in `plugin.json`, `manifest.json` and the launcher agree; `claude plugin validate plugins/codaset` passes |
 
 ### Releasing
@@ -1229,8 +1330,9 @@ That order means no plugin version ever points at a release that doesn't exist y
   signature, no quarantine flag).
 - For extension self-update: confirm `chrome.runtime.reload()` re-reads an unpacked extension's
   files from disk, and that it clears `chrome.storage.session`.
-- Confirm Chrome for Testing in CI loads the unpacked extension (`--load-extension`, or Puppeteer's
-  extension support).
+- Confirm the e2e setup on an ubuntu-24.04 runner (verified on macOS only): Puppeteer's
+  `enableExtensions` loads the test copy, whether `--no-sandbox` is needed, and each fixture's boot
+  time.
 
 ## Not in v1
 

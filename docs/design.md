@@ -49,8 +49,84 @@ Chrome extension  ──HTTP (127.0.0.1)──>  tweak bridge (Go, SQLite)  <─
 - Loaded unpacked from the plugin's folder in v1. `/tweak` warns when the loaded extension is older
   than the plugin ("reload it in `chrome://extensions`"). The Chrome Web Store comes later.
 - Activates only on pages matching an active claim, learned from the bridge, by registering content
-  scripts at runtime. A claim on a new dev domain (e.g. `*.test`, `lvh.me`) asks Chrome for host
-  permission once. Unclaimed pages are left untouched apart from the toolbar badge.
+  scripts at runtime. Unclaimed pages are left untouched apart from the toolbar badge.
+
+Decided in [Extension architecture](https://github.com/codaset/tweak/issues/12).
+
+**Site access**: `<all_urls>` is an optional host permission, asked for once, from the side panel's
+**Allow access** button on the first claim (`permissions.request` needs a click, so a claim can't
+prompt by itself). After that, a claim on a new dev domain (`*.test`, `lvh.me`) needs no prompt.
+Screenshots are why: `captureVisibleTab` needs `activeTab` or the literal `<all_urls>`, and ⌥-click
+doesn't grant `activeTab` (see [ADR 0002](adr/0002-optional-all-urls-for-screenshots.md)). Until
+access is granted, the worker can't read tab URLs (that would need the `tabs` permission and its
+install warning), so it shows one grey `!` on the toolbar icon in every tab, meaning "action
+needed", and the side panel shows **Allow access**. If
+access is removed in `chrome://extensions`, `permissions.onRemoved` returns the extension to that
+state. Registrations stay in place but don't inject until access is granted again.
+
+**What runs where**:
+
+| Part | Does |
+|---|---|
+| Service worker | the bridge WebSocket; content-script registration; the badge, commands and context menu; `captureVisibleTab` and the screenshot processing; relaying between tabs and the bridge |
+| Content script (isolated world) | everything you see and touch: picker, hover outline, composer, card, pins, toasts; the mappers that only need the DOM (Rails comments, Proscenium classes, CSS rules, search clues); building a tweak's targets; reload detection |
+| Page probe (MAIN world) | a thin probe that never draws anything: reads framework metadata (React fibers, Vue `__file`, Svelte `__svelte_meta`) when asked, and listens for HMR signals. It answers through `CustomEvent`s on `document` with request IDs, never through attributes written onto the page. The page can see and spoof this traffic; that's acceptable, because the results are data describing the element |
+| Side panel | a view only, holding no state; talks to the worker through a port |
+
+The overlay lives in a closed shadow root with its own styles. Nothing is added to the page's CSS.
+
+**Claims and registration**: each claim has one registration, `claim-<id>`, using the claim's
+pattern as-is. It holds the page probe (at `document_start`, before the page's own scripts) and the
+content script, top frame only (`allFrames: false`). The worker compares registrations with the claims after the snapshot and
+after every claim event. It keeps the last-known claims in `chrome.storage.local`. Chrome wipes
+runtime registrations on install and update (including reloading the unpacked extension), so on
+`onInstalled` and `onStartup` the worker re-registers from that copy at once, then corrects itself
+when the bridge snapshot arrives. Tabs already open when a claim starts get the scripts through
+`scripting.executeScript`, not a reload; the scripts guard against running twice.
+
+**Staying connected**: while connected, the WebSocket keepalive keeps the worker awake. When the
+bridge can't be reached, the worker retries with backoff while awake, and a `chrome.alarms` alarm
+(every 30 seconds, the minimum) wakes it to try again. The worker keeps open tweaks in memory only:
+on every start it sends `hello` with `lastSeq: 0` and rebuilds from the snapshot. Each content
+script holds a `runtime.connect` port, gets its page's tweaks when it connects, and reconnects when
+the worker restarts.
+
+**Pages and tabs**: a tweak belongs to a page by origin and path, ignoring query and hash
+(`/users/12` and `/users/13` are different pages; `/admin?tab=2` is `/admin`). A page shows pins for
+its unresolved tweaks. Events go to every tab showing that page, so pins and badges update
+everywhere. The card opens, and a question pops up, only in the tab the tweak was sent from; if that
+tab is gone, the question shows as a toast in the others. On client-side navigation, the content
+script hears the Navigation API (`navigatesuccess` and `currententrychange`, expected to fire for
+the page's own `pushState` too; to confirm on a fixture while building) and loads the pins for the
+new URL. On a URL outside every claim it goes dormant: no
+picker, no pins.
+
+**Where state lives**:
+
+| Where | What |
+|---|---|
+| Bridge | tweaks, conversations, claims, changes: the source of truth |
+| `chrome.storage.local` | last-known claims, the bridge port, per-site settings (pins hidden, auto-reload off), dismissed improvement suggestions |
+| `chrome.storage.session` | per tab: the open card, and composer and reply drafts, saved as you type, restored on load, cleared on Send or esc |
+| The page's own storage | nothing; the page can read and clear it |
+
+"Per site" means per origin. `chrome.storage.session` is closed to content scripts by default, so
+the worker opens it with `setAccessLevel({accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS"})` at
+start. Pages still can't reach it.
+
+**Overlay layering**: the overlay host is a `popover="manual"` element in the top layer, so no
+`z-index` fights. A modal `<dialog>` makes everything outside it inert, top layer included. So when
+one opens (a capture-phase `toggle` listener on `document`, with a `MutationObserver` on `open` as a
+fallback), the host moves inside the dialog and is shown again. It then sits above the dialog and
+isn't inert, and it moves back when the dialog closes. Whenever the page puts something new in the
+top layer (its own popovers), the host is shown again so it stays on top. To check against a fixture
+while building.
+
+**Code shape**: no build step. The worker and side panel are ES modules (`"type": "module"`).
+Content scripts can't be modules when registered at runtime, so they are a few classic files listed
+in order in one registration, sharing one namespace object in the isolated world. No
+`web_accessible_resources`, so pages can't detect the extension or load its files. Messages between
+the extension's own parts are not in `schema/`, which is the bridge contract only.
 
 ### The `tweak` binary (Go)
 
@@ -141,7 +217,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   [Undo](#undo)). Every CLI request counts as the
   session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
-- **WebSocket messages**: to the bridge `hello {protocol, lastSeq}`, `create`, `reply`, `resolve`,
+- **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version}` (the extension's
+  version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `resolve`,
   `undo`; from the bridge a snapshot or events, and refusals.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
   sequence. Clients remember the last sequence seen and get everything newer on reconnect, or a
@@ -223,8 +300,10 @@ Monitor research saw a burst lose one line and cut another):
   its session. Any `tweak` command, the watcher and the edit hook all count as checking in, so a
   late re-arm after a long turn doesn't lose the claim. Tweaks sent in the gap wait in the inbox.
 - `/tweak` with no URL lists current claims and their sessions, and claims nothing.
-- On an unclaimed page, the toolbar badge shows a grey `!`. The side panel says no session claims
-  the page and offers the `/tweak <this page's origin>` command to copy.
+- On an unclaimed page that looks like a dev server (`localhost`, `127.0.0.1`, `*.localhost`,
+  `*.test`, `lvh.me`, or any origin claimed before), the toolbar badge shows a grey `!`. Other
+  websites get no badge. The side panel says no session claims the page and offers the
+  `/tweak <this page's origin>` command to copy.
 
 ## Pointing at things
 
@@ -281,6 +360,21 @@ Captured for every tweak: the visible area around the element or elements plus a
 outlined, at most 1600px, saved as a PNG beside the database. The brief gives its path and says to
 view it when the request is about how something looks. Claude decides per tweak, so a text change
 costs nothing extra.
+
+How it's made (decided in [Extension architecture](https://github.com/codaset/tweak/issues/12)):
+
+1. Captured the moment you pick, before the composer opens, since that's what you were pointing at
+   (hover menus may close once the composer takes focus). Held until Send, thrown away on cancel.
+2. The content script hides the overlay host and waits two animation frames. The worker calls
+   `captureVisibleTab` (PNG; the viewport only, in device pixels).
+3. The content script sends the rects of the elements, text or area. In an `OffscreenCanvas`, the
+   worker crops to their union plus a 48 CSS-px margin (clipped to the viewport, converted to device
+   pixels), draws the numbered outlines into the image, and scales so the longest side is at most
+   1600px.
+4. Uploaded with `PUT /tweaks/:n/screenshot` once the bridge has given the tweak its number. The
+   bridge only stores the file.
+
+Captures queue in the worker to stay within Chrome's limit of two a second.
 
 ## Claude's side
 
@@ -466,20 +560,31 @@ reply box, and the summary. It reopens in place after a reload.
 
 ### Toolbar button
 
-- Click toggles pick mode (same as ⌥⇧C).
+- Click toggles pick mode (same as ⌥⇧C) on a claimed page. On an unclaimed page there's nothing to
+  pick, so it opens the side panel, with the `/tweak <origin>` command to copy. (`sidePanel.open`
+  is called first in the handler, while the gesture lasts.)
+- Context menu: **Open side panel**.
+- Shortcuts are `chrome.commands`: ⌥⇧C pick mode, ⌥⇧N side panel, ⌥⇧H pins (three of Chrome's four
+  suggested keys). ⌥-click and ⇧-click are handled in the page by the content script.
 - Badge: the number of open tweaks on this page, coloured by the most urgent (blue question, amber
-  working, purple sent), or a grey `!` when no session claims the page.
+  working, purple sent), or a grey `!` when no session claims a dev-looking page (see Claims).
+  Until site access is granted, a single grey `!` shows in every tab instead (see Chrome
+  extension). Chrome keeps a tab's badge across navigation, so the worker
+  recomputes it on `tabs.onUpdated` and on every event that changes a tweak's status.
 - Works best pinned to the toolbar. The shortcuts work either way.
 
 ### Side panel
 
-Opened from the toolbar button's context menu or **⌥⇧N**:
+Opened from the toolbar button's context menu or **⌥⇧N**. One panel per window, which follows the
+active tab: everything in it is about the tab in front.
 
+- **Allow access**, until site access is granted (see Chrome extension)
 - show or hide pins
 - resolved tweaks, with Undo
 - claim status, with the `/tweak` command to copy
 - the per-site reload setting
-- connection status, and the extension version warning
+- connection status, and the extension version warning (shown when the bridge reports a newer
+  version)
 - optional-improvement suggestions
 
 ### Reloading after a change
@@ -493,6 +598,21 @@ while any of these is true:
 - a dialog or popover is open
 - you're drafting a tweak or a reply
 - another tweak on this page is still in progress (the reload waits for the last one)
+
+How "hasn't already" is detected (decided in
+[Extension architecture](https://github.com/codaset/tweak/issues/12)): a hot update usually lands
+before `tweak done` arrives, so the content script records update signals from the moment the tweak
+enters `working`:
+
+- a full reload (the open card is kept in `chrome.storage.session`, so it notices)
+- a `<link>` or `<style>` swap
+- on Vite pages (detected by `/@vite/client`), `vite:afterUpdate` from a `createHotContext` the page
+  probe opens (to confirm on the Vite fixture while building)
+
+When `done` arrives, it waits about a second. If any signal arrived since `working`, it doesn't
+reload; otherwise it reloads. Hot updates that change only JavaScript outside Vite (Next's Fast
+Refresh) go unnoticed and cause one reload too many. That's harmless, and the per-site setting turns
+it off.
 
 ## Undo
 
@@ -622,3 +742,4 @@ out to be the slow part, add a project search to the bridge (Go, `.gitignore`-aw
   as a per-site opt-in
 - a project search in the bridge, unless the open measurement calls for it
 - Redo after Undo (send the tweak again instead)
+- picking inside iframes (the extension runs in the top frame only; the screenshot still shows them)

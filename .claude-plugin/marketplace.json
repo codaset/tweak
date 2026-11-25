@@ -1,0 +1,12 @@
+{
+  "name": "codaset",
+  "owner": { "name": "Codaset" },
+  "description": "Codaset plugins for Claude Code",
+  "plugins": [
+    {
+      "name": "codaset",
+      "source": "./plugins/codaset",
+      "description": "Codaset Tweak"
+    }
+  ]
+}

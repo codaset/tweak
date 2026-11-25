@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Codaset Tweak",
+  "version": "0.1.0",
+  "description": "Point at any element on your dev server, describe a tweak, and the Claude Code session that claimed the page makes the change.",
+  "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtIhsqQ6vT7F8/gYlVHA+4qOOKSoERAjHu5SAXUCz4ijolQfhWdteLaQlTjg6BgMA3E81d7OC3Ik6T82TeSRzmASC+mGioKhbPkbCPj2ItHKTo4m6EY7p490AAs3hLUhKtVkdf8ZEAQmFGk9WANLrbHZNQ0/lTPXKjpU1YOvEJDtp8QyOGJsyDZXH2eXmrgMePoPma1m48GOrbfhlc2BbcLTC45lz01gp/u/JAQ+mdayvwH3BE0PvnckLRkFMWe5gf0z1CyM+i8xDK3G0IFPPe7yBALUSKcU+jEuOdDP2REmECfm7Up6O9pusGmPXbdWxP28Y+IVqe+3cCUKbBzr2gwIDAQAB"
+}

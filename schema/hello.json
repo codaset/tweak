@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/hello.json",
+  "title": "hello",
+  "description": "The first message the extension's service worker sends on the bridge WebSocket. The bridge accepts only its own protocol version.",
+  "type": "object",
+  "properties": {
+    "type": { "const": "hello" },
+    "protocol": { "type": "integer", "minimum": 1 },
+    "lastSeq": {
+      "description": "The last event-log sequence the worker has seen; 0 asks for a fresh snapshot.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "version": {
+      "description": "The extension's version (X.Y.Z), recorded by the bridge for tweak claim's warnings.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    }
+  },
+  "required": ["type", "protocol", "lastSeq", "version"],
+  "additionalProperties": false
+}

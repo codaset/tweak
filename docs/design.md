@@ -38,7 +38,7 @@ block a public release.
 
 ```
 Chrome extension  ──HTTP (127.0.0.1)──>  tweak bridge (Go, SQLite)  <──CLI──  Claude Code session
-  overlay, pins,                           tweaks, claims, patches,           /tweak skill,
+  overlay, pins,                           tweaks, claims, changes,           /tweak skill,
   card, side panel                         inbox, screenshots                 Monitor watcher,
                                                                               undo hook
 ```
@@ -57,7 +57,7 @@ Chrome extension  ──HTTP (127.0.0.1)──>  tweak bridge (Go, SQLite)  <─
 One binary, three roles:
 
 - **bridge**: an HTTP server on `127.0.0.1` with SQLite storage (pure-Go `modernc.org/sqlite`, no
-  cgo). Holds tweaks, claims, change patches, the inbox and screenshots.
+  cgo). Holds tweaks, claims, changes, the inbox and screenshots.
 - **CLI**: the commands the skill runs (`claim`, `watch`, `work`, `done`, ...; see
   [The tweak CLI](#the-tweak-cli)). Every command the skill uses goes through this binary, so one
   permission rule, `Bash(tweak *)`, covers them all, including the Monitor running `tweak watch`.
@@ -102,7 +102,7 @@ state is in SQLite. It is not a launchd service.
 ### Storage
 
 SQLite at `~/.local/state/codaset-tweak/tweak.db`, with screenshots beside it. Resolved tweaks, their
-patches and screenshots are deleted 7 days after resolution.
+changes and screenshots are deleted 7 days after resolution.
 
 ### Security
 
@@ -136,8 +136,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `GET /inbox?after=<seq>` (long-poll; one line of at most 500 characters per event) and
   `POST /inbox/ack`, `POST /tweaks/:n/work` (returns the brief as text, sets `working` and starts
   undo capture for the session; a POST because fetching changes state), `POST /tweaks/:n/status`,
-  `POST /tweaks/:n/entries` (a plan), and `POST /edits/before` (record a file's contents before an
-  agent edits it; the bridge decides which tweak it belongs to). Every CLI request counts as the
+  `POST /tweaks/:n/entries` (a plan), and `POST /edits/before` (the edit hook sends a file's path
+  before an agent edits it; the bridge reads the file and decides which tweak it belongs to; see
+  [Undo](#undo)). Every CLI request counts as the
   session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
 - **WebSocket messages**: to the bridge `hello {protocol, lastSeq}`, `create`, `reply`, `resolve`,
@@ -169,7 +170,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
 | `declined` | Claude, with its reason | Declined |
 
 **Resolved** is separate from status: you've finished with the tweak, and its pin leaves the page.
-A change has its own state: `recorded`, `undone` or `undo-requested`.
+A change has its own state: `recorded`, `nothing-recorded`, `undo-requested` or `undone` (see
+[Undo](#undo)).
 
 **Conversation entries**: `{from: you|claude, kind, text, at}`, where kind is `request`, `plan`,
 `question`, `reply`, `summary`, `reason` or `undo`.
@@ -182,7 +184,8 @@ A change has its own state: `recorded`, `undone` or `undo-requested`.
 | `claims` | id, session, pattern, created |
 | `tweaks` | number, session, page URL, status, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
 | `entries` | tweak, from, kind, text, at |
-| `changes` | tweak, file, contents before, patch, state |
+| `changes` | tweak, state, unrecorded files (JSON) |
+| `change_files` | change, path, contents before (or absent), contents after |
 | `events` | sequence, type, tweak or claim, payload (JSON), at |
 | `deliveries` | session, last acknowledged sequence |
 
@@ -316,9 +319,10 @@ to read it from stdin.
 | `tweak plan <n> <msg>` | posts an optional plan entry | `tweak 12: plan posted` |
 | `tweak ask <n> <msg>` | sets `question` | `tweak 12: question` |
 | `tweak done <n> <msg>` | sets `done` with the summary | `tweak 12: done` |
-| `tweak decline <n> <msg>` | sets `declined` with the reason | `tweak 12: declined` |
+| `tweak decline <n> <msg>` | sets `declined` with the reason; on an `undo-requested` change, refuses the undo instead and keeps the change | `tweak 12: declined` |
 | `tweak queue <n>…` | sets `queued` on one or more tweaks | one line per tweak |
-| `tweak undone <n> <msg>` | reports an undo conflict resolved by hand (mechanics: [Undo](https://github.com/codaset/tweak/issues/11)) | `tweak 12: undone` |
+| `tweak undo <n>` | prints the change to reverse by hand, conflicting files marked; starts no capture, changes no status | each file's diff |
+| `tweak undone <n> <msg>` | reports a conflicting undo resolved by hand; the change becomes `undone` | `tweak 12: undone` |
 | `tweak version` | | binary, bridge, protocol and extension versions |
 
 Internal: `tweak bridge` (the server), `tweak hook pre-edit`, `tweak hook session-end`.
@@ -334,7 +338,7 @@ One line per event, well under Monitor's 500 characters:
 ```
 tweak 12 new: make this button green and say "Save draft" [on /admin/users, 1 element]
 tweak 12 reply: yes, the outline variant
-tweak 12 undo-conflict: undo needs resolving
+tweak 12 undo-conflict: 2 of 3 files need resolving
 tweak 12 again: <the line it repeats>
 claim released: https://ernie.localhost/*
 ```
@@ -407,8 +411,12 @@ Each Monitor line starts with `tweak <n>`. Handle one tweak at a time, lowest nu
        example, the text comes from a CMS). Never report a declined tweak as done.
 - **`tweak <n> reply: …`**: the developer answered. Run `tweak work <n>` again (the brief now
   includes the conversation) and carry on from step 3.
-- **`tweak <n> undo-conflict: …`**: run `tweak work <n>`, reverse the change by hand around the
-  later edits, then run `tweak undone <n> '<what you did>'`.
+- **`tweak <n> undo-conflict: …`**: the developer clicked Undo, but later edits get in the way.
+  Run `tweak undo <n>` (not `tweak work`) to see the change, then reverse all of it by hand with your
+  edit tools, keeping the later edits. Finish with exactly one of:
+  - `tweak undone <n> '<what you did>'`. The page reloads by itself.
+  - `tweak decline <n> '<reason>'`, when the change shouldn't be undone (for example, later work
+    depends on it). The change stays, and the developer sees the reason.
 - **`tweak <n> again: …`**: a repeat of an event you may not have received. If you're already
   handling tweak `<n>`, ignore it. Otherwise treat it as the event it repeats.
 - **`claim released: …`**: say so in one line. The watcher stops by itself.
@@ -437,9 +445,6 @@ Don't stop the Monitor yourself.
 - Never commit changes.
 - Edit files with your edit tools, not shell commands, so the change can be undone.
 ````
-
-The `undo-conflict` steps are provisional until [Undo](https://github.com/codaset/tweak/issues/11)
-settles how a conflicting undo works.
 
 ## In the browser
 
@@ -490,14 +495,74 @@ while any of these is true:
 
 ## Undo
 
-- A Claude Code `PreToolUse` hook (`tweak hook pre-edit`) runs before Claude's file edits. While a
-  tweak is being worked on in that session, it saves the file's current content, labelled with the
-  tweak.
-- On done, the bridge stores the exact patch between those saved copies and the files now.
-- Undo, from the side panel, reverses the patch at once without involving Claude. If later edits
-  make it conflict, the undo goes to the session as a request for Claude to resolve.
-- Edits Claude makes through shell commands (e.g. `sed`) aren't captured. The card says so when a
-  change has none recorded.
+Decided in [Undo: attributing edits to a tweak, storing and reversing changes](https://github.com/codaset/tweak/issues/11);
+why the hook records and git only checks is in
+[ADR 0001](adr/0001-undo-capture-hook-records-git-checks.md).
+
+### Capture
+
+- At most one tweak per session is **capturing**. `tweak work <n>` makes it tweak *n*, replacing any
+  other. Capture ends at `tweak done`, `ask`, `decline`, `queue` or `release`, and when the session
+  ends (exit or `/clear`, through `tweak hook session-end`).
+- While a tweak is capturing, the bridge keeps a marker file at
+  `~/.local/state/codaset-tweak/capturing/<session-id>`.
+- **The edit hook** (`tweak hook pre-edit`, a `PreToolUse` hook on `^(Edit|Write|NotebookEdit)$`)
+  reads `session_id` from its input. With no marker it exits at once, without contacting the bridge.
+  With one, it posts the file's path to `POST /edits/before`, and the bridge saves the file's
+  current contents as the **before copy**, the first time each file is touched in this tweak only (a
+  file that doesn't exist yet is recorded as absent). The hook always exits 0 with no output, has a
+  2-second timeout, and never blocks or slows an edit; if the bridge is down, the edit just goes
+  unrecorded.
+- Subagent edits (same `session_id`, with an `agent_id`) count, and so do files outside the project.
+- **Each time capture ends**, the bridge reads the after contents of every recorded file and runs the
+  git check. A file whose before and after contents match (an edit denied after the hook ran) is
+  dropped. Only text files up to 2 MB are recorded; larger or binary files count as unrecorded.
+- **The git check**: when a tweak enters `working`, the bridge records the session folder's working
+  tree into a temporary git index (`GIT_INDEX_FILE`, seeded from a copy of the repo's own index, then
+  `git add -A` and `git write-tree`; your files and staging area are untouched; about 0.05 s on a
+  5,000-file repo). When capture ends it compares that tree with the files on disk. Files that changed
+  without passing through the hook (shell edits, or your own) are stored as **unrecorded files**.
+  Undo never touches them. Outside a git repo the check is skipped.
+- A reply followed by `tweak work` again extends the same change: the first before copies are kept,
+  and the after contents are read again at the next end. A tweak has one change, however many rounds
+  it takes. A tweak declined after partial edits keeps them as an undoable change.
+
+### Reversing
+
+Undo is all or nothing for the whole change, and final (no Redo in v1). The bridge checks every file
+before writing any:
+
+- **Unchanged since** (on disk equals the after contents): write the before contents back, or delete
+  the file if Claude created it.
+- **Already back to before**: nothing to do.
+- **Edited since**: a three-way merge in Go (base: after; one side: the file now; the other: before)
+  reverses the change around the later edits. A clean merge counts as clean.
+- **Conflicting merge, or the file deleted or recreated since**: the file conflicts.
+
+If every file is clean, the bridge writes them all, the change becomes `undone`, an `undo` entry from
+you goes in the conversation, and the page reloads as after a change. If any file conflicts, nothing
+is written and the change becomes `undo-requested`. It goes to the session that now claims the
+tweak's page as `tweak <n> undo-conflict: 2 of 3 files need resolving`, and Claude reverses it by
+hand (`tweak undo`, then `tweak undone` or `tweak decline`; see the skill). If no session claims the
+page, the request waits, and the card says "Needs a session to resolve: run `/tweak <origin>`"; it
+is delivered as soon as a claim covers the page. Undo work is never captured.
+
+### On the card
+
+Undo appears on the card of a tweak with a recorded change (done, or declined after edits) and on
+resolved tweaks in the side panel; not while the tweak is `working` or has a `question`. Undoing
+doesn't resolve the tweak or remove its pin. It stays available until the change is deleted, 7 days
+after resolution.
+
+- **Every edit recorded**: the files changed, and **Undo**.
+- **Some unrecorded**: also "Also changed while Claude worked, not recorded: `a.rb`, `b.css`". Undo
+  reverts only the recorded files, and says so.
+- **Nothing recorded, but the git check found changes, or there's no repo to check**: "No edits
+  recorded", and **Ask Claude to undo**, which goes to the session as an undo conflict.
+- **Nothing changed**: "No files changed", and no Undo.
+- Files outside the project carry an "outside this project" label in any of these lists.
+- While `undo-requested`: "Undo needs Claude…"; afterwards "Undone", or Claude's reason if it
+  declined the undo.
 
 ## Testing
 
@@ -550,3 +615,4 @@ out to be the slow part, add a project search to the bridge (Go, `.gitignore`-aw
 - Chrome's debugging interface (shows a permanent "is debugging this browser" bar); possibly later
   as a per-site opt-in
 - a project search in the bridge, unless the open measurement calls for it
+- Redo after Undo (send the tweak again instead)

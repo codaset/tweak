@@ -46,8 +46,9 @@ Chrome extension  ──HTTP (127.0.0.1)──>  tweak bridge (Go, SQLite)  <─
 ### Chrome extension
 
 - Manifest V3, plain JavaScript and web platform features, no UI framework, no build step.
-- Loaded unpacked from the plugin's folder in v1. `/tweak` warns when the loaded extension is older
-  than the plugin ("reload it in `chrome://extensions`"). The Chrome Web Store comes later.
+- Loaded unpacked in v1, from `~/.local/state/codaset-tweak/extension/`, which the bridge writes and
+  keeps at its own version; the extension reloads itself when that changes (see
+  [Installation and updates](#installation-and-updates)). The Chrome Web Store comes later.
 - Activates only on pages matching an active claim, learned from the bridge, by registering content
   scripts at runtime. Unclaimed pages are left untouched apart from the toolbar badge.
 
@@ -156,7 +157,7 @@ have contract tests against it.
 ### Plugin
 
 The `codaset` plugin, from a marketplace in this repo, contains the `tweak` skill, the launcher (which
-fetches the binary), the hook registration, and the extension folder. Install with
+fetches the binary) and the hook registration. The extension isn't in it: the binary carries it. Install with
 `/plugin marketplace add codaset/tweak`, then `/plugin install codaset@codaset`.
 
 ### Delivery to Claude
@@ -176,6 +177,70 @@ once Claude Code supports it. Claude Code 2.1.332 does not.
 The first `/tweak` starts the bridge in the background, detached from any session. Later sessions
 reuse it. It quits after 30 minutes with no claims and no browser connected. Nothing is lost, since
 state is in SQLite. It is not a launchd service.
+
+### Installation and updates
+
+Decided in [Installation: stable paths across plugin updates](https://github.com/codaset/tweak/issues/16).
+Claude Code keeps plugin files in a per-version cache folder (`${CLAUDE_PLUGIN_ROOT}`) that changes on
+every update and is deleted 14 days later, so nothing long-lived runs from it. The binary lives in
+`~/.local/state/codaset-tweak/bin/<version>/` (see [The launcher](#the-launcher)) and the extension in
+`~/.local/state/codaset-tweak/extension/`.
+
+**The extension folder**: the binary embeds the extension's files (`go:embed`, from a package at the
+module root over the top-level `extension/` folder), so the extension always matches the binary. When
+the bridge starts, it compares the `version` in `extension/manifest.json` with its own; if they differ
+(or the folder is missing), it writes `extension.new/`, renames the old folder aside, renames the new
+one into place and deletes the old one.
+
+**First install**: `tweak claim` warns `extension not connected` until an extension has ever said
+`hello`, with the steps: open `chrome://extensions`, turn on Developer mode, **Load unpacked**, and
+choose `~/.local/state/codaset-tweak/extension` (on macOS the file picker hides `~/.local`: press ⌘⇧G
+and paste the path).
+
+**The extension updates itself**: the bridge's reply to `hello` carries its version. If it differs from
+`chrome.runtime.getManifest().version`, the worker calls `chrome.runtime.reload()`, which reloads an
+unpacked extension from disk, picking up the folder the bridge rewrote.
+
+- It waits while you're in the middle of something (a composer open, pick mode on, or an unsent
+  draft) and reloads once none is.
+- A reload clears `chrome.storage.session`, so the worker copies its contents into
+  `chrome.storage.local` first and restores them in `onInstalled`: open cards and drafts survive.
+- Content scripts already in tabs lose the extension. Each removes its overlay when its port
+  disconnects and `chrome.runtime.id` is gone, and clears its run-once guard, so the worker's
+  `onInstalled` re-injection into claimed open tabs runs fresh scripts.
+- Afterwards a toast says "Codaset Tweak updated to X.Y.Z".
+- Before reloading, the worker stores the version it expects in `chrome.storage.local`. If its
+  version still differs after the reload, Chrome has a copy loaded from somewhere else (an old
+  plugin-cache path, a repo checkout), so it stops trying. The side panel says "Loaded from another
+  folder: remove it in `chrome://extensions` and load `~/.local/state/codaset-tweak/extension`", and
+  `tweak claim` relays the same warning from the version the bridge recorded at `hello`.
+
+**Handing over to a newer bridge**: any CLI command, not only `tweak claim`, that finds a bridge older
+than itself (from `bridge.json`, or the `x-tweak-version` header on every bridge response) replaces it
+and retries. This also covers an old session starting an old bridge after the newer one quit idle.
+
+1. The CLI sends `POST /shutdown`. The bridge closes WebSockets with a "restarting" close code,
+   finishes requests in flight, closes SQLite, removes `bridge.json` and exits.
+2. The CLI waits up to 5 seconds for the port to free, sends SIGTERM to the recorded PID if it hasn't,
+   then starts the new bridge.
+3. Two sessions upgrading at once race on the port: the bridge that fails to bind exits quietly, and
+   its CLI uses the winner.
+
+Watchers and the extension reconnect by themselves. `tweak hook pre-edit` waits up to 3 seconds for a
+bridge mid-restart, so an edit made during a handover keeps its before copy.
+
+**Older clients**: a bridge refuses a CLI or extension only when the protocol integer differs, not the
+version, so a session still on the previous plugin version keeps working through most releases. On a
+refusal `tweak watch` prints `bridge updated: run /reload-plugins, then /tweak <pattern> again` and
+exits. The session's claims stay (the session ID survives `/reload-plugins`, so claiming again is the
+same session) and lapse after 10 minutes if it doesn't.
+
+**Old binaries**: a starting bridge keeps the two newest version folders under `bin/` (old sessions'
+launchers still point at the previous one until `/reload-plugins`) and deletes the rest, ignoring
+failures (Windows can't delete a running `.exe`) and trying again on the next start.
+
+**Removing Tweak**: `/plugin uninstall codaset@codaset`, remove the extension in `chrome://extensions`,
+and delete `~/.local/state/codaset-tweak/`. There is no `tweak uninstall` in v1.
 
 ### Storage
 
@@ -553,7 +618,7 @@ to read it from stdin.
 
 | Command | Does | Prints |
 |---|---|---|
-| `tweak claim <url>` | starts the bridge, or restarts an older one; registers the session; checks versions and the allow rule; claims the pattern | the claim, any warnings (`allow rule missing`, extension needs reloading), "now run tweak watch" |
+| `tweak claim <url>` | starts the bridge, or restarts an older one; registers the session; checks versions and the allow rule; claims the pattern | the claim, any warnings (`allow rule missing`, `extension not connected`, extension loaded from another folder), "now run tweak watch" |
 | `tweak claims` | lists claims (`/tweak` with no URL) | pattern, session and folder, one per line |
 | `tweak release [pattern]` | releases one claim, or all of this session's | the released patterns |
 | `tweak watch` | the Monitor command: long-polls the inbox | event lines |
@@ -569,9 +634,10 @@ to read it from stdin.
 
 Internal: `tweak bridge` (the server), `tweak hook pre-edit`, `tweak hook session-end`.
 
-**Versions**: `tweak claim` restarts a running bridge older than itself (state is in SQLite;
-watchers and the extension reconnect). A newer bridge refuses the old CLI with "update the plugin,
-then `/reload-plugins`". An extension older than the plugin gets the reload warning.
+**Versions**: any command that finds a running bridge older than itself replaces it (state is in
+SQLite; watchers and the extension reconnect). A bridge refuses a CLI only on a protocol mismatch,
+with "update the plugin, then `/reload-plugins`". The extension keeps itself at the bridge's version.
+See [Installation and updates](#installation-and-updates).
 
 ### Event lines
 
@@ -584,6 +650,7 @@ tweak 12 undo-conflict: 2 of 3 files need resolving
 tweak 12 undo-conflict: no edits recorded, undo by hand
 tweak 12 again: <the line it repeats>
 claim released: https://ernie.localhost/*
+bridge updated: run /reload-plugins, then /tweak https://ernie.localhost/* again
 ```
 
 Only the developer's own words appear, cut at 300 characters with `…`. Page text (element labels,
@@ -625,7 +692,8 @@ contains a single quote, pass `-` and give the text on stdin.
 
 1. Run `tweak claim '<url>'`. It starts the bridge if needed and claims the pages.
    - If it is refused because another session holds an overlapping claim, show the message and stop.
-   - Relay any warning in one line (for example, the Chrome extension needs reloading).
+   - Relay any warning in one line (for example, the Chrome extension isn't connected yet, with its
+     install steps).
    - If it reports `allow rule missing`, ask the developer once whether to add `"Bash(tweak *)"` to
      `permissions.allow` in `~/.claude/settings.json`. Without it, later turns may stop for
      permission. Add it only on a yes. Then continue either way.
@@ -663,6 +731,9 @@ Each Monitor line starts with `tweak <n>`. Handle one tweak at a time, lowest nu
 - **`tweak <n> again: …`**: a repeat of an event you may not have received. If you're already
   handling tweak `<n>`, ignore it. Otherwise treat it as the event it repeats.
 - **`claim released: …`**: say so in one line. The watcher stops by itself.
+- **`bridge updated: …`**: a newer Tweak took over and this session's plugin is too old for it. Tell
+  the developer in one line to run `/reload-plugins`, then `/tweak` again. The watcher stops by
+  itself.
 
 ### While you're busy
 
@@ -731,8 +802,8 @@ active tab: everything in it is about the tab in front.
 - resolved tweaks, with Undo
 - claim status, with the `/tweak` command to copy
 - the per-site reload setting
-- connection status, and the extension version warning (shown when the bridge reports a newer
-  version)
+- connection status, "updated to X.Y.Z" after a self-update, and the "loaded from another folder"
+  warning when it can't update itself
 - optional-improvement suggestions
 
 ### Reloading after a change
@@ -886,9 +957,10 @@ plugins/codaset/
   bin/checksums.txt                 SHA-256 of each release binary
   skills/tweak/SKILL.md
   hooks/hooks.json
-  extension/                        manifest.json, worker, content scripts, side panel; loaded unpacked
   LICENSE
   THIRD_PARTY_NOTICES.md
+extension/                          manifest.json, worker, content scripts, side panel; embedded in the binary
+extension.go                        root package: go:embed of extension/
 cmd/tweak/                          main package
 internal/…                          bridge, CLI, hooks, store, brief, merge, … (split while building)
 go.mod
@@ -900,7 +972,9 @@ package.json                        dev only: ajv and the test scripts
 docs/  GLOSSARY.md  AGENTS.md  LICENSE
 ```
 
-The extension has no build step, so its source is the folder Chrome loads.
+The extension has no build step: its source is what the binary embeds and writes out for Chrome to
+load (see [Installation and updates](#installation-and-updates)). It isn't in the plugin, so the
+cached copy stays small.
 
 ### Versions
 
@@ -931,8 +1005,8 @@ PowerShell (`Invoke-WebRequest`, `Get-FileHash`), for `windows-amd64`.
 
 The launcher uses its own state folder, not `${CLAUDE_PLUGIN_DATA}`, because Claude Code doesn't set
 the plugin variables for commands run through the Bash tool. Removing old versions' binaries, and a
-running bridge handing over to a newer one, are decided in
-[Installation: stable paths across plugin updates](https://github.com/codaset/tweak/issues/16).
+running bridge handing over to a newer one, are in
+[Installation and updates](#installation-and-updates).
 
 ### Building
 
@@ -944,7 +1018,9 @@ quarantine flag on macOS, and Go ad-hoc signs `darwin/arm64` binaries itself.
 
 - `claude --plugin-dir plugins/codaset` loads the plugin in place.
 - `TWEAK_BIN=<path to a local build>` makes the launcher run that binary and skip the download.
-- The extension is loaded unpacked from `plugins/codaset/extension/`.
+- The extension is loaded unpacked from the repo's `extension/`. A development bridge (`TWEAK_BIN`
+  set) still writes its extension folder, under `TWEAK_STATE_DIR`, but sends no version in its
+  `hello` reply, so the repo copy never tries to update itself.
 - A development bridge must use its own `TWEAK_PORT` and `TWEAK_STATE_DIR` (which moves the whole
   state folder: database, screenshots, `bridge.json`, capture markers). When `TWEAK_BIN` is set, the
   CLI refuses to run on the default port or state folder, so a development build never reaches the
@@ -1009,6 +1085,8 @@ That order means no plugin version ever points at a release that doesn't exist y
   starts it as `${CLAUDE_PLUGIN_ROOT}/bin/tweak watch`).
 - Confirm a cross-compiled `darwin/arm64` binary, downloaded with `curl`, runs as-is (Go's ad-hoc
   signature, no quarantine flag).
+- For extension self-update: confirm `chrome.runtime.reload()` re-reads an unpacked extension's
+  files from disk, and that it clears `chrome.storage.session`.
 - Confirm Chrome for Testing in CI loads the unpacked extension (`--load-extension`, or Puppeteer's
   extension support).
 

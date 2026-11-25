@@ -17,8 +17,16 @@ A session's exclusive ownership of the pages matching a URL pattern, so their tw
 _Avoid_: subscription, binding, registration
 
 **Session**:
-One agent conversation (in v1, a Claude Code session) that can claim pages and receive their tweaks.
+One agent conversation (in v1, a Claude Code session) that can claim pages and receive their tweaks. It ends when the conversation does, including when it is cleared, and its claims end with it.
 _Avoid_: client, worker, listener
+
+**Watcher**:
+What a session runs to hear about new tweaks and replies on its claimed pages, one event at a time.
+_Avoid_: listener, poller, subscriber
+
+**Inbox**:
+The events waiting for a session, held until the session has taken each one up, so none is lost while its watcher is away.
+_Avoid_: mailbox, backlog
 
 **Done**:
 A tweak whose change Claude has finished and reported.

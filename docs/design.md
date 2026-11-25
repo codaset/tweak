@@ -165,7 +165,9 @@ fetches the binary) and the hook registration. The extension isn't in it: the bi
 Only through the skill and Claude Code's **Monitor** tool. The skill starts a Monitor running
 `tweak watch`, which long-polls the bridge's inbox and prints one short line per event (see
 [Event lines](#event-lines)). Each line arrives in the session as a Monitor event, which starts a
-turn in an idle session (verified in the prototype in the terminal). The skill re-arms the Monitor
+turn in an idle session: verified in the prototype in the terminal, and in a desktop-app Code session
+(Claude Code 2.1.332) with the app in front and in the background, waking about 2 seconds after the line. No
+desktop fallback is needed. The skill re-arms the Monitor
 when it expires (at most every 30 minutes).
 
 There is no channel launcher. MCP Events

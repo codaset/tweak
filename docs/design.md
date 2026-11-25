@@ -591,6 +591,9 @@ out to be the slow part, add a project search to the bridge (Go, `.gitignore`-aw
 
 ## Before building
 
+- For undo: confirm the `NotebookEdit` hook input (`notebook_path`; inferred, not documented), pick
+  a Go three-way merge that fits (a diff3-style merge over lines), and note that the `/clear`
+  `SessionEnd` check below also decides whether capture ends on `/clear`.
 - Read Handle (https://github.com/tonkotsu-ai/handle, MIT): code can be reused with credit.
 - Read Agentation (https://github.com/benjitaylor/agentation) for ideas only, copying no code: its
   licence has a non-compete clause that a competing tool would breach.

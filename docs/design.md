@@ -319,9 +319,9 @@ to read it from stdin.
 | `tweak plan <n> <msg>` | posts an optional plan entry | `tweak 12: plan posted` |
 | `tweak ask <n> <msg>` | sets `question` | `tweak 12: question` |
 | `tweak done <n> <msg>` | sets `done` with the summary | `tweak 12: done` |
-| `tweak decline <n> <msg>` | sets `declined` with the reason; on an `undo-requested` change, refuses the undo instead and keeps the change | `tweak 12: declined` |
+| `tweak decline <n> <msg>` | sets `declined` with the reason; on an `undo-requested` change, refuses the undo instead and keeps the change (back to `recorded`, or `nothing-recorded`) | `tweak 12: declined` |
 | `tweak queue <n>…` | sets `queued` on one or more tweaks | one line per tweak |
-| `tweak undo <n>` | prints the change to reverse by hand, conflicting files marked; starts no capture, changes no status | each file's diff |
+| `tweak undo <n>` | prints the change to reverse by hand, conflicting files marked; with nothing recorded, Claude's summary and the unrecorded files instead; starts no capture, changes no status | each file's diff |
 | `tweak undone <n> <msg>` | reports a conflicting undo resolved by hand; the change becomes `undone` | `tweak 12: undone` |
 | `tweak version` | | binary, bridge, protocol and extension versions |
 
@@ -339,6 +339,7 @@ One line per event, well under Monitor's 500 characters:
 tweak 12 new: make this button green and say "Save draft" [on /admin/users, 1 element]
 tweak 12 reply: yes, the outline variant
 tweak 12 undo-conflict: 2 of 3 files need resolving
+tweak 12 undo-conflict: no edits recorded, undo by hand
 tweak 12 again: <the line it repeats>
 claim released: https://ernie.localhost/*
 ```
@@ -558,7 +559,9 @@ after resolution.
 - **Some unrecorded**: also "Also changed while Claude worked, not recorded: `a.rb`, `b.css`". Undo
   reverts only the recorded files, and says so.
 - **Nothing recorded, but the git check found changes, or there's no repo to check**: "No edits
-  recorded", and **Ask Claude to undo**, which goes to the session as an undo conflict.
+  recorded", and **Ask Claude to undo**, which goes to the session as an undo conflict
+  (`tweak 12 undo-conflict: no edits recorded, undo by hand`). `tweak undo` then prints Claude's
+  summary and the unrecorded files, and a declined undo leaves the change `nothing-recorded`.
 - **Nothing changed**: "No files changed", and no Undo.
 - Files outside the project carry an "outside this project" label in any of these lists.
 - While `undo-requested`: "Undo needs Claude…"; afterwards "Undone", or Claude's reason if it

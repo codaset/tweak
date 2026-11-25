@@ -377,13 +377,15 @@ func TestQuitsWhenIdle(t *testing.T) {
 }
 
 func TestStaysUpWhileAClaimIsHeld(t *testing.T) {
-	h := start(t, idle(150*time.Millisecond))
+	// The claim is made over HTTP after the bridge starts, so the idle time
+	// must comfortably outlast two requests on a slow -race runner.
+	h := start(t, idle(time.Second))
 	h.register("s1", "/dev/ernie")
 	h.claim("s1", "https://ernie.localhost/*")
 	select {
 	case <-h.done:
 		t.Fatal("quit with a claim held")
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(1500 * time.Millisecond):
 	}
 	h.do(as("s1", req{method: "DELETE", path: "/claims"}))
 	select {

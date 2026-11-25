@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codaset Tweak</title>
+    <link rel="stylesheet" href="panel.css" />
+    <script type="module" src="panel.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Codaset Tweak</h1>
+      <p class="status" id="status" data-connection="connecting" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status-text">Connecting to Tweak…</span>
+      </p>
+    </header>
+
+    <main>
+      <section class="access" id="access" hidden aria-labelledby="access-title">
+        <h2 id="access-title">Allow access to your sites</h2>
+        <p>
+          Tweak shows its tools only on pages a Claude Code session has claimed, and takes a screenshot of what you point
+          at. Chrome asks once, for all sites, so new dev domains need no further prompt.
+        </p>
+        <button type="button" id="allow">Allow access</button>
+        <p class="note" id="allow-note" hidden>Chrome didn't grant access. Click again to retry.</p>
+      </section>
+
+      <section class="connection" id="not-connected" hidden aria-labelledby="not-connected-title">
+        <h2 id="not-connected-title">Not connected to Tweak</h2>
+        <p id="refusal" hidden></p>
+        <div id="start-hint">
+          <p>Start it from Claude Code:</p>
+          <div class="command">
+            <code id="command">/tweak &lt;your dev server's URL&gt;</code>
+            <button type="button" class="copy" id="copy" aria-label="Copy the command">Copy</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="claims" id="claims" hidden aria-labelledby="claims-title">
+        <h2 id="claims-title">Claimed pages</h2>
+        <ul id="claim-list"></ul>
+      </section>
+    </main>
+
+    <footer>
+      <form id="port-form" novalidate>
+        <label for="port">Bridge port</label>
+        <div class="port-row">
+          <input id="port" name="port" type="number" inputmode="numeric" min="1" max="65535" placeholder="47391" />
+          <button type="submit" id="save-port">Save</button>
+        </div>
+        <p class="note" id="port-note">Only if you set <code>TWEAK_PORT</code> for the bridge.</p>
+      </form>
+    </footer>
+  </body>
+</html>

@@ -28,6 +28,8 @@ func (b *Bridge) routes() http.Handler {
 	// Exempt from the protocol check, so any CLI can find and replace an older bridge.
 	mux.HandleFunc("GET /bridge", func(w http.ResponseWriter, r *http.Request) { reply(w, 200, b.info()) })
 	mux.HandleFunc("POST /shutdown", b.shutdown)
+	// The extension's socket: its protocol is checked in the hello.
+	mux.HandleFunc("GET /ws", b.socket)
 
 	api := http.NewServeMux()
 	api.HandleFunc("POST /sessions", b.registerSession)
@@ -67,6 +69,14 @@ func (b *Bridge) guard(next http.Handler) http.Handler {
 		switch origin := r.Header.Get("Origin"); {
 		case !hosts[strings.ToLower(r.Host)]:
 			refuse(w, 403, "forbidden", fmt.Sprintf("Host %q refused: use 127.0.0.1:%d", r.Host, b.Port()))
+		case r.URL.Path == "/ws":
+			// A WebSocket can't carry x-tweak, so its Origin must be exactly the
+			// extension's: never absent, never a web page's.
+			if origin != extensionOrigin {
+				refuse(w, 403, "forbidden", fmt.Sprintf("WebSocket from Origin %q refused: only the Codaset Tweak extension may connect", origin))
+				return
+			}
+			next.ServeHTTP(w, r)
 		case origin != "" && origin != extensionOrigin:
 			refuse(w, 403, "forbidden", fmt.Sprintf("Origin %q refused: only the Codaset Tweak extension and the CLI may call the bridge", origin))
 		case r.Header.Get(HeaderTweak) != "1":
@@ -172,6 +182,7 @@ func (b *Bridge) claim(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		b.internal(w, err)
 	default:
+		b.notify()
 		reply(w, 201, claimJSON(c))
 	}
 }
@@ -201,6 +212,8 @@ func (b *Bridge) release(w http.ResponseWriter, r *http.Request) {
 	default:
 		if released == nil {
 			released = []string{}
+		} else {
+			b.notify()
 		}
 		reply(w, 200, map[string][]string{"released": released})
 	}

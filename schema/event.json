@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/event.json",
+  "title": "event",
+  "description": "One entry from the bridge's event log, sent on the WebSocket after the snapshot, in seq order.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "event"
+    },
+    "seq": {
+      "description": "The event-log sequence.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "event": {
+      "enum": [
+        "claim-made",
+        "claim-released"
+      ]
+    },
+    "claim": {
+      "description": "With claim events: the claim as it was when the event happened.",
+      "$ref": "#/$defs/claim"
+    }
+  },
+  "required": [
+    "type",
+    "seq",
+    "event",
+    "claim"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "claim": {
+      "description": "A claim: a session's ownership of the pages matching a pattern.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pattern": {
+          "description": "The normalised Chrome match pattern, as the extension registers it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "session": {
+          "$ref": "#/$defs/session"
+        },
+        "created": {
+          "type": "string",
+          "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        }
+      },
+      "required": [
+        "id",
+        "pattern",
+        "session",
+        "created"
+      ],
+      "additionalProperties": false
+    },
+    "session": {
+      "description": "A session: one agent conversation.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "folder": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "lastCheckIn": {
+          "type": "string",
+          "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        }
+      },
+      "required": [
+        "id",
+        "agent",
+        "folder",
+        "label",
+        "lastCheckIn"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -76,9 +76,10 @@ state. Registrations stay in place but don't inject until access is granted agai
 
 The overlay lives in a closed shadow root with its own styles. Nothing is added to the page's CSS.
 
-**Claims and registration**: each claim has one registration, `claim-<id>`, using the claim's
-pattern as-is. It holds the page probe (at `document_start`, before the page's own scripts) and the
-content script, top frame only (`allFrames: false`). The worker compares registrations with the claims after the snapshot and
+**Claims and registration**: each claim's scripts are registered under `claim-<id>`, using the
+claim's pattern as-is: the content script as `claim-<id>` and the page probe as `claim-<id>-probe`,
+since a registration holds one world. Both run at `document_start` (the probe before the page's own
+scripts), top frame only (`allFrames: false`). The worker compares registrations with the claims after the snapshot and
 after every claim event. It keeps the last-known claims in `chrome.storage.local`. Chrome wipes
 runtime registrations on install and update (including reloading the unpacked extension), so on
 `onInstalled` and `onStartup` the worker re-registers from that copy at once, then corrects itself

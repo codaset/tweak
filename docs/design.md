@@ -87,8 +87,10 @@ when the bridge snapshot arrives. Tabs already open when a claim starts get the 
 
 **Staying connected**: while connected, the WebSocket keepalive keeps the worker awake. When the
 bridge can't be reached, the worker retries with backoff while awake, and a `chrome.alarms` alarm
-(every 30 seconds, the minimum) wakes it to try again. The worker keeps open tweaks in memory only:
-on every start it sends `hello` with `lastSeq: 0` and rebuilds from the snapshot. Each content
+(every 30 seconds, the minimum) wakes it to try again. The worker works from the bridge's snapshot:
+on every start it sends `hello` with `lastSeq: 0` and rebuilds from it. It also keeps the last
+snapshot of open tweaks in `chrome.storage.session`, so pins and cards survive a worker restart
+while the bridge is down (see [When the bridge or extension is down](#when-the-bridge-or-extension-is-down)). Each content
 script holds a `runtime.connect` port, gets its page's tweaks when it connects, and reconnects when
 the worker restarts.
 
@@ -177,8 +179,10 @@ once Claude Code supports it. Claude Code 2.1.332 does not.
 ### Bridge lifetime
 
 The first `/tweak` starts the bridge in the background, detached from any session. Later sessions
-reuse it. It quits after 30 minutes with no claims and no browser connected. Nothing is lost, since
-state is in SQLite. It is not a launchd service.
+reuse it. Any later command that finds no bridge starts one too; the hooks never do. It quits after
+30 minutes with no claims and no browser connected, so with Chrome open a missing bridge means it
+crashed, the Mac restarted, or no session has started it yet. Nothing is lost, since state is in
+SQLite. It is not a launchd service.
 
 ### Installation and updates
 
@@ -224,7 +228,9 @@ and retries. This also covers an old session starting an old bridge after the ne
 1. The CLI sends `POST /shutdown`. The bridge closes WebSockets with a "restarting" close code,
    finishes requests in flight, closes SQLite, removes `bridge.json` and exits.
 2. The CLI waits up to 5 seconds for the port to free, sends SIGTERM to the recorded PID if it hasn't,
-   then starts the new bridge.
+   then starts the new bridge. If that bridge fails to start or doesn't answer within 5 seconds, the
+   CLI starts the previous version again (see
+   [When the bridge or extension is down](#when-the-bridge-or-extension-is-down)).
 3. Two sessions upgrading at once race on the port: the bridge that fails to bind exits quietly, and
    its CLI uses the winner.
 
@@ -243,6 +249,64 @@ failures (Windows can't delete a running `.exe`) and trying again on the next st
 
 **Removing Tweak**: `/plugin uninstall codaset@codaset`, remove the extension in `chrome://extensions`,
 and delete `~/.local/state/codaset-tweak/`. There is no `tweak uninstall` in v1.
+
+### When the bridge or extension is down
+
+Decided in [Failure states: bridge and extension not connected](https://github.com/codaset/tweak/issues/22).
+The Claude side of the same question is in [When the session goes quiet](#when-the-session-goes-quiet).
+Browser text calls the bridge "Tweak"; CLI and skill text call it "the bridge".
+
+**In the browser, while the bridge is down**:
+
+- Pins and cards stay on the page from the cached snapshot, faded; cards are read-only.
+- The badge shows the grey `!` ("action needed").
+- Pick mode, ⌥-click and the toolbar button open the side panel instead, which says "Not connected to
+  Tweak. Start it from Claude Code with `/tweak <origin>`", with the command to copy, and the port
+  field where the port was changed.
+- Every action that needs the bridge is refused, not held: Send, Reply, Withdraw, Undo, Ask Claude to
+  undo, Send again and Resolve are disabled with "Not connected to Tweak". Drafts and half-written
+  replies are kept, and sending works again once connected. Hiding pins and the per-site reload
+  setting are local and keep working.
+- On reconnect the snapshot replaces the cache, and registrations are corrected as usual.
+
+**On the CLI side**:
+
+- Any command that finds no bridge starts one, as `tweak claim` does.
+- `tweak watch` reconnects with backoff (1, 2, 5 s, then every 10 s) and, after 10 seconds without an
+  answer (longer than a handover takes), starts the bridge itself. It prints nothing about this. It
+  exits only on `claim released`, `bridge updated`, or a bridge that can't be started.
+- A bridge that can't start prints one line saying why, for example `port 47391 is in use by another
+  program: set TWEAK_PORT`, or the start error and the log path.
+- **Downtime doesn't count toward lapses**: on start, the bridge sets every session's last check-in to
+  now, so the 10-minute lapse and the 24-hour restore window count only time the bridge was up.
+- **The hooks never start a bridge**. `tweak hook pre-edit` keeps its 2-second budget (the 3-second
+  wait is only for a handover in progress), so edits made while the bridge is down go unrecorded.
+  `tweak hook session-end`, finding no bridge, writes `~/.local/state/codaset-tweak/released/<session-id>`,
+  and the next bridge to start releases those claims at once.
+
+**The extension never connects**: the bridge records when the extension was last connected, and
+`tweak claim` (only that command) warns in one of two forms:
+
+- never connected: `extension not connected`, with the install steps (see
+  [Installation and updates](#installation-and-updates));
+- connected before but not now: `Chrome extension not connected (last seen 2 h ago): is Chrome open
+  with Codaset Tweak enabled?`
+
+When the extension connects, each watcher with claims prints `extension connected`, and the skill
+relays it. There's no timeout: without the extension nothing can be sent.
+
+**A handover that fails**: when the new bridge fails to start or doesn't answer within 5 seconds, the
+CLI starts the previous version's binary again (the two newest are kept), prints
+`couldn't start bridge 1.4.0 (<error>); kept 1.3.2 running`, and carries on against it. The warning
+repeats on the next command that tries the handover. The extension reconnects to the old bridge. If
+the old one won't start either, the command fails with both errors.
+
+- Each database migration runs in one transaction, so a failed migration leaves `tweak.db` untouched.
+- Before migrating, the bridge copies the database to `tweak.db.bak-<old version>`, keeping only the
+  newest copy.
+- The schema version is stored in the database, and a bridge refuses a newer one
+  (`database is from Tweak 1.4.0; this is 1.3.2`); a rollback then fails with both errors, naming the
+  backup.
 
 ### Storage
 
@@ -672,7 +736,7 @@ Decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak
 
 Output is plain text for Claude to read: the brief is Markdown on stdout, status commands print one
 confirmation line (`tweak 12: done`), and errors go to stderr with a non-zero exit and a line saying
-what to do (`bridge not running: run tweak claim again`). A message is one quoted argument, or `-`
+what to do (`port 47391 is in use by another program: set TWEAK_PORT`). A message is one quoted argument, or `-`
 to read it from stdin.
 
 | Command | Does | Prints |
@@ -711,6 +775,7 @@ tweak 12 again: <the line it repeats>
 claim released: https://ernie.localhost/*
 bridge updated: run /reload-plugins, then /tweak https://ernie.localhost/* again
 tweak 12 withdrawn
+extension connected
 claim restored: https://ernie.localhost/*
 claim lost: https://ernie.localhost/* is now claimed by the session in ~/dev/ernie-2
 ```
@@ -754,8 +819,9 @@ contains a single quote, pass `-` and give the text on stdin.
 
 1. Run `tweak claim '<url>'`. It starts the bridge if needed and claims the pages.
    - If it is refused because another session holds an overlapping claim, show the message and stop.
-   - Relay any warning in one line (for example, the Chrome extension isn't connected yet, with its
-     install steps).
+   - Relay any warning in one line: the Chrome extension isn't connected yet (give its install
+     steps), or it was connected before but isn't now (ask whether Chrome is open with Codaset Tweak
+     enabled).
    - If it reports `allow rule missing`, ask the developer once whether to add `"Bash(tweak *)"` to
      `permissions.allow` in `~/.claude/settings.json`. Without it, later turns may stop for
      permission. Add it only on a yes. Then continue either way.
@@ -801,6 +867,8 @@ Each Monitor line starts with `tweak <n>`. Handle one tweak at a time, lowest nu
 - **`tweak <n> withdrawn`**: the developer took the tweak back. If you're working on it, stop and run
   `tweak decline <n> 'withdrawn'`; any edits stay undoable. If you haven't started it, drop it.
 - **`claim restored: …`**: carry on without comment.
+- **`extension connected`**: say in one line that Chrome is connected and they can ⌥-click an
+  element to send a tweak.
 - **`claim lost: …`** (as an event, or printed by a command): tell the developer in one line that
   another session now has those pages. Stop work on their tweaks and run no more commands on them.
 
@@ -816,7 +884,9 @@ tweak's edits separate from other work.
 When the Monitor reports `[Monitor expired`, or a `tweak` command warns `no watcher running`, start
 the Monitor again with the same arguments, without comment. If it ends any other way (not after
 `claim released` or `bridge updated`), start it again once. If it ends again within a minute, tell
-the developer in one line with the error and stop restarting it.
+the developer in one line with the error and stop restarting it. If `tweak watch` or another
+command says the bridge can't be started, tell the developer in one line with its reason and stop
+restarting the Monitor.
 
 ## Stopping
 

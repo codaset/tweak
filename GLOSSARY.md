@@ -44,6 +44,10 @@ _Avoid_: closed, dismissed, archived
 A tweak you took back before Claude finished it. It is resolved, and any edits already made stay undoable.
 _Avoid_: cancelled, aborted, deleted
 
+**Bridge**:
+The local Tweak service that holds tweaks and connects the browser to sessions. In the browser it is just "Tweak".
+_Avoid_: server, daemon, backend
+
 **Brief**:
 Everything Claude receives about a tweak: the request, what it points at, where that lives in the source, and how it looks and is built.
 _Avoid_: context, payload, prompt

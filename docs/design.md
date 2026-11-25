@@ -145,17 +145,19 @@ can't wake an idle session until Claude Code supports MCP Events, and the watche
 shell commands anyway. v1 is CLI only; an MCP server comes with MCP Events, when it can replace the
 watcher rather than sit beside it.
 
-Built for macOS arm64 and Intel, Linux x64 and arm64, and Windows x64 (about 8 MB each), all shipped
-in the plugin behind a small launcher that runs the right one. Windows is marked untested until
-someone runs it there.
+Built for macOS arm64 and Intel, Linux x64 and arm64, and Windows x64 (about 8 MB each). The
+binaries aren't in the plugin or the repo: they are attached to each GitHub Release, and the plugin's
+small launcher downloads the right one on first run (see [Repo, build and release](#repo-build-and-release)).
+Windows is marked untested until someone runs it there.
 
 The bridge and the extension share one JSON schema for every message (`schema/`), and both sides
 have contract tests against it.
 
 ### Plugin
 
-The `codaset` plugin, from a marketplace in this repo, contains the `tweak` skill, the binaries and
-launcher, the hook registration, and the extension folder.
+The `codaset` plugin, from a marketplace in this repo, contains the `tweak` skill, the launcher (which
+fetches the binary), the hook registration, and the extension folder. Install with
+`/plugin marketplace add codaset/tweak`, then `/plugin install codaset@codaset`.
 
 ### Delivery to Claude
 
@@ -840,7 +842,12 @@ Test behaviour where it lives.
 - **Bridge**: `go test` against a real bridge on a random port with a temporary database. Tests
   never touch a developer's live bridge or sessions (the prototype once sent a test note to a live
   session).
-- **Message schema**: contract tests on both the Go and JavaScript sides.
+- **Security**: contract tests in the bridge suite that a request with a web `Origin`, one without
+  the `x-tweak` header, and one with a `Host` other than `127.0.0.1:<port>` or `localhost:<port>`
+  are all refused, and that a WebSocket from any origin but the extension's is refused.
+- **Message schema**: contract tests on both sides against `schema/examples/`: Go with
+  `santhosh-tekuri/jsonschema`, JavaScript with `node --test` and `ajv` (the only devDependency, in a
+  dev-only `package.json` at the root; the shipped extension has no dependencies).
 - **Extension**: end-to-end in headless Chrome against fixture apps. Each checks that clicking an
   element yields the right source location or search clues:
   - plain static HTML
@@ -858,6 +865,129 @@ During v1 testing, time each tweak from delivery to Claude's first edit. If find
 out to be the slow part, add a project search to the bridge (Go, `.gitignore`-aware, capped at about
 200 ms) that puts candidate files in the brief.
 
+## Repo, build and release
+
+Decided in [Repo layout, build and release](https://github.com/codaset/tweak/issues/14); why the
+binaries are fetched rather than shipped in the plugin is in
+[ADR 0003](adr/0003-binaries-fetched-on-first-run.md).
+
+### Layout
+
+One Go module, `github.com/codaset/tweak`, at the root. Everything Claude Code copies into its plugin
+cache is under `plugins/codaset/`; sources, tests and fixtures stay outside it, so the cached copy is
+small.
+
+```
+.claude-plugin/marketplace.json     marketplace "codaset"; one entry, source ./plugins/codaset
+plugins/codaset/
+  .claude-plugin/plugin.json        name "codaset", pinned version
+  bin/tweak                         launcher, POSIX sh
+  bin/tweak.cmd                     launcher, Windows (PowerShell)
+  bin/checksums.txt                 SHA-256 of each release binary
+  skills/tweak/SKILL.md
+  hooks/hooks.json
+  extension/                        manifest.json, worker, content scripts, side panel; loaded unpacked
+  LICENSE
+  THIRD_PARTY_NOTICES.md
+cmd/tweak/                          main package
+internal/…                          bridge, CLI, hooks, store, brief, merge, … (split while building)
+go.mod
+schema/                             JSON Schema files, and examples/
+test/extension/                     JavaScript unit and contract tests (node --test)
+test/e2e/                           end-to-end runner
+fixtures/<app>/                     fixture apps
+package.json                        dev only: ajv and the test scripts
+docs/  GLOSSARY.md  AGENTS.md  LICENSE
+```
+
+The extension has no build step, so its source is the folder Chrome loads.
+
+### Versions
+
+One version number, `X.Y.Z`, for the plugin, the binary and the extension. It is pinned as `version`
+in `plugin.json`, so a push without a version change ships nothing, and Claude Code updates a plugin
+only when it changes. The same number is in the extension's `manifest.json` `version` (Chrome takes
+only dot-separated integers, so there are no prerelease suffixes), the launcher's `VERSION=` line, and
+the binary, set with `-ldflags -X`. The protocol version is a separate integer, raised only when the
+bridge contract changes (see [Bridge contract](#bridge-contract)).
+
+### The launcher
+
+`bin/tweak` is what `PATH` finds and what hooks call (`"${CLAUDE_PLUGIN_ROOT}/bin/tweak"`). The
+release stamps `VERSION=X.Y.Z` into it, and `checksums.txt` sits beside it. On every run it:
+
+1. picks `<os>-<arch>` from `uname` (`darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`);
+2. if `~/.local/state/codaset-tweak/bin/X.Y.Z/tweak` exists, `exec`s it with the same arguments;
+3. otherwise downloads the bare binary (no archive) from
+   `https://github.com/codaset/tweak/releases/download/vX.Y.Z/tweak-<os>-<arch>` with `curl -fsSL` into
+   a temporary file in that folder, checks its SHA-256 against `checksums.txt` (`shasum -a 256` or
+   `sha256sum`), makes it executable and renames it into place, then `exec`s it. The rename is atomic,
+   so two sessions fetching at once is safe.
+
+On failure it prints one line on stderr and exits 1:
+`couldn't download tweak X.Y.Z (<reason>): check your connection and run the command again`. A
+checksum mismatch deletes the download and says so. `bin/tweak.cmd` does the same on Windows with
+PowerShell (`Invoke-WebRequest`, `Get-FileHash`), for `windows-amd64`.
+
+The launcher uses its own state folder, not `${CLAUDE_PLUGIN_DATA}`, because Claude Code doesn't set
+the plugin variables for commands run through the Bash tool. Removing old versions' binaries, and a
+running bridge handing over to a newer one, are decided in
+[Installation: stable paths across plugin updates](https://github.com/codaset/tweak/issues/16).
+
+### Building
+
+Cross-compiled with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X <version var>=X.Y.Z"` for
+the five targets, named `tweak-<os>-<arch>` (`.exe` on Windows). No signing: `curl` downloads carry no
+quarantine flag on macOS, and Go ad-hoc signs `darwin/arm64` binaries itself.
+
+### Working on Tweak itself
+
+- `claude --plugin-dir plugins/codaset` loads the plugin in place.
+- `TWEAK_BIN=<path to a local build>` makes the launcher run that binary and skip the download.
+- The extension is loaded unpacked from `plugins/codaset/extension/`.
+- A development bridge must use its own `TWEAK_PORT` and `TWEAK_STATE_DIR` (which moves the whole
+  state folder: database, screenshots, `bridge.json`, capture markers). When `TWEAK_BIN` is set, the
+  CLI refuses to run on the default port or state folder, so a development build never reaches the
+  live bridge or its sessions.
+
+### Extension key
+
+The manifest's `key` is the public half of a key pair generated once; it fixes the extension ID the
+bridge checks. The private `key.pem` is never in the repo. It is kept in the author's password
+manager, and only a future Chrome Web Store upload needs it, to keep the same ID.
+
+### Third-party notices
+
+Code ported from Handle (MIT, "Copyright 2026 Tonkotsu AI, Inc.") keeps its notice:
+`plugins/codaset/THIRD_PARTY_NOTICES.md` holds the copyright line and the MIT text, so every installed
+copy carries it, and each derived file starts with
+`// Portions adapted from Handle, Copyright 2026 Tonkotsu AI, Inc., MIT; see THIRD_PARTY_NOTICES.md`.
+There is no build step to strip either.
+
+### CI (GitHub Actions)
+
+On every push and pull request:
+
+| Job | Runs |
+|---|---|
+| `go` | `gofmt` check, `go vet`, `go test -race` on Ubuntu and macOS; a cross-compile of all five targets (Windows is build-only) |
+| `js` | `node --test` for the extension's unit and contract tests |
+| `e2e` | headless Chrome for Testing on Ubuntu with the unpacked extension loaded, against the fixture apps (branded Chrome 137+ no longer loads unpacked extensions from the command line) |
+| `consistency` | the version in `plugin.json`, `manifest.json` and the launcher agree; `claude plugin validate plugins/codaset` passes |
+
+### Releasing
+
+Only through the `release` workflow (`workflow_dispatch`, with the version as input); versions are
+never edited by hand. It:
+
+1. runs every CI job and stops on any failure;
+2. builds the five binaries with the version and writes `checksums.txt`;
+3. creates the GitHub Release `vX.Y.Z` with the binaries and `checksums.txt` attached;
+4. only then commits the version stamp to `main` (`plugin.json`, `manifest.json`, the launcher's
+   `VERSION=` line, `bin/checksums.txt`) and tags that commit `vX.Y.Z`.
+
+That order means no plugin version ever points at a release that doesn't exist yet.
+
 ## Before building
 
 - For undo: confirm the `NotebookEdit` hook input (`notebook_path`; inferred, not documented), pick
@@ -874,6 +1004,13 @@ out to be the slow part, add a project search to the bridge (Go, `.gitignore`-aw
   whether a running Monitor survives. If the hook gets the new ID, claims fall back to the 10-minute
   lapse. Also check whether a skill's `allowed-tools` grant holds in a turn started by a Monitor
   event, and whether events arrive mid-turn or only between turns.
+- For the launcher: confirm the exec bit on `bin/tweak` survives Claude Code's copy into the plugin
+  cache, and whether a Monitor finds `tweak` on `PATH` like the Bash tool does (if not, the skill
+  starts it as `${CLAUDE_PLUGIN_ROOT}/bin/tweak watch`).
+- Confirm a cross-compiled `darwin/arm64` binary, downloaded with `curl`, runs as-is (Go's ad-hoc
+  signature, no quarantine flag).
+- Confirm Chrome for Testing in CI loads the unpacked extension (`--load-extension`, or Puppeteer's
+  extension support).
 
 ## Not in v1
 

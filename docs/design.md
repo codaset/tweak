@@ -1305,7 +1305,8 @@ other licence-like file (`LICENSE-*`, `NOTICE`, `PATENTS`, …) in the module's 
 of a compiled package, such as musl's MIT notice in `modernc.org/libc`'s `LICENSE-3RD-PARTY.md` and
 the standard library's vendored `golang.org/x` licences. The module's own `LICENSE` (or `LICENCE` or
 `COPYING`) must match the text of MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0 or ISC word for word,
-apart from the copyright lines and holder's name; a missing or other licence fails the run. Those
+apart from the holder's name and the lines before it (only copyright lines, URLs and a title naming
+the licence); a missing or other licence fails the run. Those
 copied extra files aren't checked, so some mention licences of code that isn't compiled in. CI runs
 the generator on every push, so a new dependency fails there before a release finds it. Like
 `bin/checksums.txt`, the file doesn't exist until the first release.

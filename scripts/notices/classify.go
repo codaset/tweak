@@ -15,10 +15,6 @@ import (
 //go:embed licences/*.txt
 var licenceFiles embed.FS
 
-// A licence file may start with up to this many words before the licence
-// itself: a title, the project's name, copyright lines.
-const maxPreamble = 40
-
 type template struct {
 	name string
 	re   *regexp.Regexp
@@ -37,10 +33,9 @@ func loadTemplates() []template {
 		if err != nil {
 			panic(err)
 		}
-		body := templatePattern(string(text))
 		out = append(out, template{
 			name: strings.TrimSuffix(e.Name(), path.Ext(e.Name())),
-			re:   regexp.MustCompile(`^(?:(\S+(?: \S+)*?) )?` + body + `$`),
+			re:   regexp.MustCompile(`^` + templatePattern(withoutPreamble(string(text))) + `$`),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
@@ -71,10 +66,32 @@ func templatePattern(text string) string {
 }
 
 var (
+	// Lines a licence file may start with before the licence itself: blank
+	// lines, copyright lines, "All rights reserved", a URL, or a short title
+	// naming a licence ("MIT License (Expat)", "Apache License"). Anything
+	// else, such as an added restriction, must be part of the licence text.
+	copyrightLine = regexp.MustCompile(`(?i)^(copyright\b|\(c\)|©)`)
+	rightsLine    = regexp.MustCompile(`(?i)^all rights reserved\.?$`)
+	urlLine       = regexp.MustCompile(`^<?https?://\S+$`)
+	titleLine     = regexp.MustCompile(`(?i)^(the )?[\w.-]+( [\w.-]+)? licen[cs]e( \([\w.-]+\))?$`)
+
 	urls    = regexp.MustCompile(`<?https?://[^\s>]+>?`)
 	nonWord = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 	digits  = regexp.MustCompile(`^\p{N}+$`)
 )
+
+// withoutPreamble drops the lines before the licence itself.
+func withoutPreamble(text string) string {
+	lines := strings.SplitAfter(text, "\n")
+	for i, line := range lines {
+		l := strings.TrimSpace(strings.TrimLeft(line, " \t/*#"))
+		if l != "" && !copyrightLine.MatchString(l) && !rightsLine.MatchString(l) &&
+			!urlLine.MatchString(l) && !titleLine.MatchString(l) {
+			return strings.Join(lines[i:], "")
+		}
+	}
+	return ""
+}
 
 // words reduces a text to its lower-case words, so layout, punctuation,
 // clause numbers and URLs don't matter.
@@ -92,10 +109,9 @@ func words(text string) []string {
 // identify names the allowlisted licence a licence file holds, or reports
 // false when it holds anything else.
 func identify(text string) (string, bool) {
-	normal := strings.Join(words(text), " ")
+	normal := strings.Join(words(withoutPreamble(text)), " ")
 	for _, t := range templates {
-		m := t.re.FindStringSubmatch(normal)
-		if m != nil && len(strings.Fields(m[1])) <= maxPreamble {
+		if t.re.MatchString(normal) {
 			return t.name, true
 		}
 	}

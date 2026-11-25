@@ -57,7 +57,13 @@ func TestRefusesAnythingElse(t *testing.T) {
 			"Everyone is permitted to copy and distribute verbatim copies of this license document.",
 		"MIT with an extra condition": strings.Replace(mit, "copies or substantial portions of the Software.",
 			"copies or substantial portions of the Software.\n\nThe Software shall be used for Good, not Evil.", 1),
-		"MIT with a sentence after it": mit + "\nThis licence doesn't apply to commercial use.\n",
+		"MIT with a sentence after it":     mit + "\nThis licence doesn't apply to commercial use.\n",
+		"MIT with a restriction before it": "This software may not be used commercially.\n\n" + mit,
+		// Only copyright lines, URLs and a title naming a licence may come
+		// first, so even a harmless project-name line fails safe.
+		"MIT after the project's name": "Gocheck - A rich testing framework for Go\n\n" + mit,
+		"MIT with a restriction after its title": strings.Replace(mit, "MIT License\n",
+			"MIT License\nNot for use in weapons systems.\n", 1),
 		"BSD with an advertising clause": strings.Replace(bsd3, "THIS SOFTWARE IS PROVIDED",
 			advertising+"THIS SOFTWARE IS PROVIDED", 1),
 		"half an MIT licence": mit[:len(mit)/2],

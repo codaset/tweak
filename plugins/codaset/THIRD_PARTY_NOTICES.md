@@ -4,6 +4,10 @@ Notices for third-party code adapted into Codaset Tweak. Each derived file start
 its source and pointing here. Handle's notice is kept here ahead of the first port, since its code is
 planned for reuse.
 
+The licences of the Go code compiled into the `tweak` binary (the Go standard library and every
+module) are in [THIRD_PARTY_NOTICES_GO.md](THIRD_PARTY_NOTICES_GO.md), which each release generates
+for the binaries it builds.
+
 ## Handle
 
 https://github.com/tonkotsu-ai/handle

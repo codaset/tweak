@@ -273,7 +273,18 @@
     let queued = false;
     let raise = false;
 
-    // home is where the host belongs: the topmost open modal dialog, or the document.
+    // opened puts a dialog that has just become modal on top. The observer's
+    // records come in the order the page called showModal, so they decide.
+    function opened(d) {
+      if (!d.matches(":modal")) return;
+      const i = modals.indexOf(d);
+      if (i >= 0) modals.splice(i, 1);
+      modals.push(d);
+    }
+
+    // home is where the host belongs: the topmost open modal dialog, or the
+    // document. Modals found only here (open before this script ran) are
+    // taken in document order, which is the best guess.
     function home() {
       for (let i = modals.length - 1; i >= 0; i--) if (!modals[i].isConnected || !modals[i].matches(":modal")) modals.splice(i, 1);
       for (const d of document.querySelectorAll("dialog:modal")) if (!modals.includes(d)) modals.push(d);
@@ -321,8 +332,13 @@
     // The fallback: a dialog's open attribute changes as showModal and close
     // run, and the page may remove the dialog the host is in, or the host.
     const observer = new MutationObserver((records) => {
-      const dialog = records.some((r) => r.type === "attributes" && r.target.localName === "dialog");
-      if (dialog || !ns.overlay.host?.isConnected || modals.some((d) => !d.isConnected)) soon();
+      let dialog = false;
+      for (const r of records) {
+        if (r.type !== "attributes" || r.target.localName !== "dialog") continue;
+        dialog = true;
+        if (r.target.hasAttribute("open")) opened(r.target);
+      }
+      if (dialog ||!ns.overlay.host?.isConnected || modals.some((d) => !d.isConnected)) soon();
     });
 
     return {

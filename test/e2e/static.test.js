@@ -58,6 +58,18 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     });
   });
 
+  test("with two modal dialogs open, the host is in the one opened last, then in the one under it", async () => {
+    await open(env);
+    const inside = (id) => `ns.overlay.host.parentNode === document.getElementById(${JSON.stringify(id)}) && ns.overlay.host.matches(":popover-open")`;
+    // #confirm comes first in the document but opens second, in the same task.
+    await env.page.evaluate(`document.getElementById("profile").showModal(); document.getElementById("confirm").showModal()`);
+    await env.tab.until(inside("confirm"), { what: "the host in the dialog opened last" });
+    await env.page.evaluate(`document.getElementById("confirm").close()`);
+    await env.tab.until(inside("profile"), { what: "the host in the dialog left open" });
+    await env.page.evaluate(`document.getElementById("profile").close()`);
+    await env.tab.until(`ns.overlay.host.parentNode === document.documentElement`, { what: "the host back on the document" });
+  });
+
   test("a page popover opened while composing goes under the overlay, and the draft keeps the focus", async () => {
     await open(env);
     await pick(env, { selector: "#save" });

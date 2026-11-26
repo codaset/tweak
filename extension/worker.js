@@ -10,6 +10,7 @@ import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
 import { applyTweaks, forPage, pageOf } from "./lib/tweaks.js";
+import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
 
 const KEEPALIVE_MS = 20_000; // WebSocket traffic keeps the worker awake (Chrome 116+)
@@ -25,7 +26,6 @@ let heardFromBridge = false; // once true, the cache is out of date
 // The open tweaks as of event seq. Kept in storage.session too, so pins and
 // cards survive a worker restart while the bridge is down.
 let tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks: [] });
-const tweaksRestored = restoreTweaks();
 
 // ---- Listeners ----
 
@@ -74,6 +74,8 @@ function publish(changes) {
 const setStatus = (event, changes = {}) => publish({ ...nextStatus(view, event), ...changes });
 
 const selfUpdate = createSelfUpdate({ publish });
+// After the self-update's restore: storage.session may be coming back from it.
+const tweaksRestored = restoreTweaks();
 
 // ---- Tweaks in tabs ----
 
@@ -87,10 +89,11 @@ async function onTabMessage(port, msg) {
   switch (msg.type) {
     case "page": {
       port.page = pageOf(msg.url);
+      port.url = msg.url;
       await tweaksRestored;
       const key = cardKey(tabId);
       const { [key]: card = null } = await chrome.storage.session.get(key);
-      port.postMessage({ type: "tweaks", tweaks: forPage(tweakState, port.page), card });
+      port.postMessage({ type: "tweaks", tweaks: forPage(tweakState, port.page), card, claimed: claimed(port.url) });
       break;
     }
     case "card":
@@ -105,7 +108,12 @@ async function onTabMessage(port, msg) {
   }
 }
 
+// claimed says whether any claim covers a URL: a tab whose page none does
+// goes dormant (no picker, no pins).
+const claimed = (url) => claimState.claims.some((c) => matches(c.pattern, url));
+
 async function restoreTweaks() {
+  await selfUpdate.restored;
   const { tweaks = [] } = await chrome.storage.session.get("tweaks").catch(() => ({}));
   if (tweakState.seq === 0) tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks });
 }
@@ -178,6 +186,7 @@ async function restoreFromCache() {
 async function adoptClaims(next) {
   claimState = next;
   heardFromBridge = true;
+  for (const port of tabs) if (port.url) port.postMessage({ type: "claimed", claimed: claimed(port.url) });
   publish({ claims: next.claims });
   await chrome.storage.local.set({ claims: next.claims });
   await syncRegistrations(next.claims);

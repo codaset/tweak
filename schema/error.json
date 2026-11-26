@@ -18,6 +18,7 @@
         "not-found",
         "no-tweak",
         "not-yours",
+        "wrong-status",
         "internal"
       ]
     },

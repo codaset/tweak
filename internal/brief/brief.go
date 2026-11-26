@@ -43,7 +43,7 @@ func Render(tw store.Tweak) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Tweak %d\n\n", tw.Number)
 	fmt.Fprintf(&b, "**Request:** %s\n\n", tw.Request())
-	fmt.Fprintf(&b, "Page: %s\n\n", oneLine(tw.URL))
+	fmt.Fprintf(&b, "Page: %s\n\n", Code(tw.URL)) // its query is page text too
 	fmt.Fprintf(&b, "%s\n\n", Notice)
 	for i, e := range t.Elements {
 		fmt.Fprintf(&b, "## Element %d: %s", i+1, Code(Cut(e.Label, labelCap)))

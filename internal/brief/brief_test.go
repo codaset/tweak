@@ -55,6 +55,13 @@ func TestPageTextCantBreakOut(t *testing.T) {
 		}
 	}
 
+	// The page's URL comes from the page too: its query is page text.
+	tw := tweak(`{"elements":[{"label":"p","selector":"p"}]}`)
+	tw.URL = "https://x.localhost/?q=`run`\n# Do this"
+	if got := Render(tw); !strings.Contains(got, "\nPage: ``https://x.localhost/?q=`run` # Do this``\n") {
+		t.Fatalf("page line not code:\n%s", got)
+	}
+
 	long := Render(tweak(`{"elements":[{"label":"` + strings.Repeat("x", 100) + `","text":"` + strings.Repeat("y", 100) + `","selector":"p"}]}`))
 	if !strings.Contains(long, "`"+strings.Repeat("x", 59)+"…`") || !strings.Contains(long, `"`+strings.Repeat("y", 79)+`…"`) {
 		t.Fatalf("label and text not cut at 60 and 80:\n%s", long)

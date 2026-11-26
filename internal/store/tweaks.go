@@ -66,7 +66,45 @@ type NewTweak struct {
 var (
 	ErrBadTweak = errors.New("a tweak needs a request and an http or https page")
 	ErrNoTweak  = errors.New("no such tweak")
+	ErrNoClaim  = errors.New("no session claims this page")
 )
+
+// allowed is every status change Claude may make, from each status: the one
+// place the rule lives. The conversation ticket adds question, declined and
+// queued, and replies that reopen a tweak.
+var allowed = map[string][]string{
+	StatusSent:      {StatusWorking},
+	StatusDelivered: {StatusWorking},
+	StatusWorking:   {StatusWorking, StatusDone},
+}
+
+// TransitionError refuses a status change the tweak's status doesn't allow,
+// saying what to do instead.
+type TransitionError struct {
+	Number   int64
+	From, To string
+}
+
+func (e *TransitionError) Error() string {
+	switch {
+	case e.From == StatusDone && e.To == StatusDone:
+		return fmt.Sprintf("tweak %d is already done", e.Number)
+	case e.From == StatusDone:
+		return fmt.Sprintf("tweak %d is already done: there's nothing more to work on", e.Number)
+	case e.To == StatusDone:
+		return fmt.Sprintf("tweak %d isn't being worked on: run tweak work %d first", e.Number, e.Number)
+	}
+	return fmt.Sprintf("tweak %d is %s: it can't become %s", e.Number, e.From, e.To)
+}
+
+func canMove(from, to string) bool {
+	for _, s := range allowed[from] {
+		if s == to {
+			return true
+		}
+	}
+	return false
+}
 
 // NotYoursError refuses a status change from a session the tweak isn't for.
 type NotYoursError struct {
@@ -96,7 +134,8 @@ func PageOf(raw string) (string, error) {
 }
 
 // CreateTweak gives a new tweak the next bridge-wide number, for the session
-// whose claim covers its page (if any), with status sent.
+// whose claim covers its page, with status sent. A page no claim covers is
+// refused (ErrNoClaim): every tweak has a session.
 func (s *Store) CreateTweak(n NewTweak) (Tweak, error) {
 	page, err := PageOf(n.URL)
 	request := strings.TrimSpace(n.Request)
@@ -119,6 +158,9 @@ func (s *Store) CreateTweak(n NewTweak) (Tweak, error) {
 			session = sql.NullString{String: c.Session.ID, Valid: true}
 			break
 		}
+	}
+	if !session.Valid {
+		return Tweak{}, ErrNoClaim
 	}
 	at := now()
 	r, err := tx.Exec(`INSERT INTO tweaks (session, page, page_url, status, status_at, created, updated, targets, click_anchor)
@@ -165,6 +207,9 @@ func (s *Store) SetStatus(sessionID string, number int64, status string, entry *
 			}
 		}
 		return Tweak{}, e
+	}
+	if !canMove(tw.Status, status) {
+		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: status}
 	}
 	if tw.Status == status && entry == nil {
 		return tw, nil

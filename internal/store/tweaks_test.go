@@ -38,15 +38,16 @@ func TestATweakGoesToTheSessionClaimingItsPage(t *testing.T) {
 		t.Fatalf("anchor %s", tw.Anchor)
 	}
 
-	// A page nobody claims gets its tweak too; it waits for a session.
-	other, err := s.CreateTweak(newTweak("http://localhost:3000/", "hello"))
-	if err != nil || other.Session != "" || other.Number != 2 {
-		t.Fatalf("unclaimed: %+v %v", other, err)
+	// A page nobody claims gets no tweak: every tweak has a session.
+	if _, err := s.CreateTweak(newTweak("http://localhost:3000/", "hello")); !errors.Is(err, ErrNoClaim) {
+		t.Fatalf("unclaimed: %v", err)
 	}
 }
 
 func TestTweakNumbersAreNeverReused(t *testing.T) {
 	s := open(t)
+	register(t, s, "s1", "/dev/a")
+	s.Claim("s1", mustParse(t, "https://a.localhost/*"))
 	a, _ := s.CreateTweak(newTweak("https://a.localhost/", "one"))
 	b, _ := s.CreateTweak(newTweak("https://a.localhost/", "two"))
 	s.db.Exec(`DELETE FROM entries WHERE tweak = ?`, b.Number)
@@ -95,6 +96,38 @@ func TestStatusChangesAreTheSessionsOwn(t *testing.T) {
 	}
 	if _, err := s.SetStatus("s1", 99, StatusWorking, nil); !errors.Is(err, ErrNoTweak) {
 		t.Fatalf("no such tweak: %v", err)
+	}
+}
+
+// The status moves only forward: sent or delivered, to working (again is
+// fine), to done once.
+func TestStatusTransitionsAreGuarded(t *testing.T) {
+	s := open(t)
+	register(t, s, "s1", "/dev/ernie")
+	s.Claim("s1", mustParse(t, "https://ernie.localhost/*"))
+	summary := func() *Entry { return &Entry{From: "claude", Kind: "summary", Text: "made it green"} }
+	refused := func(n int64, status string, want string) {
+		t.Helper()
+		_, err := s.SetStatus("s1", n, status, summary())
+		var te *TransitionError
+		if !errors.As(err, &te) || err.Error() != want {
+			t.Fatalf("%s on tweak %d: got %v, want %q", status, n, err, want)
+		}
+	}
+
+	tw, _ := s.CreateTweak(newTweak("https://ernie.localhost/", "make it green"))
+	refused(tw.Number, StatusDone, "tweak 1 isn't being worked on: run tweak work 1 first")
+	s.SetStatus("s1", tw.Number, StatusWorking, nil)
+	if again, err := s.SetStatus("s1", tw.Number, StatusWorking, nil); err != nil || again.Status != StatusWorking {
+		t.Fatalf("work again: %+v %v", again, err)
+	}
+	if _, err := s.SetStatus("s1", tw.Number, StatusDone, summary()); err != nil {
+		t.Fatal(err)
+	}
+	refused(tw.Number, StatusDone, "tweak 1 is already done")
+	refused(tw.Number, StatusWorking, "tweak 1 is already done: there's nothing more to work on")
+	if got, _ := s.Tweak(tw.Number); len(got.Entries) != 2 {
+		t.Fatalf("entries %+v, want the request and one summary", got.Entries)
 	}
 }
 

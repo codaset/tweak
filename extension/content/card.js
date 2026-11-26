@@ -2,6 +2,12 @@
 // at once on a pick; Send turns it into the card, which shows the status live
 // (with the time spent while working), the request and Claude's summary. The
 // card stays open until esc or ×; clicking around the page leaves it open.
+//
+// The panel is a non-modal dialog (aria-modal="false"): the page stays live
+// around it, so Tab isn't trapped. Opening it from a pin or a Send moves focus
+// into it; closing it gives focus back to the pin, or to the page element a
+// just-sent tweak points at. While the composer is open or holds a draft, the
+// tab is busy, which holds a pending self-update reload back.
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
@@ -10,8 +16,9 @@
   const EDGE = 8; // from the viewport's edges
 
   // mode: null, {kind: "compose", element, anchor, sending, error, ref}
-  // or {kind: "card", number, request} (request is the local copy while the
-  // bridge's tweak hasn't arrived yet).
+  // or {kind: "card", number, request, label} (request and label are the
+  // local copies while the bridge's tweak hasn't arrived yet). Both may carry
+  // returnTo, the element focus goes back to on close.
   let mode = null;
   let panel = null;
   let parts = {};
@@ -23,6 +30,9 @@
     panel?.remove();
     panel = el("div", "panel");
     panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "false");
+    panel.tabIndex = -1;
+    // Key events stop at the shadow root, so esc inside the overlay is heard here.
     panel.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -34,12 +44,14 @@
     close.type = "button";
     close.setAttribute("aria-label", "Close");
     close.addEventListener("click", () => ns.panel.close());
-    head.append(el("span", "title", title));
+    const heading = el("span", "title", title);
+    heading.id = "panel-title";
+    head.append(heading);
     const label = el("span", "chip", chip);
     label.hidden = !chip;
     head.append(label);
     head.append(close);
-    panel.setAttribute("aria-label", title);
+    panel.setAttribute("aria-labelledby", heading.id);
     panel.append(head);
     ns.overlay.root.append(panel);
     return panel;
@@ -73,6 +85,7 @@
     };
     text.addEventListener("input", () => {
       mode.error = "";
+      ns.busy?.set("draft", text.value.trim() !== "");
       refresh();
     });
     text.addEventListener("keydown", (e) => {
@@ -164,44 +177,66 @@
     panel.style.top = `${Math.round(y)}px`;
   }
 
+  // composing marks the tab busy while the composer is open or holds a draft.
+  function composing(on) {
+    ns.busy?.set("composer", on);
+    if (!on) ns.busy?.set("draft", false);
+  }
+
+  const focusIn = () => requestAnimationFrame(() => panel?.focus({ preventScroll: true }));
+
   ns.panel = {
     compose(element, at) {
       if (mode?.kind === "compose" && mode.sending) return; // one send at a time
-      mode = { kind: "compose", element, anchor: at, sending: false, error: "" };
+      mode = { kind: "compose", element, anchor: at, sending: false, error: "", returnTo: element };
       drawCompose();
       place();
+      composing(true);
       ns.page.cardChanged(null);
     },
-    // show opens the card of tweak number.
-    show(number, request, label) {
+    // show opens the card of tweak number. With focus, it takes the focus,
+    // and gives it back to returnTo when it closes; a card reopened after a
+    // reload doesn't take it.
+    show(number, { request, label, focus = false, returnTo = null } = {}) {
       ns.picker.release();
-      mode = { kind: "card", number, request, label };
+      composing(false);
+      mode = { kind: "card", number, request, label, returnTo };
       drawCard();
       place();
+      if (focus) focusIn();
       ns.page.cardChanged(number);
       ns.page.redraw();
     },
-    toggle(number) {
+    toggle(number, pin) {
       if (this.showing() === number) this.close();
-      else this.show(number);
+      else this.show(number, { focus: true, returnTo: pin });
     },
     showing: () => (mode?.kind === "card" ? mode.number : null),
     close() {
       const was = mode;
+      // Focus goes back only if it was in the overlay: never taken from the page.
+      const focused = ns.overlay.root?.activeElement;
       mode = null;
       panel?.remove();
       panel = null;
       ns.picker.release();
+      composing(false);
       if (was?.kind === "card") {
         ns.page.cardChanged(null);
         ns.page.redraw();
       }
+      if (focused && was?.returnTo?.isConnected) was.returnTo.focus({ preventScroll: true });
     },
     // created is the bridge's answer to a Send.
     created(msg) {
       if (mode?.kind !== "compose" || msg.ref !== mode.ref) return;
       if (msg.number) {
-        this.show(msg.number, parts.text.value.trim(), ns.describe.label(mode.element));
+        this.show(msg.number, {
+          request: parts.text.value.trim(),
+          label: ns.describe.label(mode.element),
+          focus: true,
+          returnTo: mode.element,
+        });
         return;
       }
       mode.sending = false;

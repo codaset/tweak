@@ -39,7 +39,13 @@
         if (!p) {
           const el = ns.overlay.el("button", "pin", String(tweak.number));
           el.type = "button";
-          el.addEventListener("click", () => ns.panel.toggle(tweak.number));
+          el.addEventListener("click", () => ns.panel.toggle(tweak.number, el));
+          el.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && ns.panel.open()) {
+              e.preventDefault();
+              ns.panel.close();
+            }
+          });
           layer.append(el);
           p = { el, tweak, target: null };
           pins.set(tweak.number, p);

@@ -44,14 +44,9 @@ func (c *context) handover(old *client, info bridge.Info) (*client, error) {
 	writeWhole(marker, strconv.Itoa(os.Getpid())+"\n")
 	defer os.Remove(marker)
 
-	// Only the bridge found, not one another command's handover has started since.
-	if now, ok := old.ping(old.port); !ok || now.PID != info.PID {
-		if cl := c.current(old.port); cl != nil {
-			return cl, nil
-		}
-	} else {
-		old.callWithin(2*time.Second, "POST", "/shutdown", nil, nil)
-	}
+	// Only the bridge found (its PID), never one another command's handover
+	// has started since: that one refuses.
+	old.callWithin(2*time.Second, "POST", "/shutdown?pid="+strconv.Itoa(info.PID), nil, nil)
 	if cl := c.awaitFreePort(old.port, info.PID); cl != nil {
 		return cl, nil // another command's handover won
 	}

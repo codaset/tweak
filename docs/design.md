@@ -296,8 +296,9 @@ after a failed one doesn't try again on every poll.
    [When the bridge or extension is down](#when-the-bridge-or-extension-is-down)).
 3. Two sessions upgrading at once race on the port: the bridge that fails to bind exits quietly, and
    its CLI uses the winner. A CLI that finds a bridge at its own version or newer while it waits
-   (another's handover won) uses it without starting one, and sends `POST /shutdown` only to the
-   PID it found, never to a bridge started since.
+   (another's handover won) uses it without starting one, and its `POST /shutdown?pid=<n>` names the
+   PID it found, which any other bridge refuses (`not-this-bridge`), so it never stops one another
+   handover has started since.
 
 Watchers and the extension reconnect by themselves. `tweak hook pre-edit` waits up to 3 seconds for a
 bridge mid-restart, so an edit made during a handover keeps its before copy. The handing-over CLI

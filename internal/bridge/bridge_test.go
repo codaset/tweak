@@ -383,6 +383,27 @@ func TestShutdownOverHTTP(t *testing.T) {
 	}
 }
 
+// A handover's shutdown names the PID it found, so it can't stop a bridge
+// another command's handover has started since.
+func TestAShutdownForAnotherPIDIsRefused(t *testing.T) {
+	h := start(t)
+	resp, body := h.do(req{method: "POST", path: fmt.Sprintf("/shutdown?pid=%d", os.Getpid()+1)})
+	refused(t, resp, body, 409, "not-this-bridge")
+	if resp, _ := h.do(req{method: "GET", path: "/bridge"}); resp.StatusCode != 200 {
+		t.Fatal("the bridge stopped")
+	}
+	resp, _ = h.do(req{method: "POST", path: fmt.Sprintf("/shutdown?pid=%d", os.Getpid())})
+	if resp.StatusCode != 202 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	select {
+	case <-h.done:
+		h.done <- nil
+	case <-time.After(5 * time.Second):
+		t.Fatal("still running")
+	}
+}
+
 func idle(d time.Duration) func(*Options) {
 	return func(o *Options) { o.IdleTimeout, o.IdleCheck = d, 10*time.Millisecond }
 }

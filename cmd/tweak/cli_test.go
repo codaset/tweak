@@ -167,7 +167,7 @@ func TestClaimWarnsWhenTheAllowRuleIsMissing(t *testing.T) {
 	s.extra = append(s.extra, "CLAUDE_CONFIG_DIR="+config)
 	ernie := s.folder("ernie")
 	r := s.tweak("s1", ernie, "claim", "https://ernie.localhost")
-	want := "claimed https://ernie.localhost/*\n" + allowRuleMissing + "\nnow run tweak watch\n"
+	want := "claimed https://ernie.localhost/*\n" + allowRuleMissing("~/claude-config/settings.json") + "\nnow run tweak watch\n"
 	if r.code != 0 || r.stdout != want {
 		t.Fatalf("exit %d, stdout %q, want %q", r.code, r.stdout, want)
 	}
@@ -180,7 +180,21 @@ func TestClaimWarnsWhenTheAllowRuleIsMissing(t *testing.T) {
 	}
 }
 
-const allowRuleMissing = `allow rule missing: add "Bash(tweak *)" to permissions.allow in your Claude Code settings, or tweak commands may stop for permission`
+// The warning names the user settings file to add the rule to: the skill
+// adds it there, so it must be the one Claude Code reads.
+func allowRuleMissing(file string) string {
+	return `allow rule missing: add "Bash(tweak *)" to permissions.allow in ` + file + `, or tweak commands may stop for permission`
+}
+
+// Without CLAUDE_CONFIG_DIR, the file is ~/.claude/settings.json, shown from ~.
+func TestTheAllowRuleWarningNamesTheUsersSettingsFile(t *testing.T) {
+	s := newSandbox(t)
+	os.Remove(filepath.Join(s.home, ".claude", "settings.json"))
+	r := s.tweak("s1", s.folder("ernie"), "claim", "https://ernie.localhost")
+	if want := allowRuleMissing("~/.claude/settings.json"); r.code != 0 || !strings.Contains(r.stdout, want+"\n") {
+		t.Fatalf("exit %d, stdout %q, want %q", r.code, r.stdout, want)
+	}
+}
 
 func TestClaimStartsTheBridgeAndClaims(t *testing.T) {
 	s := newSandbox(t)

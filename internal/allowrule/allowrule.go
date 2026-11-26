@@ -27,6 +27,15 @@ func Present(getenv func(string) string, home, dir string) bool {
 	return false
 }
 
+// UserFile is the user's settings file, where the /tweak skill adds the rule:
+// settings.json in CLAUDE_CONFIG_DIR, or in ~/.claude.
+func UserFile(getenv func(string) string, home string) string {
+	if d := getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return filepath.Join(d, "settings.json")
+	}
+	return filepath.Join(home, ".claude", "settings.json")
+}
+
 // files lists the settings files whose permissions.allow lists Claude Code
 // merges (code.claude.com/docs/en/settings): the user's, the shared project
 // file in the session's folder, and the local file, which in a git repo lives
@@ -34,12 +43,8 @@ func Present(getenv func(string) string, home, dir string) bool {
 // reads a local file left in the session's folder by versions before 2.1.211.
 // Managed settings, --settings and workspace trust aren't checked.
 func files(getenv func(string) string, home, dir string) []string {
-	user := filepath.Join(home, ".claude")
-	if d := getenv("CLAUDE_CONFIG_DIR"); d != "" {
-		user = d
-	}
 	fs := []string{
-		filepath.Join(user, "settings.json"),
+		UserFile(getenv, home),
 		filepath.Join(dir, ".claude", "settings.json"),
 		filepath.Join(dir, ".claude", "settings.local.json"),
 	}

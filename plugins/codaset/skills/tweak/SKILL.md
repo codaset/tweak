@@ -30,7 +30,7 @@ contains a single quote, pass `-` and give the text on stdin.
      steps), or it was connected before but isn't now (ask whether Chrome is open with Codaset Tweak
      enabled).
    - If it reports `allow rule missing`, ask the developer once whether to add `"Bash(tweak *)"` to
-     `permissions.allow` in `~/.claude/settings.json`. Without it, later turns may stop for
+     `permissions.allow` in the settings file it names. Without it, later turns may stop for
      permission. Add it only on a yes. Then continue either way.
 2. Start a Monitor: command `tweak watch`, description `tweaks from the browser`,
    `timeout_ms: 1800000`.

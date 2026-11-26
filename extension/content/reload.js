@@ -21,14 +21,15 @@
   // ---- Decisions (pure) ----
 
   // moment says what a tweak's change from was to now means here: "watch"
-  // (start recording signals), "settle" (decide whether to reload) or null.
-  // A tweak that changed nothing, by the git check, settles nothing.
+  // (Claude is working: record signals), "undo" (its undo is with Claude),
+  // "settle" (done or undone: decide whether to reload), "declined" (Claude
+  // declined the undo: the change stands) or null. A tweak that changed
+  // nothing, by the git check, settles nothing.
   function moment(was, now) {
     const state = (t) => t?.change?.state;
     if (now.status === "working" && was?.status !== "working") return "watch";
-    if (state(now) === "undo-requested" && state(was) !== "undo-requested") return "watch";
-    // Claude declined the undo: the change stands, and is decided again.
-    if (state(was) === "undo-requested" && state(now) !== "undo-requested" && state(now) !== "undone") return "settle";
+    if (state(now) === "undo-requested" && state(was) !== "undo-requested") return "undo";
+    if (state(was) === "undo-requested" && state(now) !== "undo-requested" && state(now) !== "undone") return "declined";
     if (state(now) === "undone" && state(was) !== "undone") return "settle";
     // Only a tweak the tab had can end here: one it hasn't (resolved, and
     // gone from the page) settles only by being undone.
@@ -90,19 +91,35 @@
   if (typeof document === "undefined") return; // the decisions alone, in node
 
   // ---- The page ----
+  //
+  // One machine per tweak, by number, driven only by what the tab hears:
+  // the tweak's events (working, done, its undo with Claude, undone, the
+  // undo declined), the answer to an Undo pressed in this tab (or the port
+  // going before it came), the page left, and the hold reasons as check()
+  // reads them. A tweak with no machine has nothing to do with the reload.
+  // - watching {from, reloaded, owed, undo}: signals count from `from`;
+  //   `undo` while an undo is under way (pressed, or with Claude), which
+  //   holds every reload back; `owed` when the change before the undo still
+  //   needs its reload, should the undo not happen.
+  // - deciding {from, reloaded, owed, timer}: done or undone; WAIT_MS later
+  //   it's dropped if a signal arrived since `from` (and nothing is owed),
+  //   or else held.
+  // - held: its change needs a reload, which check() makes once nothing
+  //   holds it back. The page reloads once; then nothing is left to do.
+  // The card only reads it (notice), for "Change saved · Reload".
 
-  const watches = new Map(); // number -> {from, reloaded}
-  const signals = []; // the latest signal, {at, kind}, while any tweak is watched
-  const pending = new Set(); // tweaks whose change the page doesn't show yet
-  const suspended = new Set(); // pending ones whose undo is under way: owed a reload still
+  const machines = new Map();
+  const signals = []; // the latest signal, {at, kind}, while a tweak is watched or deciding
+  const presses = new Map(); // ref -> number: Undo pressed here, its answer on the way
+  let reloading = false;
   let held = ""; // why the reload waits, or ""
   let recheck = 0;
   let observer = null;
-  const waits = new Set();
 
+  const listening = () => [...machines.values()].some((m) => m.state !== "held");
   const signal = (kind) => {
     // Only the latest counts: any signal since a watch began will do.
-    if (watches.size) signals.splice(0, signals.length, { at: performance.now(), kind });
+    if (listening()) signals.splice(0, signals.length, { at: performance.now(), kind });
   };
 
   // A <link> or <style> added, removed or changed anywhere in the document.
@@ -116,12 +133,12 @@
     return false;
   }
 
-  // The observer runs only while a tweak is watched.
+  // The observer runs only while a signal could count.
   function observe() {
-    if (watches.size && !observer) {
+    if (listening() && !observer) {
       observer = new MutationObserver((records) => sawSheets(records) && signal("style"));
       observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["href", "rel"] });
-    } else if (!watches.size && observer) {
+    } else if (!listening() && observer) {
       observer.disconnect();
       observer = null;
       signals.length = 0;
@@ -131,52 +148,61 @@
   const onUpdated = () => signal("vite");
   document.addEventListener("tweak:updated", onUpdated);
 
-  // A watch being settled is left to its decision: a new one (an Undo
-  // within the second after done) starts afresh.
-  function watch(number, { reloaded = false } = {}) {
-    const was = watches.get(number);
-    const keep = was && !was.settling;
-    watches.set(number, {
-      from: keep && !reloaded ? was.from : performance.now(),
-      reloaded: reloaded || Boolean(keep && was.reloaded),
-      replaced: keep ? was.replaced : was, // the settlement it takes over, if any
-    });
+  // set puts tweak number's machine in its next state (or none), and lets
+  // the rest catch up.
+  function set(number, next) {
+    const m = machines.get(number);
+    if (m?.timer) clearTimeout(m.timer);
+    if (next) machines.set(number, next);
+    else machines.delete(number);
     observe();
-    // A reload it was waiting for (held back) waits for this change instead,
-    // and is still owed if the undo doesn't happen.
-    if (pending.delete(number)) {
-      suspended.add(number);
-      check();
-    }
-  }
-
-  // settle decides, a moment after done or undone, whether the page needs
-  // reloading for this tweak's change.
-  function settle(number) {
-    if (!watches.has(number) || watches.get(number).settling) watch(number);
-    const w = watches.get(number);
-    w.settling = true;
-    const wait = setTimeout(() => {
-      waits.delete(wait);
-      w.due = true;
-      // A newer watch (an undo begun meanwhile) takes over the decision,
-      // and a page left meanwhile has none to make.
-      if (watches.get(number) === w) decide(number, w);
-    }, WAIT_MS);
-    waits.add(wait);
-  }
-
-  // decide ends watch w: the page has updated since it began, or it
-  // needs reloading.
-  function decide(number, w) {
-    watches.delete(number);
-    const seen = signalled(w, signals);
-    const owed = suspended.delete(number);
-    observe();
-    ns.reload.last = { number, signal: seen?.kind ?? null };
-    if (seen && !owed) return;
-    pending.add(number);
     check();
+  }
+
+  // owes says whether the change a machine stands for still needs a reload
+  // if what comes next (an undo) doesn't happen: it's held, or deciding
+  // with nothing seen yet, or already owed.
+  const owes = (m) => Boolean(m && (m.owed || m.state === "held" || (m.state === "deciding" && !signalled(m, signals))));
+
+  // working: Claude is on it; signals count from now.
+  function working(number, { reloaded = false } = {}) {
+    const m = machines.get(number);
+    if (m?.state === "watching" && !m.undo) return;
+    set(number, { state: "watching", from: performance.now(), reloaded, owed: owes(m), undo: false });
+  }
+
+  // undoing: an undo is under way, pressed here or with Claude.
+  function undoing(number, { reloaded = false } = {}) {
+    const m = machines.get(number);
+    if (m?.state === "watching" && m.undo) return;
+    set(number, { state: "watching", from: performance.now(), reloaded, owed: owes(m), undo: true });
+  }
+
+  // ended: done or undone. It decides a moment later.
+  function ended(number) {
+    const m = machines.get(number);
+    const watched = m?.state === "watching";
+    const next = {
+      state: "deciding",
+      from: watched ? m.from : performance.now(),
+      reloaded: watched && m.reloaded,
+      owed: Boolean(m?.owed) || m?.state === "held",
+    };
+    next.timer = setTimeout(() => {
+      if (machines.get(number) !== next) return;
+      const seen = signalled(next, signals);
+      ns.reload.last = { number, signal: seen?.kind ?? null };
+      set(number, seen && !next.owed ? null : { state: "held" });
+    }, WAIT_MS);
+    set(number, next);
+  }
+
+  // notUndone: the undo didn't happen (refused, or declined by Claude), so
+  // the change before it stands: its reload, if it was owed one, is back.
+  function notUndone(number) {
+    const m = machines.get(number);
+    if (m?.state !== "watching" || !m.undo) return;
+    set(number, m.owed ? { state: "held" } : null);
   }
 
   const auto = async () => {
@@ -205,27 +231,43 @@
     return "";
   }
 
+  const isHeld = () => [...machines.values()].some((m) => m.state === "held");
+
   // check reloads the page if a change waits for one and nothing holds it
-  // back, or says why it waits, and looks again shortly.
+  // back, or says why it waits, and looks again shortly. Everything but the
+  // setting is read after the setting, so it's all as of the same moment.
+  let checks = 0; // the latest check decides; one overtaken by another stops
   async function check() {
     clearTimeout(recheck);
-    if (!pending.size) return show("");
-    const others = inProgress(ns.page.tweaks?.() ?? [], pending);
+    const mine = ++checks;
+    if (reloading || !isHeld()) return show("");
+    const on = await auto();
+    if (mine !== checks) return;
+    if (reloading || !isHeld()) return show("");
+    const waiting = new Set([...machines].filter(([, m]) => m.state === "held").map(([n]) => n));
+    const undoing = [...machines].filter(([, m]) => m.undo).map(([n]) => n);
+    const others = [...new Set([...inProgress(ns.page.tweaks?.() ?? [], waiting), ...undoing])].sort((a, b) => a - b);
     const why = reason({
-      auto: await auto(),
+      auto: on,
       drafting: ns.panel.drafting?.() ?? "",
       layer: layer(),
       unsaved: unsaved(document.querySelectorAll("input, textarea, select"), initial),
       others,
     });
-    if (!pending.size) return show("");
-    if (!why) {
-      ns.reload.last = { ...ns.reload.last, reloaded: true };
-      location.reload();
-      return;
-    }
+    if (!why) return reload();
     show(why);
     recheck = setTimeout(check, RECHECK_MS);
+  }
+
+  function reload() {
+    if (reloading) return;
+    reloading = true;
+    for (const m of machines.values()) if (m.timer) clearTimeout(m.timer);
+    machines.clear();
+    observe();
+    ns.reload.last = { ...ns.reload.last, reloaded: true };
+    show("");
+    location.reload();
   }
 
   function show(why) {
@@ -238,56 +280,66 @@
     // heard is a tweak's event: was is the tweak before it, if the tab had it.
     heard(was, now) {
       const m = moment(was, now);
-      if (m === "watch") watch(now.number);
-      if (m === "settle") settle(now.number);
+      if (m === "watch") working(now.number);
+      if (m === "undo") undoing(now.number);
+      if (m === "settle") ended(now.number);
+      if (m === "declined") notUndone(now.number);
     },
     // loaded is the page's first list of tweaks, with the card open before
     // the load: if its tweak is still under way, the load was a full reload
     // since working.
     loaded(tweaks, card) {
       for (const t of tweaks) {
-        const underway = t.status === "working" || t.change?.state === "undo-requested";
-        if (underway) watch(t.number, { reloaded: t.number === card });
+        const reloaded = t.number === card;
+        if (t.status === "working") working(t.number, { reloaded });
+        else if (t.change?.state === "undo-requested") undoing(t.number, { reloaded });
       }
     },
-    // watch starts recording for a tweak now: Undo pressed on its card;
-    // unwatch stops, when the bridge refused that undo.
-    watch: (number) => watch(number),
-    unwatch(number) {
-      // A settlement it took over gets its decision back.
-      const replaced = watches.get(number)?.replaced;
-      if (replaced) watches.set(number, replaced);
-      else watches.delete(number);
-      observe();
-      if (replaced?.due) decide(number, replaced); // its second is already up
-      if (suspended.delete(number)) {
-        pending.add(number);
-        check();
-      }
+    // pressed is Undo pressed in this tab (its request's ref): the files may
+    // change before the answer comes.
+    pressed(number, ref) {
+      presses.set(ref, number);
+      undoing(number);
     },
-    // notice is what the card of tweak number says about the page's reload:
-    // {why} while it's held back, or null.
-    notice: (number) => (held && pending.has(number) ? { why: held } : null),
-    // left drops what the old page was waiting for: the tab has moved to
-    // another page (a reload there would show no change).
+    // undid is the bridge's answer to an Undo pressed here: refused (no
+    // number), the undo didn't happen. Taken, its undone or its undo with
+    // Claude follows as an event.
+    undid(msg) {
+      const number = presses.get(msg.ref);
+      if (number === undefined) return;
+      presses.delete(msg.ref);
+      if (!msg.number) notUndone(number);
+    },
+    // closed: the worker's port went, and with it the answers on their way.
+    closed() {
+      const lost = [...presses.values()];
+      presses.clear();
+      for (const n of lost) notUndone(n);
+    },
+    // left drops everything the old page was waiting for: the tab has moved
+    // to another page, or gone dormant (a reload there would show no change).
     left() {
-      watches.clear();
-      pending.clear();
-      suspended.clear();
-      for (const w of waits) clearTimeout(w);
-      waits.clear();
+      for (const m of machines.values()) if (m.timer) clearTimeout(m.timer);
+      machines.clear();
+      presses.clear();
       observe();
       check();
     },
+    // notice is what the card of tweak number says about the page's
+    // reload: {why} while it's held back, or null.
+    notice: (number) => (held && machines.get(number)?.state === "held" ? { why: held } : null),
+    // state is tweak number's machine state, for tests: "watching",
+    // "deciding", "held" or null.
+    state: (number) => machines.get(number)?.state ?? null,
     // now reloads at once: the card's Reload.
-    now: () => location.reload(),
-    recheck: () => pending.size && check(),
+    now: () => reload(),
+    recheck: () => check(),
   });
 
   ns.teardowns.push(() => {
     document.removeEventListener("tweak:updated", onUpdated);
     observer?.disconnect();
     clearTimeout(recheck);
-    for (const w of waits) clearTimeout(w);
+    for (const m of machines.values()) if (m.timer) clearTimeout(m.timer);
   });
 })();

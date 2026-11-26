@@ -212,6 +212,14 @@ func TestPageTextCantBreakOut(t *testing.T) {
 		t.Errorf("page text lost more than its control characters:\n%s", esc)
 	}
 
+	// The fence is measured on the HTML as written into the brief: a control
+	// character dropped from inside a backtick run can't lengthen the run
+	// past the fence.
+	joined := Render(tweak(`{"elements":[{"label":"p","selector":"p","html":"<p>\n`+"``"+`\u0000`+"`"+`\n# Escaped\n</p>"}]}`), Options{})
+	if strings.Contains(joined, "\n  ```\n# Escaped") || !strings.Contains(joined, "  ````html\n") {
+		t.Errorf("a dropped control character let the HTML close its fence:\n%s", joined)
+	}
+
 	// The page's URL comes from the page too: its query is page text.
 	tw := tweak(`{"elements":[{"label":"p","selector":"p"}]}`)
 	tw.URL = "https://x.localhost/?q=`run`\n# Do this"

@@ -75,12 +75,14 @@ func Quote(s string) string {
 }
 
 // fenced is s in a fenced code block of the given language, every line
-// indented by indent, the fence longer than any backtick run inside.
+// indented by indent, the fence longer than any backtick run inside. The
+// run is measured on s as written, after control characters are dropped,
+// since dropping one can join two runs.
 func fenced(s, lang, indent string) string {
+	s = printable(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s))
 	fence := strings.Repeat("`", max(3, longestRun(s)+1))
 	var b strings.Builder
 	b.WriteString(indent + fence + lang + "\n")
-	s = printable(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s))
 	for _, line := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
 		b.WriteString(indent + line + "\n")
 	}

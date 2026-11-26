@@ -21,7 +21,6 @@ const (
 	StatusQuestion  = "question"
 	StatusDone      = "done"
 	StatusDeclined  = "declined"
-	StatusWithdrawn = "withdrawn"
 )
 
 // Tweak is a request left on a page, with its conversation and status.
@@ -105,8 +104,6 @@ func (e *TransitionError) Error() string {
 		return fmt.Sprintf("tweak %d is already done: there's nothing more to do", e.Number)
 	case e.From == StatusDeclined:
 		return fmt.Sprintf("tweak %d was declined: there's nothing more to do", e.Number)
-	case e.From == StatusWithdrawn:
-		return fmt.Sprintf("tweak %d was withdrawn by the developer: drop it", e.Number)
 	case e.From == StatusQuestion:
 		return fmt.Sprintf("tweak %d is waiting for the developer's reply to your question: carry on when its reply event arrives", e.Number)
 	case e.From == StatusWorking && e.To == StatusQueued:

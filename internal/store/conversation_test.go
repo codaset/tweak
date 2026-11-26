@@ -34,6 +34,11 @@ func TestEveryStatusChangeIsGuarded(t *testing.T) {
 		{StatusSent, StatusQuestion, notWorking},
 		{StatusSent, StatusDone, notWorking},
 		{StatusSent, StatusDeclined, ""},
+		{StatusDelivered, StatusWorking, ""},
+		{StatusDelivered, StatusQueued, ""},
+		{StatusDelivered, StatusQuestion, notWorking},
+		{StatusDelivered, StatusDone, notWorking},
+		{StatusDelivered, StatusDeclined, ""},
 		{StatusQueued, StatusWorking, ""},
 		{StatusQueued, StatusQueued, ""},
 		{StatusQueued, StatusQuestion, notWorking},
@@ -64,12 +69,20 @@ func TestEveryStatusChangeIsGuarded(t *testing.T) {
 			register(t, s, "s1", "/dev/ernie")
 			s.Claim("s1", mustParse(t, "https://ernie.localhost/*"))
 			tw, _ := s.CreateTweak(newTweak("https://ernie.localhost/", "make it green"))
+			if c.from == StatusDelivered {
+				// The watcher printed it, and its next poll acknowledged it.
+				in, _ := s.Inbox("s1", -1)
+				s.Inbox("s1", in.Seq)
+			}
 			for _, step := range reach[c.from] {
 				if _, err := s.SetStatus("s1", tw.Number, step, entryFor[step]); err != nil {
 					t.Fatalf("reaching %s: %v", c.from, err)
 				}
 			}
 			before, _ := s.Tweak(tw.Number)
+			if before.Status != c.from {
+				t.Fatalf("reached %s, not %s", before.Status, c.from)
+			}
 			got, err := s.SetStatus("s1", tw.Number, c.to, entryFor[c.to])
 			if c.refusal == "" {
 				if err != nil || got.Status != c.to {

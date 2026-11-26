@@ -36,6 +36,13 @@
     "brief": ["## Element 1: `input#name`", "## Element 2: `button#save`"]
   },
   {
+    "name": "name field and plan title, the ⇧-clicked one mapped too",
+    "pick": { "selectors": ["#name", ".plan-title"] },
+    "locations": [{ "file": "src/theme.css", "line": 10, "role": "style", "via": "css" }],
+    "clues": ["id=name", "class plan-title"],
+    "brief": ["## Element 2: `h2.plan-title`"]
+  },
+  {
     "name": "selected words in the lede",
     "pick": { "text": "no framework", "in": ".lede" },
     "locations": [],

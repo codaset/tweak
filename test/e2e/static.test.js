@@ -7,6 +7,7 @@ import { sleep } from "./harness/util.js";
 import { basename, dirname, join } from "node:path";
 import { contentScript, inWorker } from "./harness/browser.js";
 import { freePort } from "./harness/fixture.js";
+import { briefProblems } from "./harness/golden.js";
 import {
   CARD,
   CARD_CHANGE,
@@ -28,6 +29,7 @@ import {
   setup,
   sidePanel,
   skipReason,
+  strandNothing,
   tracer,
   undoFromCard,
   until,
@@ -78,6 +80,37 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     await env.tab.until(`root.querySelector(".panel .undo .undo-note")?.textContent`, { is: (s) => s === "Undone", what: "the card to say Undone" });
     await env.page.keyboard.press("Escape");
   }
+
+  // The mappers run while you type: a source map that comes later than
+  // 300 ms after the pick, but before Send, still places the rule.
+  test("a source map served late, while the request is typed, still gives the rule's line", async () => {
+    const late = (req) => {
+      if (req.isInterceptResolutionHandled()) return;
+      if (req.url().endsWith("/theme.css.map")) setTimeout(() => req.continue().catch(() => {}), 600);
+      else req.continue().catch(() => {});
+    };
+    await env.page.setRequestInterception(true);
+    env.page.on("request", late);
+    try {
+      await open(env);
+      const served = env.page.waitForResponse((r) => r.url().endsWith("/theme.css.map"));
+      await pick(env, { selector: ".plan-title" });
+      await env.tab.until(composing, { what: "the composer to open with the focus" });
+      await env.page.keyboard.type("tweak the plan title");
+      await served; // as a person types, past the 300 ms
+      const from = env.watcher.lines.length;
+      await env.page.keyboard.press("Enter");
+      const { number: n, brief } = await env.claude.nextTweak(env.watcher, { from });
+      try {
+        assert.deepEqual(briefProblems(brief, { locations: [{ file: "src/theme.css", line: 10, role: "style", via: "css" }] }), []);
+      } finally {
+        await strandNothing(env, n); // done, and the card closed
+      }
+    } finally {
+      env.page.off("request", late);
+      await env.page.setRequestInterception(false);
+    }
+  });
 
   // The harness itself, once, here.
   test("the test copy's message calls a worker handler: the side panel opens", async () => {

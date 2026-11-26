@@ -231,29 +231,42 @@ export async function conversation(env, c, { request = `tweak the ${c.name}`, qu
   const from = env.watcher.lines.length;
   await env.page.keyboard.press("Enter");
   const { number: n } = await env.claude.nextTweak(env.watcher, { from });
-  await env.tab.until(text(CARD_TITLE), { is: (t) => t === `Tweak ${n}`, what: `the card to be tweak ${n}` });
+  try {
+    await env.tab.until(text(CARD_TITLE), { is: (t) => t === `Tweak ${n}`, what: `the card to be tweak ${n}` });
 
-  // Close the card: the question opens it again by itself.
-  await env.page.keyboard.press("Escape");
-  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
-  await env.claude.tweak("ask", String(n), question);
-  await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Claude has a question", what: "the question to open the card" });
-  assert.equal(await env.tab.evaluate(entryText("question")), question);
-  assert.equal(await env.tab.evaluate("root.activeElement"), null, "the question doesn't take the focus");
+    // Close the card: the question opens it again by itself.
+    await env.page.keyboard.press("Escape");
+    await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
+    await env.claude.tweak("ask", String(n), question);
+    await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Claude has a question", what: "the question to open the card" });
+    assert.equal(await env.tab.evaluate(entryText("question")), question);
+    assert.equal(await env.tab.evaluate("root.activeElement"), null, "the question doesn't take the focus");
 
-  const replied = env.watcher.lines.length;
-  await replyFromCard(env, answer);
-  await env.watcher.line(new RegExp(`^tweak ${n} reply: ${answer}$`), { from: replied });
-  const brief = await env.claude.work(n);
-  assert.ok(brief.includes(`**Latest:** the developer replied to your question: "${answer}".`), "the brief leads with the reply");
-  assert.ok(brief.includes("## Conversation"), "the brief has the conversation");
+    const replied = env.watcher.lines.length;
+    await replyFromCard(env, answer);
+    await env.watcher.line(new RegExp(`^tweak ${n} reply: ${answer}$`), { from: replied });
+    const brief = await env.claude.work(n);
+    assert.ok(brief.includes(`**Latest:** the developer replied to your question: "${answer}".`), "the brief leads with the reply");
+    assert.ok(brief.includes("## Conversation"), "the brief has the conversation");
 
-  await env.claude.tweakWith(`${summary}\n`, "done", String(n), "-");
-  await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
-  assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
-  await env.page.keyboard.press("Escape");
-  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
+    await env.claude.tweakWith(`${summary}\n`, "done", String(n), "-");
+    await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
+    assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
+    await env.page.keyboard.press("Escape");
+    await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
+  } catch (err) {
+    await strandNothing(env, n);
+    throw err;
+  }
   return n;
+}
+
+// strandNothing finishes tweak n and closes its card; after a failure in
+// the test that sent it, so a tweak left working (or asking) holds no later
+// test back. A test's own failure is what it reports.
+export async function strandNothing(env, n) {
+  await env.claude.tweakWith("finished after a failed test\n", "done", String(n), "-").catch(() => {});
+  await env.page.keyboard.press("Escape").catch(() => {});
 }
 
 // pickCase opens a case's page, clicks its `first` control if it has one
@@ -311,48 +324,62 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
   const element = await pickCase(env, c);
   await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
   await env.page.keyboard.type(request);
+  // A person types for longer than the mappers take, and the composer keeps
+  // what they find until Send: so does the case, which presses ↵ at once.
+  const want = c.locations?.length ?? 0;
+  if (want) {
+    await env.tab.until(`ns.panel.targets()?.elements.reduce((n, e) => n + (e.locations?.length ?? 0), 0)`, {
+      is: (n) => n >= want,
+      what: `the mappers' ${want} location(s)`,
+    });
+  }
   // Before the send: its line can arrive while press() is still resolving.
   const from = env.watcher.lines.length;
   await env.page.keyboard.press("Enter");
 
   const { number: n, brief } = await env.claude.nextTweak(env.watcher, { from });
-  await env.tab.until(text(CARD_TITLE), { is: (t) => t === `Tweak ${n}`, what: `the card to be tweak ${n}` });
+  try {
+    await env.tab.until(text(CARD_TITLE), { is: (t) => t === `Tweak ${n}`, what: `the card to be tweak ${n}` });
 
-  // What the page sent reached the brief Claude reads.
-  assert.ok(brief.includes(request), "the brief has the request");
-  for (const token of [element.label, element.selector]) assert.ok(brief.includes(`\`${token}\``), `the brief names \`${token}\``);
-  assert.deepEqual(briefProblems(brief, c), []);
-  await env.tab.until(text(CARD_STATUS), { is: (s) => s?.startsWith("Claude is working on it"), what: "the card to show Claude working" });
+    // What the page sent reached the brief Claude reads.
+    assert.ok(brief.includes(request), "the brief has the request");
+    for (const token of [element.label, element.selector]) assert.ok(brief.includes(`\`${token}\``), `the brief names \`${token}\``);
+    assert.deepEqual(briefProblems(brief, c), []);
+    await env.tab.until(text(CARD_STATUS), { is: (s) => s?.startsWith("Claude is working on it"), what: "the card to show Claude working" });
 
-  // A round-trip case's edit, through the edit hook, as Claude makes it.
-  // A case's edit is made once, by its own tracer test: other tests reuse
-  // the case on the same copy, and pass edit: null.
-  const edited = edit && join(env.app.folder, edit.file);
-  const original = edit && readFileSync(edited);
-  if (edit) await env.claude.edit(edit);
+    // A round-trip case's edit, through the edit hook, as Claude makes it.
+    // A case's edit is made once, by its own tracer test: other tests reuse
+    // the case on the same copy, and pass edit: null.
+    const edited = edit && join(env.app.folder, edit.file);
+    const original = edit && readFileSync(edited);
+    if (edit) await env.claude.edit(edit);
 
-  // The summary goes in on stdin, as `tweak done <n> -` reads it.
-  await env.claude.tweakWith(`${summary}\n`, "done", String(n), "-");
-  await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
-  assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
-  if (edit) {
-    // The card lists the file the hook recorded.
-    await env.tab.until(text(CARD_CHANGE), { is: (s) => s === "Files changed", what: "the card to list the files changed" });
-    assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(${JSON.stringify(CARD_FILES)})].map((f) => f.textContent)`), [edit.file]);
-    // It's read out as it arrives, and the list keeps its list semantics.
-    await env.tab.until(text(".panel .sr-only"), { is: (s) => s?.includes("1 file changed"), what: "the change to be read out" });
-    assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change > .files").getAttribute("role")`), "list");
-    assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change").hasAttribute("tabindex")`), false, "a short list is no tab stop");
+    // The summary goes in on stdin, as `tweak done <n> -` reads it.
+    await env.claude.tweakWith(`${summary}\n`, "done", String(n), "-");
+    await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
+    assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
+    if (edit) {
+      // The card lists the file the hook recorded.
+      await env.tab.until(text(CARD_CHANGE), { is: (s) => s === "Files changed", what: "the card to list the files changed" });
+      assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(${JSON.stringify(CARD_FILES)})].map((f) => f.textContent)`), [edit.file]);
+      // It's read out as it arrives, and the list keeps its list semantics.
+      await env.tab.until(text(".panel .sr-only"), { is: (s) => s?.includes("1 file changed"), what: "the change to be read out" });
+      assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change > .files").getAttribute("role")`), "list");
+      assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change").hasAttribute("tabindex")`), false, "a short list is no tab stop");
 
+    }
+    if (edit && undo) {
+      // Undo puts it back, byte for byte.
+      await undoFromCard(env);
+      assert.ok(readFileSync(edited).equals(original), `${edit.file} is back as it was`);
+      assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).hidden`), true, "no Undo once undone");
+      assert.equal(await env.tab.evaluate(`root.activeElement === root.querySelector(".panel")`), true, "the focus stays in the card");
+    }
+    await env.page.keyboard.press("Escape");
+    await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
+  } catch (err) {
+    await strandNothing(env, n);
+    throw err;
   }
-  if (edit && undo) {
-    // Undo puts it back, byte for byte.
-    await undoFromCard(env);
-    assert.ok(readFileSync(edited).equals(original), `${edit.file} is back as it was`);
-    assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).hidden`), true, "no Undo once undone");
-    assert.equal(await env.tab.evaluate(`root.activeElement === root.querySelector(".panel")`), true, "the focus stays in the card");
-  }
-  await env.page.keyboard.press("Escape");
-  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
   return n;
 }

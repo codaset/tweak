@@ -1,9 +1,8 @@
 // The static fixture: no framework, a server that never reloads.
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { contentScript } from "./harness/browser.js";
 import { readFileSync, writeFileSync } from "node:fs";
+import { contentScript } from "./harness/browser.js";
 import { join } from "node:path";
 import { CARD, CARD_RESEND, CARD_STATUS, COMPOSER_INPUT, conversation, loadFixture, open, pick, setup, skipReason, tracer, undoFromCard, until } from "./harness/index.js";
 
@@ -23,6 +22,14 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     const c = fixture.cases.find((x) => x.edit);
     const path = join(env.app.folder, c.edit.file);
     const original = readFileSync(path);
+    try {
+      await conflictByHand(c, path, original);
+    } finally {
+      writeFileSync(path, original); // later tests share the copy
+    }
+  });
+
+  async function conflictByHand(c, path, original) {
     const n = await tracer(env, c, { undo: false });
     const later = readFileSync(path, "utf8").replace(c.edit.replace, c.edit.replace.replace("<", " now<"));
     writeFileSync(path, later); // the developer edits the changed line again
@@ -40,7 +47,7 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     assert.equal(await env.claude.tweak("undone", String(n), "put the label back"), `tweak ${n}: undone\n`);
     await env.tab.until(`root.querySelector(".panel .undo .undo-note")?.textContent`, { is: (s) => s === "Undone", what: "the card to say Undone" });
     await env.page.keyboard.press("Escape");
-  });
+  }
 
   // The harness itself, once, here.
   test("the test copy's message calls a worker handler: the side panel opens", async () => {

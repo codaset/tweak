@@ -35,6 +35,25 @@ func undoMsg(ref string, n int) map[string]any {
 	return map[string]any{"type": "undo", "ref": ref, "number": n}
 }
 
+// undo sends an undo and reads its result and the tweak event that follows.
+// They go out on their own, so either may come first.
+func (s *socket) undo(ref string, n int, event string) (result, tweak map[string]any) {
+	s.t.Helper()
+	s.send(undoMsg(ref, n))
+	for i := 0; i < 10 && (result == nil || tweak == nil); i++ {
+		switch m := s.nextAny(); {
+		case m["type"] == "result" && m["ref"] == ref:
+			result = m
+		case m["event"] == event:
+			tweak = m["tweak"].(map[string]any)
+		}
+	}
+	if result == nil || tweak == nil {
+		s.t.Fatalf("undo %s: result %v, %s %v", ref, result, event, tweak)
+	}
+	return result, tweak
+}
+
 func read(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -58,10 +77,10 @@ func change(ev map[string]any) map[string]any {
 // deleted, the deleted one written again. The unrecorded file is left.
 func TestUndoPutsEveryRecordedFileBack(t *testing.T) {
 	h, s, dir := finished(t)
-	if r := s.readUntilAfter(undoMsg("u1", 1)); r["number"] != float64(1) || r["error"] != nil {
+	r, ev := s.undo("u1", 1, "tweak-undone")
+	if r["number"] != float64(1) || r["error"] != nil {
 		t.Fatalf("undo: %v", r)
 	}
-	ev := s.tweakEvent("tweak-undone")
 	if c := change(ev); c["state"] != "undone" {
 		t.Fatalf("change %v", c)
 	}
@@ -82,7 +101,7 @@ func TestUndoPutsEveryRecordedFileBack(t *testing.T) {
 		t.Errorf("the unrecorded sed.rb was touched: %q", got)
 	}
 	// A second click has nothing to undo.
-	r := s.readUntilAfter(undoMsg("u2", 1))
+	r = s.readUntilAfter(undoMsg("u2", 1))
 	if r["error"] != "not-undoable" || r["message"] != "This change is already undone" {
 		t.Fatalf("again: %v", r)
 	}
@@ -95,10 +114,9 @@ func TestUndoKeepsLaterEditsAndFilesAlreadyBack(t *testing.T) {
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED\nc\nd\ne\nf\ng later\n")
 	writeFile(t, filepath.Join(dir, "gone.rb"), "old\n") // put back by hand
-	if r := s.readUntilAfter(undoMsg("u1", 1)); r["error"] != nil {
+	if r, _ := s.undo("u1", 1, "tweak-undone"); r["error"] != nil {
 		t.Fatalf("undo: %v", r)
 	}
-	s.tweakEvent("tweak-undone")
 	if got := read(t, filepath.Join(dir, "app.css")); got != "a\nb\nc\nd\ne\nf\ng later\n" {
 		t.Errorf("app.css %q", got)
 	}
@@ -131,10 +149,10 @@ func TestAnyConflictWritesNothing(t *testing.T) {
 				snapshot[f] = read(t, filepath.Join(dir, f))
 			}
 			in := poll(t, h, -1)
-			if r := s.readUntilAfter(undoMsg("u1", 1)); r["error"] != nil {
+			r, ev := s.undo("u1", 1, "tweak-undo-conflict")
+			if r["error"] != nil {
 				t.Fatalf("undo: %v", r)
 			}
-			ev := s.tweakEvent("tweak-undo-conflict")
 			if ch := change(ev); ch["state"] != "undo-requested" || ch["conflicts"] != float64(1) {
 				t.Fatalf("change %v", ch)
 			}
@@ -197,8 +215,7 @@ func TestOnlyAFinishedTweakCanBeUndone(t *testing.T) {
 func TestAConflictIsResolvedByHand(t *testing.T) {
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
-	s.readUntilAfter(undoMsg("u1", 1))
-	s.tweakEvent("tweak-undo-conflict")
+	s.undo("u1", 1, "tweak-undo-conflict")
 
 	resp, body := h.do(as("s1", req{method: "GET", path: "/tweaks/1/undo"}))
 	if resp.StatusCode != 200 {
@@ -252,8 +269,7 @@ func TestUndoneNeedsAMessage(t *testing.T) {
 func TestDecliningAConflictKeepsTheChange(t *testing.T) {
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
-	s.readUntilAfter(undoMsg("u1", 1))
-	s.tweakEvent("tweak-undo-conflict")
+	s.undo("u1", 1, "tweak-undo-conflict")
 	code, body := status(h, "1", "declined", "later work needs it")
 	if code != 200 || !strings.Contains(string(body), `"undo":"declined"`) || !strings.Contains(string(body), `"status":"done"`) {
 		t.Fatalf("decline: %d %s", code, body)
@@ -296,8 +312,8 @@ func TestAConflictWithNoClaimWaitsForOne(t *testing.T) {
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
 	h.do(as("s1", req{method: "DELETE", path: "/claims"}))
-	s.readUntilAfter(undoMsg("u1", 1))
-	if ch := change(s.tweakEvent("tweak-status")); ch["state"] != "undo-requested" || ch["waiting"] != true {
+	if _, ev := s.undo("u1", 1, "tweak-status"); change(ev)["state"] != "undo-requested" || change(ev)["waiting"] != true {
+		ch := change(ev)
 		t.Fatalf("change %v", ch)
 	}
 	h.register("s2", dir)

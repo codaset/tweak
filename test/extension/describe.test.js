@@ -157,3 +157,14 @@ test("a finished tweak's card says what it changed", () => {
   assert.equal(change(tweak("done", { files: [file("a.rb")], unrecorded: [file("b.rb")] })).announce, "1 file changed, 1 not recorded");
   assert.equal(change(tweak("done", { state: "nothing-recorded" })).announce, "No files changed");
 });
+
+test("the card's chip says what a tweak points at", () => {
+  const { pointedAt } = ns.describe;
+  const one = { elements: [{ label: "button#save", selector: "#save" }] };
+  assert.equal(pointedAt(one), "button#save");
+  assert.equal(pointedAt({ elements: [...one.elements, { label: "input#name", selector: "#name" }] }), "2 elements");
+  assert.equal(pointedAt({ ...one, selection: { text: "no\n framework" } }), "“no framework”");
+  assert.equal(pointedAt({ ...one, selection: { text: "x".repeat(40) } }), `“${"x".repeat(23)}…”`);
+  assert.equal(pointedAt({ ...one, area: { page: { x: 0, y: 0, width: 320.4, height: 179.6 } } }), "Area 320×180");
+  assert.equal(pointedAt(undefined), "");
+});

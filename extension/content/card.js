@@ -71,8 +71,13 @@
   }
 
   function drawCompose() {
-    const label = ns.describe.label(mode.element);
-    frame("New tweak", label);
+    frame("New tweak", ns.describe.pointedAt(mode.targets));
+    // What the tweak points at, under the title: the numbered elements, the
+    // selected text, or the area. ⇧-click changes the elements without a
+    // redraw, so the draft and the focus stay.
+    const pointed = el("div", "pointed-at");
+    const heard = el("div", "sr-only");
+    heard.setAttribute("aria-live", "polite");
     const text = el("textarea");
     text.placeholder = "What should change?";
     text.rows = 3;
@@ -86,7 +91,7 @@
     const send = el("button", "send", "Send");
     send.type = "button";
     foot.append(hint, send);
-    panel.append(text, error, foot);
+    panel.append(pointed, text, error, foot, heard);
 
     const refresh = () => {
       const connected = ns.worker.connection === "connected";
@@ -108,9 +113,146 @@
       }
     });
     send.addEventListener("click", submit);
-    parts = { text, send, refresh };
+    parts = { text, send, refresh, pointed, heard };
+    drawPointed();
     refresh();
     requestAnimationFrame(() => text.focus({ preventScroll: true }));
+  }
+
+  // drawPointed fills the composer's line about what it points at.
+  function drawPointed() {
+    const { pointed } = parts;
+    const { pick, targets } = mode;
+    const chip = panel.querySelector(".chip");
+    chip.textContent = ns.describe.pointedAt(targets);
+    chip.hidden = !chip.textContent;
+    const code = (s) => el("code", "", s);
+    if (pick.kind === "text") {
+      const quote = el("p", "selection-quote", targets.selection.text);
+      quote.setAttribute("aria-label", `Selected text: ${targets.selection.text}`);
+      pointed.replaceChildren(quote, el("p", "pointed", ""));
+      pointed.lastChild.append("In ", code(targets.elements[0].label));
+      return;
+    }
+    if (pick.kind === "area") {
+      const inside = targets.elements.length - 1;
+      const line = el("p", "pointed");
+      line.append("Inside ", code(targets.elements[0].label), ", ");
+      line.append(inside === 0 ? "over empty space" : `with ${inside} ${inside === 1 ? "element" : "elements"} in it`);
+      pointed.replaceChildren(line);
+      return;
+    }
+    const list = el("ol", "picked");
+    list.setAttribute("aria-label", "Elements in this tweak");
+    if (targets.elements.length > 1) {
+      targets.elements.forEach((e, i) => {
+        const item = el("li");
+        const remove = el("button", "remove", "×");
+        remove.type = "button";
+        remove.setAttribute("aria-label", `Remove element ${i + 1}, ${e.label}`);
+        remove.addEventListener("click", () => {
+          ns.panel.add(mode.pick.elements[i]);
+          // Keep the focus in the list, or give it back to the text.
+          const buttons = parts.pointed.querySelectorAll(".remove");
+          (buttons[Math.min(i, buttons.length - 1)] ?? parts.text).focus({ preventScroll: true });
+        });
+        item.append(el("span", "n", String(i + 1)), el("span", "what", e.label), remove);
+        list.append(item);
+      });
+    }
+    const tip = el("p", "tip");
+    tip.append(el("kbd", "", "⇧"), "-click adds an element, or takes it out");
+    pointed.replaceChildren(...(list.childElementCount ? [list] : []), tip);
+  }
+
+  // marked is what the open composer or card points at, as marks: numbered
+  // elements, the selected text, or the area and the element it's inside.
+  // One element alone is the picker's outline while composing, and unmarked
+  // on its card.
+  function marked() {
+    const box = (r) => ({ x: r.left ?? r.x, y: r.top ?? r.y, width: r.width, height: r.height });
+    const of = (target, kind, number) => (target?.isConnected ? [{ kind, number, ...box(target.getBoundingClientRect()) }] : []);
+    const areaBox = (a) => (a ? [{ kind: "area", x: a.page.x - scrollX, y: a.page.y - scrollY, width: a.page.width, height: a.page.height }] : []);
+    const inArea = (els) => [
+      ...(els[0] && els[0] !== document.body ? of(els[0], "inside", 1) : []),
+      ...els.slice(1).flatMap((e, i) => of(e, "element", i + 2)),
+    ];
+    if (mode?.kind === "compose") {
+      const { pick } = mode;
+      if (pick.kind === "text") return [...pick.range.getClientRects()].filter((r) => r.width && r.height).map((r) => ({ kind: "text", ...box(r) }));
+      if (pick.kind === "area") return [...areaBox(mode.targets.area), ...inArea(pick.elements)];
+      return pick.elements.length > 1 ? pick.elements.flatMap((e, i) => of(e, "element", i + 1)) : [];
+    }
+    if (mode?.kind === "card") {
+      const targets = ns.page.tweak(mode.number)?.targets;
+      const els = targets?.elements ?? [];
+      if (!targets?.area && !targets?.selection && els.length < 2) return [];
+      if (!ns.pins.point(mode.number)) return []; // a card off its page, or its element gone
+      if (targets.selection) {
+        // The selected text, found again in element 1 by its words.
+        if (!mode.found?.[0]?.isConnected) mode.found = [find(els[0].selector)];
+        if (!mode.range || !mode.found[0].contains(mode.range.startContainer)) mode.range = textIn(mode.found[0], targets.selection);
+        const rects = mode.range ? [...mode.range.getClientRects()].filter((r) => r.width && r.height) : [];
+        return rects.length ? rects.map((r) => ({ kind: "text", ...box(r) })) : of(mode.found[0], "element", 1);
+      }
+      mode.found ??= [];
+      const found = els.map((e, i) => {
+        if (!mode.found[i]?.isConnected) mode.found[i] = find(e.selector);
+        return mode.found[i];
+      });
+      if (targets.area) return [...areaBox(targets.area), ...inArea(found)];
+      return found.flatMap((e, i) => of(e, "element", i + 1));
+    }
+    return [];
+  }
+
+  // addable says whether ⇧-click can change the composer's elements.
+  const addable = () => mode?.kind === "compose" && !mode.sending && mode.pick.kind === "elements";
+
+  // textIn is a range over the selected text in el, across its text nodes,
+  // or null: the occurrence whose surroundings match the text before and
+  // after it, else the first.
+  function textIn(el, { text, before = "", after = "" }) {
+    if (!el || !text) return null;
+    const nodes = [];
+    let all = "";
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      nodes.push([n, all.length]);
+      all += n.data;
+    }
+    const squash = (t) => t.replace(/\s+/g, " ");
+    const near = (t) => squash(t).replace(/^…|…$/g, "").trim();
+    const [b, a] = [near(before), near(after)];
+    let at = -1;
+    for (let i = all.indexOf(text); i >= 0; i = all.indexOf(text, i + 1)) {
+      if (at < 0) at = i;
+      // The context may have been read from an ancestor, so either side
+      // can be the longer: the shorter must be the end (or start) of the other.
+      const x = squash(all.slice(0, i)).trim();
+      const y = squash(all.slice(i + text.length)).trim();
+      if ((x.endsWith(b) || b.endsWith(x)) && (y.startsWith(a) || a.startsWith(y))) {
+        at = i;
+        break;
+      }
+    }
+    if (at < 0) return null;
+    const point = (offset) => {
+      for (let i = nodes.length - 1; i >= 0; i--) if (nodes[i][1] <= offset) return [nodes[i][0], offset - nodes[i][1]];
+      return null;
+    };
+    const range = document.createRange();
+    range.setStart(...point(at));
+    range.setEnd(...point(at + text.length));
+    return range;
+  }
+
+  function find(selector) {
+    try {
+      return document.querySelector(selector);
+    } catch {
+      return null;
+    }
   }
 
   // submit sends the tweak. Send waits for the mappers only if they haven't
@@ -236,7 +378,7 @@
 
   function updateCard(tweak = ns.page.tweak(mode.number)) {
     const { chip, status, statusText, request, thread, answer, box } = parts;
-    const label = tweak?.targets?.elements?.[0]?.label ?? mode.label ?? "";
+    const label = (tweak && ns.describe.pointedAt(tweak.targets)) || mode.label || "";
     if (chip.textContent !== label) chip.textContent = label;
     chip.hidden = !label;
     const s = ns.describe.status(tweak);
@@ -422,8 +564,18 @@
   // anchor is the point the panel hangs from.
   function anchor() {
     if (mode.kind === "compose") {
-      if (!mode.element.isConnected) return null;
-      const r = mode.element.getBoundingClientRect();
+      // A composer on text or an area hangs below it, leaving it in view.
+      if (mode.pick.kind === "area") {
+        const { page } = mode.targets.area;
+        return { x: page.x - scrollX, y: page.y + page.height - scrollY };
+      }
+      if (mode.pick.kind === "text") {
+        const r = [...mode.pick.range.getClientRects()].at(-1);
+        if (r) return { x: r.left, y: r.bottom };
+      }
+      const first = mode.pick.elements[0];
+      if (!first.isConnected) return null;
+      const r = first.getBoundingClientRect();
       return { x: r.left + mode.anchor.x * r.width, y: r.top + mode.anchor.y * r.height };
     }
     return ns.pins.point(mode.number);
@@ -470,13 +622,21 @@
   };
 
   ns.panel = {
-    compose(element, at) {
+    // compose opens the composer on a pick (pointing.js): its elements, and
+    // the selected text or the area.
+    compose(pick) {
       if (mode?.kind === "compose" && mode.sending) return; // one send at a time
       // The context is gathered now, while the page still shows what was
-      // picked, and the mappers start on it in the background while you type.
-      const targets = ns.context.targets([element]);
-      const located = ns.context.locate(targets, [element]).catch(() => {});
-      mode = { kind: "compose", element, targets, located, anchor: at, sending: false, error: "", returnTo: element };
+      // picked, and the mappers start on every element in the background
+      // while you type.
+      const targets = ns.context.targets(pick.elements);
+      if (pick.selection) targets.selection = pick.selection;
+      if (pick.area) targets.area = pick.area;
+      pick = { ...pick, elements: [...pick.elements] };
+      // rects are the numbered outlines for the screenshot, taken now (#38).
+      const rects = ns.pointing.rects(pick);
+      const located = ns.context.locate(targets, pick.elements).catch(() => {});
+      mode = { kind: "compose", pick, targets, rects, located, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
       drawCompose();
       place();
       composing(true);
@@ -485,11 +645,11 @@
     // show opens the card of tweak number. With focus, it takes the focus,
     // and gives it back to returnTo when it closes; a card reopened after a
     // reload doesn't take it.
-    show(number, { request, label, focus = false, returnTo = null, announce = false } = {}) {
+    show(number, { request, label, focus = false, returnTo = null, announce = false, range = null } = {}) {
       ns.picker.release();
       composing(false);
       opened++;
-      mode = { kind: "card", number, request, label, returnTo, announce };
+      mode = { kind: "card", number, request, label, returnTo, announce, range };
       drawCard();
       place();
       if (focus) focusIn();
@@ -508,6 +668,10 @@
       if (this.showing() === number) this.close();
       else this.show(number, { focus: true, returnTo: pin });
     },
+    // targets are the open composer's targets as Send will send them, and
+    // rects its numbered outlines, taken at pick time; null without one.
+    targets: () => (mode?.kind === "compose" ? mode.targets : null),
+    rects: () => (mode?.kind === "compose" ? mode.rects : null),
     // showing is the open card's number, hidden or not.
     showing: () => (mode?.kind === "card" ? mode.number : null),
     // sleep hides the card while the page is dormant, and shows it again
@@ -516,6 +680,7 @@
       if (on === asleep) return;
       if (on && mode?.kind === "compose") this.close();
       asleep = on;
+      if (on) ns.marks.clear();
       if (!panel) return;
       panel.hidden = on;
       if (!on) place();
@@ -528,6 +693,7 @@
       mode = null;
       panel?.remove();
       panel = null;
+      ns.marks.clear();
       ns.picker.release();
       composing(false);
       if (was?.kind === "card") {
@@ -542,9 +708,10 @@
       if (msg.number) {
         this.show(msg.number, {
           request: parts.text.value.trim(),
-          label: ns.describe.label(mode.element),
+          label: ns.describe.pointedAt(mode.targets),
           focus: true,
-          returnTo: mode.element,
+          returnTo: mode.pick.elements[0],
+          range: mode.pick.range ?? null, // the selection just sent, kept while it's on the page
         });
         return;
       }
@@ -581,9 +748,54 @@
     },
     // tick runs every frame while anything is shown.
     tick() {
-      if (!mode || asleep) return;
+      if (!mode || asleep) return ns.marks.clear();
       if (mode.kind === "card") updateCard();
+      ns.marks.draw(marked());
       place();
+    },
+    // canAdd says whether ⇧-click would change the open composer's elements.
+    canAdd: () => addable(),
+    // adding is what ⇧-click on target would do to the composer: "Add as
+    // 3", "Remove 2", or "" when there's no composer of elements to change.
+    adding(target) {
+      if (!addable()) return "";
+      const i = mode.pick.elements.indexOf(target);
+      return i >= 0 ? `Remove ${i + 1}` : `Add as ${mode.pick.elements.length + 1}`;
+    },
+    // add puts target in the composer as the next element, or takes it out
+    // if it's there; taking the last one out closes the composer. It says
+    // whether it did anything.
+    add(target) {
+      if (!addable()) return false;
+      const { pick, targets } = mode;
+      const i = pick.elements.indexOf(target);
+      let said;
+      if (i >= 0) {
+        if (pick.elements.length === 1) {
+          this.close();
+          return true;
+        }
+        const [gone] = targets.elements.splice(i, 1);
+        pick.elements.splice(i, 1);
+        if (i === 0) mode.anchor = { x: 0.5, y: 0.5 }; // the pin moves to the new element 1
+        said = `Element ${i + 1}, ${gone.label}, taken out. ${pick.elements.length} left.`;
+      } else {
+        pick.elements.push(target);
+        const added = ns.context.element(target);
+        targets.elements.push(added);
+        // Its mappers run too; Send waits for them as for the rest.
+        const locating = ns.context.locate({ elements: [added] }, [target]).catch(() => {});
+        mode.located = Promise.all([mode.located, locating]);
+        said = `Element ${pick.elements.length} added: ${targets.elements.at(-1).label}.`;
+      }
+      mode.returnTo = pick.elements[0];
+      mode.rects = ns.pointing.rects(pick);
+      ns.picker.hold(pick.elements.length === 1 ? pick.elements[0] : null);
+      drawPointed();
+      parts.heard.textContent = said;
+      ns.marks.draw(marked());
+      place();
+      return true;
     },
     // open is whether the panel is on screen.
     open: () => mode !== null && !asleep,

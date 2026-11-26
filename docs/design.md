@@ -587,6 +587,12 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
 - **Text**: select text, then tweak it ("reword this"). Claude gets the exact selected text.
 - **Area**: drag a box over any region, including empty space ("put a button here"). Claude gets the
   box, the elements inside it, and the screenshot.
+- **The gestures**: ⇧-click (or ⌥⇧-click) is ours only while a composer of elements is open: it
+  adds the element, or takes it out again. Otherwise a plain ⇧-click is the page's, and ⌥⇧-click
+  picks like ⌥-click. ⌥-click on selected text picks the text; **⌥-drag** draws the box, and esc
+  cancels the drag (a box under 8px is a click, and picks the element). The whole gesture is swallowed, so the page's own
+  selection and drags don't start. While the composer or card is open, what it points at stays
+  marked on the page: elements outlined with their numbers, the text highlighted, the area's box.
 - **Modal dialogs**: while a modal `<dialog>` is open, the overlay host moves inside it, so the
   dialog making the rest of the page inert doesn't block the overlay.
 
@@ -677,6 +683,10 @@ it is.
 **Areas**: the box (page and viewport coordinates); the smallest element containing the whole box,
 mapped ("the area is inside…"), so a box over empty space still points somewhere; and up to 5
 top-level elements fully inside it, each mapped too.
+
+In the targets, selected text is `selection: {text, before?, after?}` (the text around it read from
+the nearest ancestor with enough of it), and an area is `area: {page, viewport}`, each a box `{x, y,
+width, height}`; the elements follow the same numbering (`content/pointing.js`).
 
 **When mapping runs**: at pick time, alongside the screenshot, in the background while you type, so
 the composer opens at once. Send waits for it only if it hasn't finished (bounded by the timeouts).
@@ -780,9 +790,12 @@ Variants:
 - **Vue**: `` `src/components/Foo.vue`: element 1 (Vue, file only; search this file for its clues) ``.
 - **Path not placed**: the path as the page gave it, followed by `(not found in project)`.
 - **Selected text**: a `## Selected text, in element 1` section with the exact selection in a
-  fence, and about 40 characters before and after.
+  fence (at most 2000 characters), then `Before it:` and `After it:`, about 40 characters each,
+  quoted.
 - **Area**: a `## Area` section with the box, then `Inside: element 1` (the smallest containing
-  element) and `Contains: elements 2–4`, each with its own Element section.
+  element) and `Contains: elements 2–4`, each with its own Element section; over empty space, `Contains: no
+  elements`. Both sections follow the element sections; an area of 5 elements makes 6, so its last
+  is one line.
 - **No screenshot**: `Screenshot: none (capture failed)`.
 - **More than 5 elements**: full sections for elements 1–5; from element 6 on, one line each under
   `## Elements 6–N`: label, source location (or the top 3 clues), and selector. The screenshot still outlines them all.
@@ -809,7 +822,8 @@ How it's made (decided in [Extension architecture](https://github.com/codaset/tw
    (hover menus may close once the composer takes focus). Held until Send, thrown away on cancel.
 2. The content script hides the overlay host and waits two animation frames. The worker calls
    `captureVisibleTab` (PNG; the viewport only, in device pixels).
-3. The content script sends the rects of the elements, text or area. In an `OffscreenCanvas`, the
+3. The content script sends the rects of the elements, text or area, taken at pick time
+   (`ns.panel.rects()`: `{kind: element|text|area, number?, x, y, width, height}`, viewport CSS px). In an `OffscreenCanvas`, the
    worker crops to their union plus a 48 CSS-px margin (clipped to the viewport, converted to device
    pixels), draws the numbered outlines into the image, and scales so the longest side is at most
    1600px.
@@ -1040,7 +1054,7 @@ written is open.
   is called first in the handler, while the gesture lasts.)
 - Context menu: **Open side panel**.
 - Shortcuts are `chrome.commands`: ⌥⇧C pick mode, ⌥⇧N side panel, ⌥⇧H pins (three of Chrome's four
-  suggested keys). ⌥-click and ⇧-click are handled in the page by the content script.
+  suggested keys). ⌥-click, ⇧-click and ⌥-drag are handled in the page by the content script.
 - Badge: the number of open tweaks on this page, coloured by the most urgent (blue question, amber
   working, purple sent), or a grey `!` when no session claims a dev-looking page (see Claims).
   Until site access is granted, a single grey `!` shows in every tab instead (see Chrome
@@ -1260,8 +1274,10 @@ it with `actions/cache`, keyed on the version.
 }
 ```
 
-`pick` is one of `{selector}`, `{text}` (a selection) or `{area}` (a box). `first`, optional, is
-`{click: selector}`: a page control clicked before the pick, such as the one that opens a dialog.
+`pick` is one of `{selector}`, `{selectors}` (⌥⇧-clicked after the first), `{text, in?}` (a
+selection of that text inside the element `in`) or `{area}` (a box: `{x, y, width, height}`, viewport
+CSS pixels, dragged; or `{around: [selectors], margin}`, the box around those elements). `brief`,
+optional, lists strings the brief must contain as written. `first`, optional, is `{click: selector}`: a page control clicked before the pick, such as the one that opens a dialog.
 Paths are project-relative.
 `edit` appears only on round-trip cases. Assertions are made against the **brief** that `tweak work`
 prints, since that is what Claude reads, and it covers the bridge's path normalisation. The listed

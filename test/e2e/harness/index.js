@@ -95,19 +95,99 @@ export async function open(env, path = "/") {
   await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: `the content script to connect on ${path}` });
 }
 
-// Points at a case's pick the way the developer would, and returns how the
-// extension describes the element: {label, text, selector}.
+// Points at a case's pick the way the developer would, and waits for the
+// composer to open on it:
+// - {selector}: ⌥-click the element;
+// - {selectors: [a, b, …]}: ⌥-click a, then ⌥⇧-click each of the others;
+// - {text, in?}: select the first occurrence of text in the element `in`
+//   (default body), then ⌥-click it;
+// - {area: {x, y, width, height}}: ⌥-drag that box, in viewport CSS pixels;
+//   {area: {around: [selectors], margin}}: the box around those elements,
+//   so the case doesn't hang on the platform's fonts.
+// It returns how the extension describes element 1 ({label, text,
+// selector}), with the composer's targets.
 export async function pick(env, target) {
-  if (!target.selector) throw new Error(`pick ${JSON.stringify(target)} isn't supported yet: only {selector}`);
-  const el = await env.page.waitForSelector(target.selector, { visible: true });
-  const box = await el.boundingBox();
-  await env.page.keyboard.down("Alt");
+  const { page } = env;
+  const centre = async (selector) => {
+    const box = await (await page.waitForSelector(selector, { visible: true })).boundingBox();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+  const selectors = target.selectors ?? (target.selector ? [target.selector] : null);
+  let at = null;
+  if (target.text) at = await select(page, target.text, target.in ?? "body");
+  else if (selectors) at = await centre(selectors[0]);
+  else if (!target.area) throw new Error(`pick ${JSON.stringify(target)}: give a selector, selectors, text or an area`);
+  const before = await composerTargets(env);
+  await page.keyboard.down("Alt");
   try {
-    await env.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    if (target.area) {
+      const { x, y, width, height } = target.area.around ? await around(page, target.area.around, target.area.margin ?? 0) : target.area;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + width, y + height, { steps: 8 });
+      await page.mouse.up();
+    } else {
+      await page.mouse.click(at.x, at.y);
+      if (selectors?.length > 1) await env.tab.until(`ns.panel.targets()?.elements.length === 1`, { what: "the composer on element 1" });
+      for (const [i, s] of (selectors ?? []).slice(1).entries()) {
+        const c = await centre(s);
+        await page.keyboard.down("Shift");
+        try {
+          await page.mouse.click(c.x, c.y);
+        } finally {
+          await page.keyboard.up("Shift");
+        }
+        await env.tab.until(`ns.panel.targets()?.elements.length`, { is: (n) => n === i + 2, what: `element ${i + 2} added` });
+      }
+    }
   } finally {
-    await env.page.keyboard.up("Alt");
+    await page.keyboard.up("Alt");
   }
-  return env.tab.evaluate(`ns.describe.element(document.querySelector(${JSON.stringify(target.selector)}))`);
+  const targets = await env.tab.until(`ns.panel.targets()`, {
+    is: (t) => Boolean(t) && JSON.stringify(t) !== JSON.stringify(before),
+    what: `the composer to open on ${JSON.stringify(target)}`,
+  });
+  const { label, text: words, selector } = targets.elements[0];
+  return { label, text: words, selector, targets };
+}
+
+const composerTargets = (env) => env.tab.evaluate(`ns.panel.targets()`);
+
+// around is the box holding the elements, plus a margin, in viewport pixels.
+async function around(page, selectors, margin) {
+  const boxes = await Promise.all(selectors.map(async (s) => (await page.waitForSelector(s, { visible: true })).boundingBox()));
+  const x = Math.min(...boxes.map((b) => b.x)) - margin;
+  const y = Math.min(...boxes.map((b) => b.y)) - margin;
+  const right = Math.max(...boxes.map((b) => b.x + b.width)) + margin;
+  const bottom = Math.max(...boxes.map((b) => b.y + b.height)) + margin;
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+// select selects the first occurrence of text inside the element `within`
+// on the page, as the developer would by dragging over it, and returns
+// the middle of its first line box.
+function select(page, text, within) {
+  return page.evaluate(
+    (text, within) => {
+      const root = document.querySelector(within);
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = node.data.indexOf(text);
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + text.length);
+        const sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const r = range.getClientRects()[0];
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
+      throw new Error(`no "${text}" in ${within}`);
+    },
+    text,
+    within,
+  );
 }
 
 // Answers Claude's question from the open card the way the developer would:

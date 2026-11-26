@@ -27,6 +27,16 @@ func TestContextAgreesWithTheBrief(t *testing.T) {
 		}
 	}
 
+	pointing, err := os.ReadFile(filepath.Join("..", "..", "extension", "content", "pointing.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, n := range map[string]int{"SELECTION_CAP": selectionCap, "AROUND_CAP": aroundCap} {
+		if want := fmt.Sprintf("const %s = %d;", name, n); !strings.Contains(string(pointing), want) {
+			t.Errorf("extension/content/pointing.js should say %q", want)
+		}
+	}
+
 	m := regexp.MustCompile(`(?s)const STYLE_KEYS = \[(.*?)\];`).FindStringSubmatch(src)
 	if m == nil {
 		t.Fatal("no STYLE_KEYS in extension/content/context.js")

@@ -100,6 +100,98 @@
     }
     .tag .size { opacity: 0.75; margin-left: 6px; }
     .tag .source { opacity: 0.9; margin-left: 6px; padding-left: 6px; border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
+    .tag .hint-word { font-family: system-ui, -apple-system, sans-serif; font-weight: 650; margin-right: 6px; }
+    .outline.adding { border-style: dashed; }
+
+    /* Selected text under the pointer while ⌥ is held, and the drag box */
+    .text-mark, .mark.kind-text {
+      position: fixed;
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--outline) 22%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--outline) 55%, transparent);
+    }
+    .area-box {
+      position: fixed;
+      border: 1.5px dashed var(--outline);
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--outline) 10%, transparent);
+    }
+    .area-box.dragging { box-shadow: 0 0 0 9999px rgb(16 24 40 / 0.08); }
+
+    /* Marks: what an open composer or card points at, numbered */
+    .marks { position: fixed; inset: 0; pointer-events: none; }
+    .mark { position: fixed; border-radius: 4px; transition: opacity 120ms ease; animation: fade 140ms ease-out; }
+    .mark.kind-element { border: 2px solid var(--outline); background: color-mix(in srgb, var(--outline) 5%, transparent); }
+    .mark.kind-inside { border: 1.5px dashed color-mix(in srgb, var(--outline) 55%, transparent); }
+    .mark.kind-area { border: 1.5px dashed var(--outline); border-radius: 3px; background: color-mix(in srgb, var(--outline) 10%, transparent); }
+    .mark-number {
+      position: absolute;
+      top: -9px;
+      left: -9px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      display: grid;
+      place-items: center;
+      border: 2px solid var(--bg);
+      border-radius: 9px;
+      background: var(--outline);
+      color: var(--accent-text);
+      font: 700 10.5px/1 system-ui, -apple-system, sans-serif;
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+    }
+    .mark.kind-inside .mark-number { background: var(--bg); color: var(--outline); border-color: color-mix(in srgb, var(--outline) 55%, transparent); }
+
+    /* The composer's list of what it points at */
+    .picked { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 168px; overflow: auto; overscroll-behavior: contain; }
+    .picked li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .picked .n {
+      flex: none;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: var(--outline);
+      color: var(--accent-text);
+      font: 700 10.5px/1 system-ui, -apple-system, sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    .picked .what { min-width: 0; flex: 1; color: var(--muted); font: 11.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .picked .remove {
+      flex: none;
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      font: 15px/1 system-ui, sans-serif;
+      cursor: pointer;
+    }
+    .picked .remove:hover { background: var(--surface); color: var(--text); }
+    .picked .remove:focus-visible { outline: 2px solid var(--outline); outline-offset: 1px; }
+    .selection-quote {
+      margin: 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--outline) 9%, var(--bg));
+      color: var(--text);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .pointed-at { display: grid; gap: 8px; }
+    .pointed { margin: 0; color: var(--muted); font-size: 12px; }
+    .pointed code { font: 11.5px ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); }
+    .tip { margin: 0; color: var(--muted); font-size: 11.5px; }
 
     /* Pins */
     .pin {
@@ -278,6 +370,7 @@
     .tone-ended { --tone: var(--tone-ended); --on-tone: var(--on-ended); }
 
     @keyframes rise { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+    @keyframes fade { from { opacity: 0; } }
     @keyframes pulse { 50% { opacity: 0.35; } }
     @keyframes ripple { 0% { opacity: 0.6; transform: scale(0.8); } 100% { opacity: 0; transform: scale(1.4); } }
     @media (prefers-reduced-motion: reduce) {

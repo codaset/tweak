@@ -48,3 +48,8 @@ test("clues must all be present, quoting aside", () => {
   assert.deepEqual(briefProblems(EXAMPLE, { clues: ["data-testid=save"] }), ["clue data-testid=save is missing"], "a clue's prefix isn't the clue");
   assert.deepEqual(briefProblems(EXAMPLE, { clues: ["data-testid=delete-user"] }), ["clue data-testid=delete-user is missing"]);
 });
+
+test("lines a case names must be in the brief as written", () => {
+  assert.deepEqual(briefProblems(EXAMPLE, { brief: ['## Element 2: `button.btn-primary` "Save and close"'] }), []);
+  assert.deepEqual(briefProblems(EXAMPLE, { brief: ["## Area"] }), ["the brief doesn't say: ## Area"]);
+});

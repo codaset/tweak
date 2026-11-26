@@ -174,5 +174,19 @@
   // element is one element as a tweak's targets carry it (schema/create.json).
   const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, change, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element };
+  // pointedAt is what a tweak's targets point at, as the card's chip says
+  // it: element 1's label, "3 elements", the selected text quoted, or the
+  // area's size.
+  function pointedAt(targets) {
+    const els = targets?.elements ?? [];
+    if (targets?.area) return `Area ${Math.round(targets.area.page.width)}×${Math.round(targets.area.page.height)}`;
+    if (targets?.selection) {
+      const s = [...targets.selection.text.replace(/\s+/g, " ").trim()];
+      return `“${s.length > 24 ? `${s.slice(0, 23).join("")}…` : s.join("")}”`;
+    }
+    if (els.length > 1) return `${els.length} elements`;
+    return els[0]?.label ?? "";
+  }
+
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element, pointedAt };
 })();

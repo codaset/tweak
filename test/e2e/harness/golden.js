@@ -36,8 +36,9 @@ const plain = (s) => s.replace(/[`"]/g, "").replace(/\s+/g, " ").toLowerCase();
 
 // What's wrong with the brief, as a list of sentences; empty when it matches.
 // The listed locations must be the first N under "Where to look", in order;
-// the listed clues must all be present.
-export function briefProblems(brief, { locations = [], clues = [] }) {
+// the listed clues must all be present; and so must each of the case's
+// brief strings, as written (a section heading, or a line of one).
+export function briefProblems(brief, { locations = [], clues = [], brief: says = [] }) {
   const problems = [];
   const listed = whereToLook(brief);
   locations.forEach((loc, i) => {
@@ -58,5 +59,6 @@ export function briefProblems(brief, { locations = [], clues = [] }) {
     const at = new RegExp(`(?<![\\w-])${RegExp.escape(plain(clue))}(?![\\w-])`);
     if (!at.test(text)) problems.push(`clue ${clue} is missing`);
   }
+  for (const line of says) if (!brief.includes(line)) problems.push(`the brief doesn't say: ${line}`);
   return problems;
 }

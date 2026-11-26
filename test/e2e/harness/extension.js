@@ -12,7 +12,7 @@ export const EXTENSION = resolve(import.meta.dirname, "../../../extension");
 // Add each handler here as its ticket names it in worker.js.
 const TEST_MESSAGE = `
 // ---- Test copy only (test/e2e/harness/extension.js) ----
-const e2eHandlers = { "side-panel": openSidePanel };
+const e2eHandlers = { "side-panel": openSidePanel, "pick-mode": pickMode, pins: togglePins };
 // How many captures the tabs hold, waiting for Send (design.md § Screenshot).
 globalThis.e2eHeldCaptures = () => [...tabs].reduce((n, port) => n + port.shots.size, 0);
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -54,7 +54,7 @@ export function testCopy({ bridgePort, source = EXTENSION, allUrls = false }) {
 
   const workerFile = join(dir, manifest.background.service_worker);
   const worker = readFileSync(workerFile, "utf8");
-  for (const name of ["openSidePanel"]) {
+  for (const name of ["openSidePanel", "pickMode", "togglePins"]) {
     if (!new RegExp(`function ${name}\\b`).test(worker)) throw new Error(`worker.js has no ${name}: update the test message in testCopy`);
   }
   if (!/const tabs = new Set\(\)/.test(worker) || !/port\.shots = /.test(worker)) throw new Error("worker.js has no tabs or port.shots: update the test message in testCopy");

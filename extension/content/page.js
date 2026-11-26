@@ -11,6 +11,7 @@
   if (!ns || ns.ready) return;
 
   const tweaks = new Map(); // number -> tweak: this page's, and the open card's
+  const FINISHED = new Set(["done", "declined"]);
   let frame = 0;
   let claimed = true; // the scripts run only on claimed pages; the worker says otherwise
   let draftsAdopted = false; // once this load has the drafts kept for its tab
@@ -115,16 +116,34 @@
         if (adopting) draftsAdopted = true;
         break;
       }
-      case "tweak":
+      case "tweak": {
         // msg.event is the bridge's event: tweak-undone means a change was
         // undone, which reloads the page as after a change (#42). A
         // resolved tweak (resolved or withdrawn) leaves the page: its pin
         // goes, and its card closes.
+        const was = tweaks.get(msg.tweak.number);
         if (msg.tweak.resolvedAt) {
           tweaks.delete(msg.tweak.number);
           ns.panel.gone(msg.tweak);
         } else tweaks.set(msg.tweak.number, msg.tweak);
         ns.page.redraw();
+        // With the pins hidden, a tweak finishing here is a toast, unless
+        // its card says so already.
+        const t = msg.tweak;
+        const finished = FINISHED.has(t.status) && was && !FINISHED.has(was.status);
+        if (finished && ns.pins.hidden() && claimed && t.page === shownPage && ns.panel.showing() !== t.number) {
+          ns.toast(`Tweak ${t.number}: ${ns.describe.status(t).text}`);
+        }
+        break;
+      }
+      case "pick-mode": // the toolbar button or ⌥⇧C
+        ns.picker.toggleMode();
+        break;
+      case "pins": // ⌥⇧H, here: the setting itself reaches every tab of the site
+        ns.toast(msg.hidden ? "Pins hidden on this site. ⌥⇧H shows them." : "Pins shown on this site.");
+        break;
+      case "show": // the side panel's Show, on a pin whose element is gone
+        if (tweaks.has(msg.number)) ns.panel.show(msg.number, { focus: true });
         break;
       case "claimed":
         setClaimed(msg.claimed, msg.lapsed);

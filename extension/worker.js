@@ -97,7 +97,7 @@ async function onTabMessage(port, msg) {
       const key = cardKey(tabId);
       const { [key]: card = null } = await chrome.storage.session.get(key);
       if (!("card" in port)) port.card = card; // a card message since then is newer
-      port.postMessage({ type: "tweaks", tweaks: forTab(tweakState, port), card, claimed: claimed(port.url) });
+      port.postMessage({ type: "tweaks", tweaks: forTab(tweakState, port), card: port.card, claimed: claimed(port.url) });
       break;
     }
     case "card":

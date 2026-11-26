@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -231,7 +233,31 @@ func (b *Bridge) work(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(200)
-	w.Write([]byte(brief.Render(tw)))
+	w.Write([]byte(brief.Render(tw, b.briefOptions(tw))))
+}
+
+// briefOptions are what the brief needs beyond the tweak: the folder of the
+// session it's for, which the page's paths are placed in, and its
+// screenshot, once there is one.
+func (b *Bridge) briefOptions(tw store.Tweak) brief.Options {
+	var o brief.Options
+	if se, err := b.store.Session(tw.Session); err == nil {
+		o.Folder = se.Folder
+	}
+	if shot := b.screenshotPath(tw.Number); fileExists(shot) {
+		o.Screenshot = shot
+	}
+	return o
+}
+
+// screenshotPath is where tweak n's screenshot is kept, beside the database.
+func (b *Bridge) screenshotPath(n int64) string {
+	return filepath.Join(b.opts.Config.StateDir, "screenshots", strconv.FormatInt(n, 10)+".png")
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // statusEntries are the statuses Claude sets with POST /tweaks/:n/status,

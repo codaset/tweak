@@ -74,7 +74,7 @@ func TestTheBriefPlacesTheConversation(t *testing.T) {
 	got := Render(asked(
 		store.Entry{From: "claude", Kind: "question", Text: "Solid or outline?"},
 		store.Entry{From: "you", Kind: "reply", Text: "outline"},
-	))
+	), Options{})
 	order := []string{"# Tweak 12\n\n**Latest:** ", "**Request:** ", "## Element 1: ", "## Conversation\n", "When finished"}
 	at := 0
 	for _, s := range order {

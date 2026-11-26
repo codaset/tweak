@@ -7,10 +7,27 @@ import (
 	"github.com/codaset/tweak/internal/store"
 )
 
-// Conversation is what a tweak's entries add to its brief (docs/design.md,
-// "The brief"): the Latest line, written under the title, and the
-// Conversation section, written after the elements and before the footer.
-// On a first fetch, when the request is the only entry, both are empty.
+// The conversation's parts of the brief (docs/design.md, "The brief"): the
+// Latest line, the Conversation section, and the finishing commands in the
+// footer. Render places them and owns the blank lines around them, so each
+// hook returns its text alone, or "" for none.
+
+// latest is the **Latest** line, after a reply: it goes straight after the
+// title. On a first fetch there is none.
+var latest = func(tw store.Tweak) string { return strings.TrimSpace(ConversationOf(tw).Latest) }
+
+// conversation is the ## Conversation section, plans included: after the
+// element sections, before the footer. On a first fetch there is none.
+var conversation = func(tw store.Tweak) string { return strings.TrimRight(ConversationOf(tw).Section, "\n") }
+
+// finishers are the commands that end a turn on tweak n, for the footer.
+var finishers = func(n int64) []string {
+	return []string{fmt.Sprintf("tweak done %d '…'", n)}
+}
+
+// Conversation is what a tweak's entries add to its brief: the Latest line
+// and the Conversation section. On a first fetch, when the request is the
+// only entry, both are empty.
 type Conversation struct {
 	Latest  string // "**Latest:** …" and a blank line, or ""
 	Section string // "## Conversation" with every entry, plans included, or ""

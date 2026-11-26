@@ -5,6 +5,7 @@ package schema
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -64,6 +65,23 @@ func TestInvalidExamplesAreRefused(t *testing.T) {
 				t.Error("should be refused")
 			}
 		})
+	}
+}
+
+// The targets definitions are repeated in every schema that carries a
+// tweak; the copies must not drift from create.json's.
+func TestTargetsAreTheSameEverywhere(t *testing.T) {
+	defs := func(file string) map[string]any {
+		return load(t, file).(map[string]any)["$defs"].(map[string]any)
+	}
+	want := defs("create.json")
+	for _, file := range []string{"event.json", "snapshot.json"} {
+		got := defs(file)
+		for _, name := range []string{"targets", "viewport", "element", "location", "clue", "size", "rule", "anchor"} {
+			if !reflect.DeepEqual(got[name], want[name]) {
+				t.Errorf("%s $defs.%s differs from create.json's", file, name)
+			}
+		}
 	}
 }
 

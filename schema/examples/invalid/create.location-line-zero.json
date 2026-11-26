@@ -1,0 +1,12 @@
+{
+  "type": "create",
+  "ref": "w2",
+  "url": "https://ernie.localhost/",
+  "request": "make it green",
+  "targets": {
+    "elements": [
+      { "label": "p", "selector": "p", "locations": [{ "file": "src/App.svelte", "line": 0, "role": "element", "via": "svelte" }] }
+    ]
+  },
+  "anchor": { "x": 0.5, "y": 0.5 }
+}

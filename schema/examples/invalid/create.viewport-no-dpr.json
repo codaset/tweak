@@ -1,0 +1,11 @@
+{
+  "type": "create",
+  "ref": "w2",
+  "url": "https://ernie.localhost/",
+  "request": "make it green",
+  "targets": {
+    "viewport": { "width": 1440, "height": 900 },
+    "elements": [{ "label": "p", "selector": "p" }]
+  },
+  "anchor": { "x": 0.5, "y": 0.5 }
+}

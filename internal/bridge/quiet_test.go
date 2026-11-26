@@ -383,3 +383,32 @@ func TestAReturnDuringTheLapsesTeardownKeepsItsCapture(t *testing.T) {
 		t.Fatalf("tweak 1 is %v", tw["status"])
 	}
 }
+
+// Another session claiming the page can't work on the tweak while the
+// lapse's teardown is still in the git check: it's told to try again, and
+// can once the old capture has ended.
+func TestWorkWaitsForALapsesTeardown(t *testing.T) {
+	folder := project(t, map[string]string{"app.css": "red"})
+	h, s, c := quietBridge(t, folder)
+	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
+	s.readUntil("result")
+	h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	changed := h.b.gitChanged
+	inGit, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	h.b.gitChanged = func(tree capture.Tree, scratch string) ([]string, error) {
+		once.Do(func() { close(inGit); <-release })
+		return changed(tree, scratch)
+	}
+	c.advance(10 * time.Minute)
+	<-inGit
+	h.register("s2", folder)
+	h.claim("s2", "https://ernie.localhost/*")
+	resp, body := h.do(as("s2", req{method: "POST", path: "/tweaks/1/work"}))
+	refused(t, resp, body, 409, "still-capturing")
+	close(release)
+	eventually(t, "s1's capture to end", func() bool { return !h.marked("s1") })
+	if resp, body := h.do(as("s2", req{method: "POST", path: "/tweaks/1/work"})); resp.StatusCode != 200 {
+		t.Fatalf("work after the teardown: %d %s", resp.StatusCode, body)
+	}
+}

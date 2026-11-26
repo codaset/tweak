@@ -278,6 +278,8 @@ func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string
 	switch {
 	case errors.As(err, &lost):
 		return 409, "claim-lost", err.Error()
+	case errors.Is(err, store.ErrCapturedElsewhere):
+		return 409, "still-capturing", fmt.Sprintf("tweak %d's previous session is still finishing its record of the files it changed: run tweak work %d again in a moment", n, n)
 	case errors.Is(err, store.ErrNoTweak):
 		return 404, "no-tweak", noTweak(strconv.FormatInt(n, 10))
 	case errors.As(err, &notYours):

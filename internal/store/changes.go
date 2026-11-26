@@ -18,6 +18,10 @@ const (
 // ErrNotCapturing means the session has no tweak capturing.
 var ErrNotCapturing = errors.New("this session isn't capturing")
 
+// ErrCapturedElsewhere refuses tweak work on a tweak whose previous
+// session's capture of it is still ending.
+var ErrCapturedElsewhere = errors.New("its previous session's capture is still ending")
+
 // ErrStillCapturing refuses to start a capture while the session's capture
 // of another tweak hasn't been ended with it (Work's end).
 var ErrStillCapturing = errors.New("this session is still capturing another tweak")
@@ -118,6 +122,16 @@ func (s *Store) Work(sessionID string, number int64, end *CaptureEnd, start Capt
 	}
 	if !canMove(tw.Status, StatusWorking) {
 		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: StatusWorking}
+	}
+	// A tweak handed over from a session whose capture of it hasn't ended
+	// yet (a lapse or release still reading its after contents): that round's
+	// baseline must judge that round's edits first.
+	var elsewhere int
+	if err := tx.QueryRow(`SELECT count(*) FROM changes WHERE tweak = ? AND capturing IS NOT NULL AND capturing != ?`, number, sessionID).Scan(&elsewhere); err != nil {
+		return Tweak{}, err
+	}
+	if elsewhere > 0 {
+		return Tweak{}, ErrCapturedElsewhere
 	}
 	c, _, err := capturingIn(tx, sessionID)
 	capturing := err == nil

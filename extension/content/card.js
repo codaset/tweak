@@ -313,12 +313,19 @@
   }
 
   // focusIn moves the focus into the panel: to the reply box while Claude
-  // has a question, otherwise to the panel itself.
-  const focusIn = () =>
+  // has a question, otherwise to the panel itself. Only for the card it was
+  // asked for: if that card closed or another opened by the next frame (a
+  // question's card, which doesn't take the focus), nothing moves. Redraws
+  // of the same card don't count.
+  let opened = 0; // bumped by every show and close
+  const focusIn = () => {
+    const asked = opened;
     requestAnimationFrame(() => {
+      if (opened !== asked) return;
       const target = parts.answer && !parts.answer.hidden ? parts.box : panel;
       target?.focus({ preventScroll: true });
     });
+  };
 
   ns.panel = {
     compose(element, at) {
@@ -337,6 +344,7 @@
     show(number, { request, label, focus = false, returnTo = null, announce = false } = {}) {
       ns.picker.release();
       composing(false);
+      opened++;
       mode = { kind: "card", number, request, label, returnTo, announce };
       drawCard();
       place();
@@ -369,6 +377,7 @@
       if (!on) place();
     },
     close() {
+      opened++;
       const was = mode;
       // Focus goes back only if it was in the overlay: never taken from the page.
       const focused = ns.overlay.root?.activeElement;

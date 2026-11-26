@@ -124,7 +124,7 @@ func TestStatusTransitionsAreGuarded(t *testing.T) {
 	if _, err := s.SetStatus("s1", tw.Number, StatusDone, summary()); err != nil {
 		t.Fatal(err)
 	}
-	refused(tw.Number, StatusDone, "tweak 1 is already done")
+	refused(tw.Number, StatusDone, "tweak 1 is already done: its summary is saved, so there's nothing more to do")
 	refused(tw.Number, StatusWorking, "tweak 1 is already done: there's nothing more to work on")
 	if got, _ := s.Tweak(tw.Number); len(got.Entries) != 2 {
 		t.Fatalf("entries %+v, want the request and one summary", got.Entries)

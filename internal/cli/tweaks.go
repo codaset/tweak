@@ -251,11 +251,13 @@ func (c *context) post(cl *client, path string, body map[string]string) error {
 	if err := cl.call("POST", path, body, &out); err != nil {
 		return err
 	}
-	switch out.Undo {
-	case "declined":
+	switch {
+	case out.Undo == "declined":
 		fmt.Fprintf(c.Stdout, "tweak %d: undo declined, change kept\n", out.Number)
-	case "undone":
+	case out.Undo == "undone":
 		fmt.Fprintf(c.Stdout, "tweak %d: undone\n", out.Number)
+	case out.Status == "withdrawn": // the developer took it back: Claude's last word kept the change
+		fmt.Fprintf(c.Stdout, "tweak %d: withdrawn, change kept for Undo\n", out.Number)
 	default:
 		fmt.Fprintf(c.Stdout, "tweak %d: %s\n", out.Number, out.Status)
 	}

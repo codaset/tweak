@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/withdraw.json",
+  "title": "withdraw",
+  "description": "To the bridge on the WebSocket: the card's Withdraw, for an open tweak. Answered by a result with the tweak's number (not-open once Claude has finished it, or it's already resolved). It becomes withdrawn and resolved: a tweak-withdrawn event follows, the session's withdrawn line, or tweak-resolved for a tweak still sent, which never reached a session.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "withdraw"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "number": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "type",
+    "ref",
+    "number"
+  ],
+  "additionalProperties": false
+}

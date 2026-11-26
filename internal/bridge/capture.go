@@ -160,6 +160,9 @@ func (b *Bridge) startWork(session string, n int64) (store.Tweak, error) {
 	if err != nil && !errors.Is(err, store.ErrNoSession) {
 		return store.Tweak{}, err
 	}
+	if err := b.skipWithdrawn(session, n); err != nil {
+		return store.Tweak{}, err
+	}
 	// Git first, outside the lock: the previous capture's check, and this
 	// one's snapshot.
 	g := b.prepare(session, 0)

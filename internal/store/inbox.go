@@ -19,11 +19,15 @@ type Inbox struct {
 
 // inboxWhere picks the events a session's watcher hears about: its new
 // tweaks and those handed to it, the replies to its questions, the tweaks
-// sent again, undo conflicts, and its claims released, restored or lost. A
-// tweak's lines are only for the session it is for now: one that passed to
-// another session is no longer this one's.
-const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-handed', 'tweak-replied', 'tweak-again', 'tweak-undo-conflict', 'claim-released', 'claim-restored', 'claim-lost')
-	AND (tweak IS NULL OR tweak IN (SELECT number FROM tweaks WHERE session = ?))`
+// sent again, undo conflicts, the tweaks withdrawn from it, and its claims
+// released, restored or lost. A tweak's lines are only for the session it is
+// for now: one that passed to another session is no longer this one's. A
+// withdrawn tweak's new, reply and again: lines still waiting are left out:
+// its withdrawn line (or nothing, for one that never reached Claude)
+// replaces them.
+const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-handed', 'tweak-replied', 'tweak-again', 'tweak-undo-conflict', 'tweak-withdrawn', 'claim-released', 'claim-restored', 'claim-lost')
+	AND (tweak IS NULL OR tweak IN (SELECT number FROM tweaks WHERE session = ?))
+	AND NOT (type IN ('tweak-created', 'tweak-handed', 'tweak-replied', 'tweak-again') AND tweak IN (SELECT number FROM tweaks WHERE status = 'withdrawn'))`
 
 // Inbox acknowledges the session's events up to after, then returns those
 // after it. after < 0 means "where the last watcher left off" and
@@ -36,7 +40,7 @@ func (s *Store) Inbox(sessionID string, after int64) (Inbox, error) {
 	defer tx.Rollback()
 
 	var in Inbox
-	if err := tx.QueryRow(`SELECT coalesce(max(seq), 0) FROM events`).Scan(&in.Seq); err != nil {
+	if err := tx.QueryRow(`SELECT ` + lastSeq).Scan(&in.Seq); err != nil {
 		return Inbox{}, err
 	}
 	var acked int64

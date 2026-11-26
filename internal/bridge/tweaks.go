@@ -44,6 +44,10 @@ type tweakOut struct {
 	Resends int        `json:"resends,omitempty"`
 	AgainAt string     `json:"againAt,omitempty"`
 	Change  *changeOut `json:"change,omitempty"`
+	// ResolvedAt is when the developer resolved or withdrew it, and DeleteAt
+	// when it, its change and its screenshot go; both absent while open.
+	ResolvedAt string `json:"resolvedAt,omitempty"`
+	DeleteAt   string `json:"deleteAt,omitempty"`
 	// Left is, while no session has the tweak, the session that let go of
 	// its page: its folder, and how (lapsed, released or ended).
 	Left *leftOut `json:"left,omitempty"`
@@ -97,6 +101,9 @@ func (b *Bridge) tweakJSON(t store.Tweak) tweakOut {
 		if !t.WaitFrom.IsZero() {
 			out.AgainAt = stamp(t.WaitFrom.Add(b.opts.AgainAfter))
 		}
+	}
+	if !t.ResolvedAt.IsZero() {
+		out.ResolvedAt, out.DeleteAt = stamp(t.ResolvedAt), b.deleteAt(t.ResolvedAt)
 	}
 	for _, e := range t.Entries {
 		out.Entries = append(out.Entries, entryOut{From: e.From, Kind: e.Kind, Text: e.Text, At: stamp(e.At)})
@@ -171,6 +178,8 @@ func (b *Bridge) line(e store.Event) string {
 		return againLine(*e.Tweak)
 	case store.EventTweakUndoConflict:
 		return undoConflictLine(*e.Tweak)
+	case store.EventTweakWithdrawn:
+		return fmt.Sprintf("tweak %d withdrawn", e.Tweak.Number)
 	case store.EventClaimReleased:
 		return "claim released: " + e.Claim.Pattern
 	case store.EventClaimRestored:
@@ -308,6 +317,10 @@ func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string
 		return 409, "picked-up", err.Error()
 	case errors.Is(err, store.ErrNotUndoable):
 		return 409, "not-undoable", err.Error()
+	case errors.Is(err, store.ErrFinished):
+		return 409, "not-open", err.Error()
+	case errors.Is(err, store.ErrStillOpen):
+		return 409, "not-finished", err.Error()
 	case errors.Is(err, store.ErrNotUndoRequested):
 		return 409, "not-undo-requested", fmt.Sprintf("no undo was asked of tweak %d: there's nothing to undo by hand", n)
 	}
@@ -324,6 +337,12 @@ func (b *Bridge) work(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tw, err := b.startWork(session, n)
+	if skip := (errWithdrawn{}); errors.As(err, &skip) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(200)
+		fmt.Fprintln(w, skip.Error())
+		return
+	}
 	if !b.refuseChange(w, n, err) {
 		return
 	}

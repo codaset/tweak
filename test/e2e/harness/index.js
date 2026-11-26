@@ -279,7 +279,10 @@ export async function undoFromCard(env, { label = "Undo", note = "Undone" } = {}
 // its pin has gone.
 export async function finishFromCard(env, n, label) {
   await env.tab.until(text(CARD_ACTION), { is: (s) => s === label, what: `the card's ${label} button` });
-  await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_ACTION)}).focus()`);
+  // A card just shown takes the focus a frame later: focus the button after it.
+  const button = `root.querySelector(${JSON.stringify(CARD_ACTION)})`;
+  await env.tab.evaluate(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(${button}.focus()))))`);
+  await env.tab.until(`root.activeElement === ${button}`, { what: `the focus on ${label}` });
   await env.page.keyboard.press("Enter");
   await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)}) && ![...root.querySelectorAll(".pin")].some((p) => p.textContent === "${n}")`, {
     what: `tweak ${n}'s card and pin to leave the page`,

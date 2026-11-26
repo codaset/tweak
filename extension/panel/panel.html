@@ -126,18 +126,19 @@
 
       <section class="resolved" id="resolved" hidden aria-labelledby="resolved-title">
         <h2 id="resolved-title">Resolved tweaks</h2>
+        <p class="note" id="resolved-access" hidden>Tweak needs site access to list this site's resolved tweaks.</p>
         <ul id="resolved-list" role="list"></ul>
       </section>
     </main>
 
     <footer>
       <form id="port-form" novalidate>
-        <label for="port">Bridge port</label>
+        <label for="port">Tweak's port</label>
         <div class="port-row">
           <input id="port" name="port" type="number" inputmode="numeric" min="1" max="65535" placeholder="47391" />
           <button type="submit" id="save-port">Save</button>
         </div>
-        <p class="note" id="port-note">Only if you set <code>TWEAK_PORT</code> for the bridge.</p>
+        <p class="note" id="port-note">Only if you've set <code>TWEAK_PORT</code>.</p>
       </form>
     </footer>
   </body>

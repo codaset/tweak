@@ -7,8 +7,8 @@ import { LIVE_PORT } from "./fixture.js";
 export const EXTENSION = resolve(import.meta.dirname, "../../../extension");
 
 // What the test copy adds to the worker: a test-only message that calls the
-// handlers headless Chrome can't reach, the shortcuts and the toolbar's
-// context menu. `name` is the handler; the sender's tab is passed to it.
+// handlers headless Chrome can't reach: the shortcuts'. `name` is the
+// handler; the sender's tab is passed to it.
 // Add each handler here as its ticket names it in worker.js.
 const TEST_MESSAGE = `
 // ---- Test copy only (test/e2e/harness/extension.js) ----

@@ -73,7 +73,7 @@ the Codaset Tweak side panel and click Allow access, or ⌥-click won't work`.
 
 | Part | Does |
 |---|---|
-| Service worker | the bridge WebSocket; content-script registration; the badge, commands and context menu; `captureVisibleTab` and the screenshot processing; relaying between tabs and the bridge |
+| Service worker | the bridge WebSocket; content-script registration; the badge and commands; `captureVisibleTab` and the screenshot processing; relaying between tabs and the bridge |
 | Content script (isolated world) | everything you see and touch: picker, hover outline, composer, card, pins, toasts; the mappers that only need the DOM (Rails comments, Proscenium classes, CSS rules, search clues); building a tweak's targets; reload detection |
 | Page probe (MAIN world) | a thin probe that never draws anything: reads framework metadata (React fibers, Vue `__file`, Svelte `__svelte_meta`) when asked, and listens for HMR signals. It answers through `CustomEvent`s on `document` with request IDs, never through attributes written onto the page. The page can see and spoof this traffic; that's acceptable, because the results are data describing the element |
 | Side panel | a view only, holding no state of its own beyond an Undo on its way and which site the front tab shows; talks to the worker through a port |
@@ -1198,7 +1198,8 @@ written is open.
   `activeTab` reaches) gets them injected at once, then picks. While the bridge is down, it opens
   the side panel. Pick mode is ⌥ held for one pick: the pointer outlines, a click or drag picks,
   and esc, ⌥⇧C again or the pick itself ends it; a hint at the top of the page says so.
-- Context menu: **Open side panel**.
+- Context menu: Chrome's own **Open side panel** / **Close side panel**, which it adds for any
+  extension with a side panel; the extension adds no item of its own.
 - Shortcuts are `chrome.commands`: ⌥⇧C pick mode, ⌥⇧N side panel, ⌥⇧H pins (three of Chrome's four
   suggested keys). ⌥-click, ⇧-click and ⌥-drag are handled in the page by the content script.
   ⌥⇧C does what the click does.
@@ -1213,7 +1214,7 @@ written is open.
 
 ### Side panel
 
-Opened from the toolbar button's context menu or **⌥⇧N**. One panel per window, which follows the
+Opened from the toolbar button's context menu (Chrome's own item) or **⌥⇧N**. One panel per window, which follows the
 active tab: everything in it is about the tab in front.
 
 - **Allow access**, until site access is granted (see Chrome extension)

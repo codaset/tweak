@@ -85,7 +85,7 @@ export async function contentScript(page) {
     // Polls an expression until it's truthy, or until opts.is accepts it.
     until: (expression, opts) => until(() => evaluate(expression), { what: expression, ...opts }),
     // The test copy's test-only message: calls a worker handler the
-    // shortcuts or the toolbar's context menu call, with this tab. It's sent
+    // shortcuts call, with this tab. It's sent
     // from a real key press (F9), so it carries a user gesture as theirs do
     // (sidePanel.open needs one, and CDP's userGesture flag doesn't reach the
     // worker as one). A key, not a click: pick mode would take a click. The

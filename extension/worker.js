@@ -38,7 +38,6 @@ let badgeRun = Promise.resolve();
 // ---- Listeners ----
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: MENU, title: "Open side panel", contexts: ["action"] }, () => void chrome.runtime.lastError);
   restoreFromCache();
 });
 chrome.runtime.onStartup.addListener(() => restoreFromCache());
@@ -64,9 +63,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // handler opens the side panel, when it does, before any await: the gesture
 // sidePanel.open needs ends with the listener's first turn.
 chrome.action.onClicked.addListener((tab) => pickMode(tab));
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === MENU && tab) openSidePanel(tab).catch(warnPanel);
-});
 chrome.commands.onCommand.addListener((command, tab) => {
   if (!tab) return;
   if (command === "pick-mode") pickMode(tab);
@@ -111,7 +107,6 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
 // ---- The toolbar button, its menu and the shortcuts ----
 
-const MENU = "side-panel";
 const warnPanel = (e) => console.warn("Codaset Tweak: couldn't open the side panel", e.message);
 
 // openSidePanel opens the window's one side panel, which follows its active

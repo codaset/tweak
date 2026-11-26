@@ -74,17 +74,13 @@ export async function startFixture(fixture, { readyTimeout = 60_000, host = "loc
     port,
     url: (path = "/") => `http://${host}:${port}${path}`,
     output: (n = 50) => lines.slice(-n).join("\n"),
-    async stop() {
-      // The whole group: a start command's own children go too.
-      try {
-        process.kill(-proc.pid, "SIGTERM");
-      } catch {}
-      const done = await Promise.race([exited.then(() => true), sleep(5000).then(() => false)]);
-      if (!done) {
-        try {
-          process.kill(-proc.pid, "SIGKILL");
-        } catch {}
-      }
+    // The whole group: a start command's own children go too. Any member
+    // still there after the grace period, the leader gone or not, is killed.
+    async stop({ grace = 5000 } = {}) {
+      signalGroup(proc.pid, "SIGTERM");
+      const end = Date.now() + grace;
+      while (signalGroup(proc.pid, 0) && Date.now() < end) await sleep(50);
+      signalGroup(proc.pid, "SIGKILL");
       rmSync(folder, { recursive: true, force: true });
     },
   };
@@ -110,4 +106,14 @@ export async function startFixture(fixture, { readyTimeout = 60_000, host = "loc
   return app;
 }
 
-export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Signals a process group; false once no member is left.
+function signalGroup(pgid, signal) {
+  try {
+    process.kill(-pgid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const sleep =(ms) => new Promise((r) => setTimeout(r, ms));

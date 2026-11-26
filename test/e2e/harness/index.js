@@ -78,9 +78,10 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
   const element = await pick(env, c.pick);
   assert.ok(await env.tab.until(`root.activeElement === root.querySelector(".panel textarea")`), "the composer opens with the focus");
   await env.page.keyboard.type(request);
+  // Before the send: its line can arrive while press() is still resolving.
+  const from = env.watcher.lines.length;
   await env.page.keyboard.press("Enter");
 
-  const from = env.watcher.lines.length;
   const tweak = await env.claude.nextTweak(env.watcher, { from });
   const n = tweak.number;
   assert.match(tweak.line, new RegExp(`^tweak ${n} new: ${RegExp.escape(request)} \\[`));

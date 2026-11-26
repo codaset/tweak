@@ -589,6 +589,29 @@ describe("static, with access to every site", { skip: skipReason(fixture) ?? fal
     await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the composer" });
     await until(held, { is: (n) => n === 0, what: "the capture thrown away" });
   });
+
+  test("esc while the pick is still being captured cancels it: no composer opens", async () => {
+    await open(env);
+    // A slow capture, as one queued behind another is.
+    await env.tab.evaluate(`(() => {
+      const take = ns.screenshot.take;
+      ns.screenshot.take = async function () { const id = await take.call(this); await new Promise((r) => setTimeout(r, 600)); return id; };
+      globalThis.e2eRestore = () => (ns.screenshot.take = take);
+      return true;
+    })()`);
+    try {
+      const box = await (await env.page.waitForSelector("#name")).boundingBox();
+      await env.page.keyboard.down("Alt");
+      await env.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await env.page.keyboard.up("Alt");
+      await env.page.keyboard.press("Escape");
+      await new Promise((r) => setTimeout(r, 1000));
+      assert.equal(await env.tab.evaluate(`ns.panel.targets()`), null, "no composer opened after esc");
+      await until(held, { is: (n) => n === 0, what: "the cancelled pick's capture thrown away" });
+    } finally {
+      await env.tab.evaluate("e2eRestore()");
+    }
+  });
 });
 
 // The activeTab path: static again on 127.0.0.1, which the copy has no grant

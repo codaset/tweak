@@ -610,12 +610,14 @@ describe("static on 127.0.0.1, through activeTab", { skip: skipReason(fixture) ?
     await env.page.setViewport(null);
     await env.page.reload();
     await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the content script on 127.0.0.1" });
+    // The side panel narrows the view as it opens: wait until it has.
+    let widths = [];
+    await until(async () => (widths = [...widths, await env.page.evaluate("innerWidth")].slice(-5)).length === 5 && new Set(widths).size === 1, {
+      what: "the view's width to settle",
+    });
     const crop = await expectedCrop(env, "#save");
     const n = await sendTweak(env, { selector: "#save" }, "make the save button green");
     const shot = await storedScreenshot(env, n);
-    // The exact crop is the granted test's; headless's side panel leaves this
-    // narrow view a pixel or two unsure at its edge.
-    assert.equal(shot.height, crop.height);
-    assert.ok(Math.abs(shot.width - crop.width) <= 2, `${shot.width} px wide, ${crop.width} expected`);
+    assert.deepEqual({ width: shot.width, height: shot.height }, crop);
   });
 });

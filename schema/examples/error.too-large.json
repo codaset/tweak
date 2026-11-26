@@ -1,0 +1,4 @@
+{
+  "error": "too-large",
+  "message": "a screenshot is at most 16 MiB"
+}

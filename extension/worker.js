@@ -60,6 +60,7 @@ chrome.runtime.onConnect.addListener((port) => {
   ports.add(port);
   port.tabId = port.sender?.tab?.id;
   port.shots = new Map(); // a tab's captures, held until Send or drop
+  port.dropped = new Set(); // ids dropped while still being captured
   port.onDisconnect.addListener(() => {
     ports.delete(port);
     port.shots.clear();
@@ -152,7 +153,7 @@ async function onTabMessage(port, msg) {
       capture(port, msg);
       break;
     case "drop":
-      port.shots.delete(msg.id);
+      if (!port.shots.delete(msg.id)) port.dropped.add(msg.id); // the tab gave up waiting
       break;
     case "create":
     case "reply":
@@ -195,11 +196,13 @@ async function capture(port, { id, viewport }) {
     const tab = await chrome.tabs.get(port.tabId);
     if (!tab.active) throw new Error("the tab isn't the one shown");
     const dataUrl = await pace(() => chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }));
+    if (port.dropped.delete(id)) return; // too late: the tab went on without it
     port.shots.set(id, { dataUrl, viewport });
     for (const old of [...port.shots.keys()].slice(0, -HELD)) port.shots.delete(old);
     ok = true;
   } catch (e) {
     console.info("Codaset Tweak: no screenshot:", e.message);
+    port.dropped.delete(id);
   }
   try {
     port.postMessage({ type: "captured", id, ok });

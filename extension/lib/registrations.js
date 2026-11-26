@@ -24,6 +24,7 @@ export const CONTENT_FILES = [
   "content/marks.js",
   "content/drafts.js",
   "content/card.js",
+  "content/reload.js",
   "content/page.js",
   "content/boot.js",
 ];

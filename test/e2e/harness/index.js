@@ -19,7 +19,7 @@ export { until } from "./util.js";
 export const COMPOSER_INPUT = ".panel textarea";
 export const CARD = ".panel";
 export const CARD_TITLE = ".panel .title";
-export const CARD_STATUS = ".panel .status span:last-child";
+export const CARD_STATUS = ".panel .status .status-text";
 export const CARD_SUMMARY = ".panel .entry.kind-summary .entry-text";
 // The conversation under the request: one .entry per entry, its kind in a
 // kind-<kind> class; the reply box while Claude has a question.
@@ -89,6 +89,9 @@ export function setup(fixture, options = {}) {
     await until(() => inWorker(env.browser, `chrome.scripting.getRegisteredContentScripts().then((r) => r.length > 0)`), {
       what: "the extension to register the claim's scripts",
     });
+    // Auto-reload starts off for the app, so a Done in a test that isn't a
+    // round trip reloads nothing under it; round trips turn it on.
+    await autoReload(env, false);
     env.page = await env.browser.newPage();
     await env.page.setViewport({ width: 1100, height: 800, deviceScaleFactor: options.deviceScaleFactor ?? 1 });
     env.tab = await contentScript(env.page);
@@ -106,8 +109,9 @@ export function setup(fixture, options = {}) {
 // Opens a page of the app and waits for the content script to connect,
 // and for the fixture's `loaded` selector, if it has one (a page rendered on
 // the server is hydrated later: SvelteKit's metadata comes with hydration).
-export async function open(env, path = "/") {
-  await env.page.goto(env.app.url(path));
+// goto: false waits on the page already there, as after a reload.
+export async function open(env, path = "/", { goto = true } = {}) {
+  if (goto) await env.page.goto(env.app.url(path));
   if (env.fixture?.loaded) await env.page.waitForSelector(env.fixture.loaded);
   await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: `the content script to connect on ${path}` });
 }
@@ -281,7 +285,10 @@ async function pickCase(env, c) {
 // developer would, and resolves once the card says where the undo stands:
 // the note's text, such as "Undone".
 export async function undoFromCard(env, { label = "Undo", note = "Undone" } = {}) {
-  await env.tab.until(text(CARD_UNDO), { is: (s) => s === label, what: `the card's ${label} button` });
+  // Shown, not just built: a card opened before its tweak arrives has a
+  // hidden Undo already labelled.
+  const button = `(() => { const b = root.querySelector(${JSON.stringify(CARD_UNDO)}); return b && !b.hidden && !b.closest("[hidden]") && b.textContent; })()`;
+  await env.tab.until(button, { is: (s) => s === label, what: `the card's ${label} button` });
   await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).focus()`);
   await env.page.keyboard.press("Enter");
   await env.tab.until(text(CARD_UNDO_NOTE), { is: (s) => (note instanceof RegExp ? note.test(s ?? "") : s === note), what: `the card to say ${note}` });
@@ -313,12 +320,75 @@ export async function sidePanel(env) {
   return panel;
 }
 
+// autoReload turns the app's per-site auto-reload setting on or off, as the
+// side panel's switch does (storage.local's autoReload, {origin: false}).
+export function autoReload(env, on) {
+  const origin = JSON.stringify(new URL(env.app.url("/")).origin);
+  return inWorker(
+    env.browser,
+    `chrome.storage.local.get("autoReload").then(({ autoReload: a = {} }) => {
+      if (${on}) delete a[${origin}]; else a[${origin}] = false;
+      return chrome.storage.local.set({ autoReload: a });
+    })`,
+  );
+}
+
+// mark puts a mark in the page's own world, which a reload wipes, and
+// forgets the content script's last reload decision.
+export async function mark(env) {
+  await env.page.evaluate(() => (window.e2eNotReloaded = true));
+  await env.tab.evaluate(`(ns.reload.last = null)`);
+}
+export const marked = (env) => env.page.evaluate(() => window.e2eNotReloaded === true);
+
+// The card's reason for not reloading the page, under "Change saved · Reload".
+export const CARD_RELOAD = ".panel .status .reload-now";
+export const CARD_RELOAD_WHY = ".panel .reload-why";
+const OFF = "Not reloaded: auto-reload is off for this site.";
+
+// updated waits for the page to show want in the picked element after a
+// change, and checks how it got there. Auto-reload is off until now, so
+// nothing reloads under the card's checks before this. On a fixture with
+// `hot` set it's the dev server's hot update, which the probe heard
+// (ns.reload.last), with no reload after it. Otherwise the card holds the
+// reload back, saying auto-reload is off, and turning it on reloads the
+// page by itself (the page's own world is new).
+async function updated(env, c, n, want, what) {
+  const { selector } = c.pick;
+  const shows = () =>
+    until(() => env.page.evaluate((s) => document.querySelector(s)?.textContent.trim(), selector), {
+      is: (t) => t === want,
+      what: `the page to show "${want}" ${what}`,
+    });
+  if (!env.fixture.hot) {
+    await env.tab.until(text(CARD_RELOAD_WHY), { is: (s) => s === OFF, what: `the card to hold the reload back ${what}` });
+    assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_RELOAD)}).hidden`), false, "Change saved · Reload");
+    assert.equal(await marked(env), true, "no reload while auto-reload is off");
+    await autoReload(env, true);
+    try {
+      await shows();
+      assert.equal(await marked(env), false, `our reload shows the page ${what}`);
+      await open(env, c.path ?? "/", { goto: false });
+    } finally {
+      await autoReload(env, false);
+    }
+    return;
+  }
+  await shows();
+  const last = await env.tab.until(`ns.reload.last?.number === ${n} && ns.reload.last`, { what: `the reload decision ${what}` });
+  assert.equal(last.signal, "vite", "the probe's hot context heard vite:afterUpdate");
+  assert.equal(last.reloaded, undefined, "no reload follows the hot update");
+  assert.equal(await marked(env), true, `the hot update shows the page ${what}, with no reload`);
+}
+
 // A golden case through the tracer: pick it, send a tweak, let the stand-in
 // work it, check the brief against the case, finish it, and see the card
 // reach Done. A round-trip case (with `edit`) makes its edit through the
-// edit hook between work and done; the Done card lists the file, and its
-// Undo puts the file back byte for byte. The brief's and the watch line's own layout are
-// golden-tested in Go; this checks the wiring.
+// edit hook between work and done; the Done card lists the file, and the
+// page shows the edit (edit.text is the picked element's text then), by the
+// hot update or by our reload (see updated); and its Undo puts the file
+// back byte for byte and the page as it was. The brief's and the watch
+// line's own layout are golden-tested in Go; this checks the wiring.
 // undo: false leaves the change in place, for a test that undoes it later.
 export async function tracer(env, c, { request = `tweak the ${c.name}`, summary = `tweaked the ${c.name}`, edit = c.edit, undo = true } = {}) {
   const element = await pickCase(env, c);
@@ -352,7 +422,11 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
     // the case on the same copy, and pass edit: null.
     const edited = edit && join(env.app.folder, edit.file);
     const original = edit && readFileSync(edited);
-    if (edit) await env.claude.edit(edit);
+    const shown = edit && (await env.page.evaluate((s) => document.querySelector(s)?.textContent.trim(), c.pick.selector));
+    if (edit) {
+      await mark(env);
+      await env.claude.edit(edit);
+    }
 
     // The summary goes in on stdin, as `tweak done <n> -` reads it.
     await env.claude.tweakWith(`${summary}\n`, "done", String(n), "-");
@@ -367,13 +441,19 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
       assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change > .files").getAttribute("role")`), "list");
       assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change").hasAttribute("tabindex")`), false, "a short list is no tab stop");
 
+      // The page shows the change; after our reload the card is back, Done.
+      await updated(env, c, n, edit.text, "after the change");
+      await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done after the update" });
     }
     if (edit && undo) {
-      // Undo puts it back, byte for byte.
+      // Undo puts it back, byte for byte, and the page with it.
+      await mark(env);
       await undoFromCard(env);
       assert.ok(readFileSync(edited).equals(original), `${edit.file} is back as it was`);
       assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).hidden`), true, "no Undo once undone");
       assert.equal(await env.tab.evaluate(`root.activeElement === root.querySelector(".panel")`), true, "the focus stays in the card");
+      await updated(env, c, n, shown, "undone");
+      await env.tab.until(text(CARD_UNDO_NOTE), { is: (s) => s === "Undone", what: "the card to say Undone after the update" });
     }
     await env.page.keyboard.press("Escape");
     await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });

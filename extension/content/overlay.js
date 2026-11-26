@@ -362,6 +362,23 @@
     .status.unanswered .dot { margin-top: 0.42em; }
     /* The session has gone quiet: its folder as code */
     .status code { font: 500 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
+    /* "Change saved · Reload" while the page's reload is held back */
+    .reload-sep { margin: 0 -4px; color: var(--muted); font-weight: 400; }
+    .reload-now {
+      margin: -2px 0;
+      padding: 2px 4px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--accent);
+      font: inherit;
+      cursor: pointer;
+      animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .reload-now:hover { text-decoration: underline; text-underline-offset: 2px; }
+    .reload-now:focus-visible { outline: 2px solid var(--outline); outline-offset: 1px; }
+    .reload-why:empty { display: none; }
+    .reload-why { margin: -4px 0 0 16px; color: var(--muted); font-size: 12px; text-wrap: pretty; }
     .retry { display: flex; align-items: center; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }    .request {
       margin: 0;
       padding-left: 10px;

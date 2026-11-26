@@ -9,6 +9,7 @@ import { contentScript, inWorker } from "./harness/browser.js";
 import { freePort } from "./harness/fixture.js";
 import { briefProblems } from "./harness/golden.js";
 import {
+  autoReload,
   CARD,
   CARD_CHANGE,
   CARD_FILES,
@@ -24,6 +25,8 @@ import {
   conversation,
   finishFromCard,
   loadFixture,
+  mark,
+  marked,
   open,
   pick,
   setup,
@@ -109,6 +112,118 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     } finally {
       env.page.off("request", late);
       await env.page.setRequestInterception(false);
+    }
+  });
+
+  // Reloading after a change (design.md § Reloading after a change): the
+  // side panel's per-site switch, and a reload held back by a form's unsaved
+  // input. The reasons themselves are unit tests (test/extension/reload.test.js).
+  test("the side panel's switch turns auto-reload on for the site; unsaved input holds the reload back, and Reload reloads", async () => {
+    await open(env);
+    await env.tab.handler("side-panel");
+    const target = await until(() => env.browser.targets().find((t) => t.url().endsWith("/panel/panel.html")), { what: "the side panel" });
+    const panel = await target.asPage();
+    const site = `localhost:${env.app.port}`;
+    await until(() => panel.evaluate(`!document.getElementById("reload-setting").hidden && document.getElementById("reload-site").textContent`), {
+      is: (s) => s === site,
+      what: "the reload setting for the site in front",
+    });
+    assert.equal(await panel.evaluate(`document.getElementById("auto-reload").checked`), false, "off, as the harness leaves it");
+    const origin = JSON.stringify(new URL(env.app.url("/")).origin);
+    const setting = () => panel.evaluate(`chrome.storage.local.get("autoReload").then(({ autoReload: a = {} }) => a[${origin}] ?? "on")`);
+    // The switch's own click, as a press of it gives: on Linux CI the side
+    // panel's page can have no box for Puppeteer's pointer to land in.
+    const flip = () => panel.evaluate(`document.getElementById("auto-reload").click()`);
+    await flip();
+    await until(async () => (await setting()) === "on", { what: "the switch to turn auto-reload on" });
+    try {
+      await env.page.bringToFront();
+      await pick(env, { selector: "#docs" });
+      await env.tab.until(composing, { what: "the composer to open with the focus" });
+      await env.page.keyboard.type("held back");
+      const from = env.watcher.lines.length;
+      await env.page.keyboard.press("Enter");
+      const { number: n } = await env.claude.nextTweak(env.watcher, { from });
+      await env.claude.tweak("work", String(n));
+      await env.page.type("#name", "typed, not saved");
+      await env.page.evaluate(() => (window.e2eNotReloaded = true));
+      await env.claude.tweakWith("done\n", "done", String(n), "-");
+      await env.tab.until(`root.querySelector(".panel .reload-why")?.textContent`, {
+        is: (s) => s === "Not reloaded: a form on the page has unsaved input.",
+        what: "the card to say why the page hasn't reloaded",
+      });
+      assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_STATUS)}).textContent`), "Change saved");
+      assert.equal(await env.tab.evaluate(`root.querySelector(".panel .reload-now").hidden`), false, "Change saved · Reload");
+      await new Promise((done) => setTimeout(done, 700)); // past a recheck: still held
+      assert.equal(await env.page.evaluate(() => window.e2eNotReloaded), true, "held back while the input is unsaved");
+      await env.tab.evaluate(`root.querySelector(".panel .reload-now").click()`);
+      await until(() => env.page.evaluate(() => window.e2eNotReloaded === undefined && document.readyState === "complete"), { what: "Reload to reload the page" });
+      await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the content script back after the reload" });
+      await env.page.keyboard.press("Escape");
+    } finally {
+      await flip();
+      await until(async () => (await setting()) === false, { what: "the switch to turn auto-reload off again" });
+      await panel.close();
+    }
+  });
+
+  // The update signals a page with no Vite can give, recorded from working:
+  // a stylesheet swapped, and a full reload with the card open. Either
+  // means the page already shows the change, so Done reloads nothing.
+  async function working(selector, words) {
+    await open(env);
+    await env.page.bringToFront(); // the side panel may have had it
+    await pick(env, { selector });
+    await env.tab.until(composing, { what: "the composer to open with the focus" });
+    await env.page.keyboard.type(words);
+    const from = env.watcher.lines.length;
+    await env.page.keyboard.press("Enter");
+    const { number: n } = await env.claude.nextTweak(env.watcher, { from });
+    await env.claude.tweak("work", String(n));
+    await env.tab.until(`root.querySelector(${JSON.stringify(CARD_STATUS)})?.textContent`, {
+      is: (s) => s?.startsWith("Claude is working on it"),
+      what: "the card to show Claude working",
+    });
+    return n;
+  }
+  async function noReloadAfterDone(n, signal) {
+    await env.claude.tweakWith("done\n", "done", String(n), "-");
+    const last = await env.tab.until(`ns.reload.last?.number === ${n} && ns.reload.last`, { what: "the reload decision" });
+    assert.equal(last.signal, signal);
+    assert.equal(await marked(env), true, "no reload after Done");
+    await env.page.keyboard.press("Escape");
+  }
+
+  test("a stylesheet swapped while Claude works means the page has updated: Done reloads nothing", async () => {
+    await autoReload(env, true);
+    try {
+      const n = await working("#docs", "restyle this");
+      await mark(env);
+      // As Vite swaps a <link>: a copy with a new href, then the old one goes.
+      await env.page.evaluate(() => {
+        const old = document.querySelector('link[href="/styles.css"]');
+        const swapped = old.cloneNode();
+        swapped.href = "/styles.css?t=1";
+        old.after(swapped);
+        old.remove();
+      });
+      await noReloadAfterDone(n, "style");
+    } finally {
+      await autoReload(env, false);
+    }
+  });
+
+  test("a full reload while Claude works, with the card open, means the page has updated: Done reloads nothing", async () => {
+    await autoReload(env, true);
+    try {
+      const n = await working("#docs", "reload this");
+      await env.page.reload();
+      await open(env, "/", { goto: false });
+      await env.tab.until(`root.querySelector(".panel .title")?.textContent`, { is: (t) => t === `Tweak ${n}`, what: "the card back after the reload" });
+      await mark(env);
+      await noReloadAfterDone(n, "reload");
+    } finally {
+      await autoReload(env, false);
     }
   });
 

@@ -3,7 +3,8 @@
     "name": "signup button, in a partial",
     "pick": { "selector": "[data-testid=signup]" },
     "locations": [{ "file": "app/views/pages/_signup.html.erb", "role": "component", "via": "rails" }],
-    "clues": ["data-testid=signup", "text Start free trial", "class signup-submit"]
+    "clues": ["data-testid=signup", "text Start free trial", "class signup-submit"],
+    "edit": { "file": "app/views/pages/_signup.html.erb", "find": ">Start free trial<", "replace": ">Start your free trial<", "text": "Start your free trial" }
   },
   {
     "name": "second plan row, in a collection partial",

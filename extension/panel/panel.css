@@ -416,7 +416,7 @@ input[aria-invalid="true"] {
   white-space: nowrap;
 }
 
-/* A switch, the label beside it (the pins setting). */
+/* A switch, the label beside it (the pins and reload settings). */
 .switch {
   display: flex;
   align-items: flex-start;

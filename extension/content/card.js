@@ -712,7 +712,7 @@
     mode.undoing = true;
     mode.undoError = "";
     mode.undoRef = `t${++refs}`;
-    ns.reload?.pressed(mode.number, mode.undoRef); // the files may change before the answer comes
+    ns.reload?.pressed(ns.page.tweak(mode.number), mode.undoRef); // the files may change before the answer comes
     refreshUndo();
     ns.worker.post({ type: "undo", ref: mode.undoRef, number: mode.number });
   }

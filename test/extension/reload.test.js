@@ -129,7 +129,7 @@ function page({ onReload } = {}) {
   let read = null; // what the page last read of the settings
   const tweaks = new Map();
   const ns = { ready: false, teardowns: [], overlay: { host: null } };
-  ns.page = { tweaks: () => [...tweaks.values()] };
+  ns.page = { tweaks: () => [...tweaks.values()], here: (t) => t?.page === "http://localhost:3000/" };
   const flags = { drafting: "" };
   ns.panel = { update() {}, drafting: () => flags.drafting };
   const listeners = new Map();
@@ -234,7 +234,7 @@ test("a held reload comes back when the bridge refuses the Undo", async () => {
   p.event({ ...tweak, status: "working" });
   p.event({ ...tweak, status: "done", change: recorded });
   await p.advance(2000);
-  p.ns.reload.pressed(1, "u1"); // Undo pressed
+  p.ns.reload.pressed({ number: 1, page: "http://localhost:3000/" }, "u1"); // Undo pressed
   p.ns.reload.undid({ ref: "u1", error: "refused" }); // and refused
   await p.advance(100);
   assert.equal(p.ns.reload.notice(1)?.why, "auto-reload is off for this site");
@@ -246,7 +246,7 @@ test("an Undo refused within the second after done leaves done's decision to it"
   p.event({ ...tweak, status: "working" });
   p.event({ ...tweak, status: "done", change: recorded });
   await p.advance(300);
-  p.ns.reload.pressed(1, "u1"); // Undo pressed
+  p.ns.reload.pressed({ number: 1, page: "http://localhost:3000/" }, "u1"); // Undo pressed
   p.ns.reload.undid({ ref: "u1", error: "refused" }); // and refused
   await p.advance(2000);
   assert.equal(p.reloads.length, 1);
@@ -258,7 +258,7 @@ test("an Undo refused after done's second still gets done its reload", async () 
   p.event({ ...tweak, status: "working" });
   p.event({ ...tweak, status: "done", change: recorded });
   await p.advance(300);
-  p.ns.reload.pressed(1, "u1"); // Undo pressed
+  p.ns.reload.pressed({ number: 1, page: "http://localhost:3000/" }, "u1"); // Undo pressed
   await p.advance(1000);
   p.ns.reload.undid({ ref: "u1", error: "refused" }); // refused, after the second
   await p.advance(2000);
@@ -299,7 +299,7 @@ test("an Undo refused after its card has closed still gives the change its reloa
   p.event({ ...tweak, status: "working" });
   p.event({ ...tweak, status: "done", change: recorded });
   await p.advance(2000);
-  p.ns.reload.pressed(1, "u1");
+  p.ns.reload.pressed({ number: 1, page: "http://localhost:3000/" }, "u1");
   p.ns.reload.closed(); // the port went before the answer came
   delete p.settings.autoReload[origin];
   await p.advance(1000);
@@ -362,7 +362,7 @@ async function walk(seed, { signals }) {
     press() {
       if (!recordedNow() || m.press || m.claude) return false;
       m.press = `u${++m.refs}`;
-      p.ns.reload.pressed(1, m.press);
+      p.ns.reload.pressed(m.t1, m.press);
       return true;
     },
     refuse() {
@@ -404,13 +404,13 @@ async function walk(seed, { signals }) {
     undone() {
       if (!m.claude) return false;
       m.claude = false;
-      t1({ status: "done", change: changed("undone") });
+      t1({ ...m.t1, change: changed("undone") });
       return (m.owed1 = true);
     },
     decline() {
       if (!m.claude) return false;
       m.claude = false;
-      t1({ status: "done", change: recorded });
+      t1({ ...m.t1, change: recorded });
       return true;
     },
     auto() {
@@ -433,7 +433,7 @@ async function walk(seed, { signals }) {
     // a resolved one leaves it, and the side panel can still undo it.
     withdraw() {
       if (m.t1?.status !== "working") return false;
-      t1({ status: "withdrawn", resolvedAt });
+      t1({ status: "withdrawn", resolvedAt, change: recorded }); // after an edit
       m.owed1 = false;
       return true;
     },
@@ -443,9 +443,16 @@ async function walk(seed, { signals }) {
       return true;
     },
     panelUndo() {
-      if (!m.t1?.resolvedAt || m.t1.change?.state !== "recorded") return false;
+      if (!m.t1?.resolvedAt || m.t1.change?.state !== "recorded" || m.claude) return false;
       t1({ ...m.t1, change: changed("undone") });
       return (m.owed1 = true);
+    },
+    // The side panel's Ask Claude to undo, on a resolved or withdrawn tweak.
+    panelAsk() {
+      if (!m.t1?.resolvedAt || m.t1.change?.state !== "recorded" || m.claude) return false;
+      m.claude = true;
+      t1({ ...m.t1, change: changed("undo-requested") });
+      return true;
     },
     // A second tweak that changes the page, so one can be held while the
     // first is being undone.
@@ -506,4 +513,19 @@ test("the reload machine as a model: at most once, never while held, always once
 
 test("the reload machine as a model, with hot updates: at most once, never while held", async () => {
   for (let seed = 1; seed <= 6000; seed++) await walk(seed, { signals: true });
+});
+
+test("an Undo pressed on an open card from another page starts nothing here", async () => {
+  const p = page();
+  const elsewhere = { number: 4, page: "http://localhost:3000/other", status: "done", change: recorded };
+  p.ns.reload.pressed(elsewhere, "u1");
+  assert.equal(p.ns.reload.state(4), null);
+  p.ns.reload.pressed({ ...elsewhere, page: "http://localhost:3000/" }, "u2");
+  assert.equal(p.ns.reload.state(4), "watching");
+});
+
+test("an undo with Claude of a withdrawn tweak holds other reloads back until it ends", () => {
+  const withdrawn = { status: "withdrawn", change: recorded, resolvedAt: "2026-11-26T10:00:00Z" };
+  assert.equal(moment(withdrawn, { ...withdrawn, change: { ...recorded, state: "undo-requested" } }), "undo");
+  assert.equal(moment(undefined, { ...withdrawn, change: { ...recorded, state: "undo-requested" } }), "undo", "the page dropped it");
 });

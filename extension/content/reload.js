@@ -28,11 +28,12 @@
   // settles nothing, and a withdrawn one only by being undone.
   function moment(was, now) {
     const state = (t) => t?.change?.state;
+    // An undo comes first: a resolved or withdrawn tweak can still be undone.
     if (state(now) === "undone" && state(was) !== "undone") return "settle";
-    if (now.status === "withdrawn") return was?.status === "withdrawn" ? null : "withdrawn";
-    if (now.status === "working" && was?.status !== "working") return "watch";
     if (state(now) === "undo-requested" && state(was) !== "undo-requested") return "undo";
-    if (state(was) === "undo-requested" && state(now) !== "undo-requested" && state(now) !== "undone") return "declined";
+    if (state(was) === "undo-requested" && state(now) !== "undo-requested") return "declined";
+    if (now.status === "withdrawn") return was && was.status !== "withdrawn" ? "withdrawn" : null;
+    if (now.status === "working" && was?.status !== "working") return "watch";
     // Only a tweak the tab had can end here: one it hasn't (resolved, and
     // gone from the page) settles only by being undone.
     const ended = was && (now.status === "done" || now.status === "declined") && was.status !== now.status;
@@ -174,10 +175,15 @@
   }
 
   // undoing: an undo is under way, pressed here or with Claude.
-  function undoing(number, { reloaded = false } = {}) {
+  // via is "press" (Undo pressed here, its answer on the way) or "claude"
+  // (the undo is with Claude, which can only end in an event).
+  function undoing(number, { reloaded = false, via = "claude" } = {}) {
     const m = machines.get(number);
-    if (m?.state === "watching" && m.undo) return;
-    set(number, { state: "watching", from: performance.now(), reloaded, owed: owes(m), undo: true });
+    if (m?.state === "watching" && m.undo) {
+      m.undo = via === "claude" ? "claude" : m.undo;
+      return;
+    }
+    set(number, { state: "watching", from: performance.now(), reloaded, owed: owes(m), undo: via });
   }
 
   // ended: done or undone. It decides a moment later.
@@ -287,6 +293,9 @@
       if (m === "settle") ended(now.number);
       if (m === "declined") notUndone(now.number);
       if (m === "withdrawn") set(now.number, null);
+      // A resolved tweak has left the page, so its declined undo comes with
+      // no tweak before it: the machine knows the undo was with Claude.
+      if (m === null && !was && machines.get(now.number)?.undo === "claude" && now.change?.state !== "undo-requested") notUndone(now.number);
     },
     // loaded is the page's first list of tweaks, with the card open before
     // the load: if its tweak is still under way, the load was a full reload
@@ -298,11 +307,14 @@
         else if (t.change?.state === "undo-requested") undoing(t.number, { reloaded });
       }
     },
-    // pressed is Undo pressed in this tab (its request's ref): the files may
-    // change before the answer comes.
-    pressed(number, ref) {
-      presses.set(ref, number);
-      undoing(number);
+    // pressed is Undo pressed in this tab on tweak (its request's ref): the
+    // files may change before the answer comes.
+    pressed(tweak, ref) {
+      // Only for this page, while it's claimed: an open card's tweak from
+      // another page reloads nothing here, and its events don't reach here.
+      if (!ns.page.here?.(tweak)) return;
+      presses.set(ref, tweak.number);
+      undoing(tweak.number, { via: "press" });
     },
     // undid is the bridge's answer to an Undo pressed here: refused (no
     // number), the undo didn't happen. Taken, its undone or its undo with

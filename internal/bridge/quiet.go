@@ -223,15 +223,20 @@ func (b *Bridge) endReleased() {
 }
 
 // endLapsedCapture ends a lapsed session's capture, unless the session has
-// checked in since and its claims are back: then the capture carries on. The check and the end are one step under captureMu, which a return
+// checked in since and its capturing tweak is back with it: then the
+// capture carries on. The check and the end are one step under captureMu, which a return
 // also takes.
 func (b *Bridge) endLapsedCapture(session string) error {
-	// Back means its claims are back: a lapse leaves the session none. (Its
-	// tweak may never have left it: a resolved one, such as a withdrawn
-	// tweak, doesn't follow the page, and its capture must end too.)
-	return b.endCaptureUnless(session, func(store.Capture) (bool, error) {
+	// Back means the session has claims again (a lapse leaves it none) and
+	// the capturing tweak is its own: a resolved tweak, such as a withdrawn
+	// one, never left it, and one handed to another session isn't back.
+	return b.endCaptureUnless(session, func(c store.Capture) (bool, error) {
 		_, back, err := b.store.NewestClaim(session)
-		return back, err
+		if err != nil || !back {
+			return false, err
+		}
+		tw, err := b.store.Tweak(c.Tweak)
+		return err == nil && tw.Session == session, err
 	})
 }
 

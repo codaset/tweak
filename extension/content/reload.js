@@ -338,12 +338,13 @@
     // back, or the tab moved to another page); had is the numbers the tab
     // had before it, whose changes heard() has seen. A resolved tweak is in
     // it only while its undo is with Claude: once that's over, or the tweak
-    // is gone, the undo has ended (undone, or declined), and so does its
-    // hold. A tweak new to the tab and already under way is watched.
+    // is gone (resolved meanwhile too), the undo has ended (undone, or
+    // declined), and so does its hold. A tweak new to the tab and already under way is watched.
     relisted(tweaks, had) {
       const listed = new Map(tweaks.map((t) => [t.number, t]));
       for (const [n, m] of [...machines]) {
-        if (m.undo !== "claude" || had.has(n)) continue;
+        // One the tab had and the list still has, heard() has seen.
+        if (m.undo !== "claude" || (had.has(n) && listed.has(n))) continue;
         const state = listed.get(n)?.change?.state;
         if (state === "undo-requested") continue;
         if (state === "recorded") notUndone(n);

@@ -320,8 +320,20 @@
     frame(`Tweak ${mode.number}`, mode.label);
     const status = el("div", "status");
     const dot = el("span", "dot");
-    const statusText = el("span");
-    status.append(dot, statusText);
+    const statusText = el("span", "status-text");
+    // "Change saved · Reload" while the page's reload is held back, with
+    // the reason under it (reload.js).
+    const reloadNow = el("button", "reload-now", "Reload");
+    reloadNow.type = "button";
+    reloadNow.hidden = true;
+    reloadNow.addEventListener("click", () => ns.reload.now());
+    const reloadSep = el("span", "reload-sep", "·");
+    reloadSep.setAttribute("aria-hidden", "true");
+    reloadSep.hidden = true;
+    status.append(dot, statusText, reloadSep, reloadNow);
+    // Its own live region, so it never talks over the card's read-outs.
+    const reloadWhy = el("p", "reload-why");
+    reloadWhy.setAttribute("role", "status");
     const request = el("p", "request");
     // The conversation scrolls on its own, so it's a labelled region the
     // keyboard can reach and scroll.
@@ -410,7 +422,7 @@
     actionButton.addEventListener("click", submitFinish);
     actions.append(actionError, actionButton);
 
-    panel.append(status, retry, request, thread, changed, undoRow, answer, actions, heard);
+    panel.append(status, reloadWhy, retry, request, thread, changed, undoRow, answer, actions, heard);
     status.setAttribute("aria-live", "polite");
     // heardUpTo is how many entries have been read out or were there when the
     // card opened; a card opened by Claude's question reads that one out.
@@ -420,6 +432,9 @@
       chip: panel.querySelector(".chip"),
       status,
       statusText,
+      reloadNow,
+      reloadSep,
+      reloadWhy,
       request,
       thread,
       said: "",
@@ -461,6 +476,7 @@
       if (at < 0) statusText.textContent = s.text;
       else statusText.replaceChildren(s.text.slice(0, at), el("code", "", s.code), s.text.slice(at + s.code.length));
     }
+    drawReload(ns.reload?.notice(mode.number));
     const words = tweak?.entries?.find((e) => e.kind === "request")?.text ?? mode.request ?? "";
     if (request.textContent !== words) request.textContent = words;
 
@@ -590,6 +606,17 @@
     updateCard();
   }
 
+  // drawReload shows Reload beside the status, and why the page hasn't
+  // reloaded by itself, while its reload is held back.
+  function drawReload(notice) {
+    const { reloadNow, reloadSep, reloadWhy } = parts;
+    const why = notice ? `Not reloaded: ${notice.why}.` : "";
+    if (reloadWhy.textContent === why) return;
+    if (!notice && ns.overlay.root?.activeElement === reloadNow) panel.focus({ preventScroll: true });
+    reloadWhy.textContent = why;
+    reloadNow.hidden = reloadSep.hidden = !notice;
+  }
+
   // drawChange lists what the tweak changed, redrawn only when it changes:
   // the recorded files, then the files that changed without being recorded;
   // files outside the session's project are labelled so.
@@ -685,6 +712,7 @@
     mode.undoing = true;
     mode.undoError = "";
     mode.undoRef = `t${++refs}`;
+    ns.reload?.watch(mode.number); // the files may change before the answer comes
     refreshUndo();
     ns.worker.post({ type: "undo", ref: mode.undoRef, number: mode.number });
   }
@@ -692,6 +720,7 @@
   // undoEnded finishes an Undo: under way (the tweak's next event shows
   // where it stands), or refused with why, the button still offered.
   function undoEnded(why) {
+    if (why) ns.reload?.unwatch(mode.number);
     mode.undoing = false;
     mode.undoError = why;
     refreshUndo();
@@ -1041,6 +1070,13 @@
       ns.marks.draw(marked());
       place();
       return true;
+    },
+    // drafting is what you're writing: "tweak" while the composer is open,
+    // "reply" while the reply box holds text, or "".
+    drafting() {
+      if (mode?.kind === "compose") return "tweak";
+      if (mode?.kind === "card" && parts.box?.value.trim()) return "reply";
+      return "";
     },
     // open is whether the panel is on screen.
     open: () => mode !== null && !asleep,

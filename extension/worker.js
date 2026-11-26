@@ -20,7 +20,7 @@ const ALL_URLS = { origins: ["<all_urls>"] };
 const NOT_CONNECTED = "Not connected to Tweak";
 
 // What the side panel shows (see lib/status.js for connection and message).
-const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], lapsed: [], update: null, suggestions: [], resolved: [], gone: [] };
+const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], lapsed: [], update: null, suggestions: [], sites: [], resolved: [], gone: [] };
 // The claims (held and lapsed) as of event seq, from the bridge or, until it
 // answers, the cache.
 let claimState = { seq: 0, claims: [], lapsed: [] };
@@ -90,7 +90,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     ports.delete(port);
     port.shots.clear();
-    if (port.suggestions?.length) publishSuggestions();
+    if (port.url) publishSuggestions();
     if (port.gone?.length) publishGone();
   });
   if (port.name === "tab") port.onMessage.addListener((msg) => onTabMessage(port, msg));
@@ -181,15 +181,22 @@ const tweaksRestored = restoreTweaks();
 let dismissed = {};
 const dismissedRead = chrome.storage.local.get("dismissed").then(({ dismissed: d = {} }) => (dismissed = d));
 
+// The panel also shows the per-site reload setting for the tab in front,
+// when its page runs the content script: sites are {tabId, origin}.
 async function publishSuggestions() {
   await dismissedRead;
   const suggestions = [];
+  const sites = [];
   for (const port of tabs) {
     if (port.tabId === undefined || !port.url) continue;
     const origin = new URL(port.url).origin;
+    sites.push({ tabId: port.tabId, origin });
     for (const kind of port.suggestions ?? []) if (!dismissed[origin]?.includes(kind)) suggestions.push({ tabId: port.tabId, origin, kind });
   }
-  if (JSON.stringify(suggestions) !== JSON.stringify(view.suggestions)) publish({ suggestions });
+  const changes = {};
+  if (JSON.stringify(suggestions) !== JSON.stringify(view.suggestions)) changes.suggestions = suggestions;
+  if (JSON.stringify(sites) !== JSON.stringify(view.sites)) changes.sites = sites;
+  if (Object.keys(changes).length) publish(changes);
 }
 
 // ---- Pins whose element is gone ----

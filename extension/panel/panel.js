@@ -24,6 +24,7 @@ let activeTab = null;
 let activeURL = ""; // its URL, which the claim status is about
 let last = null; // the worker's last state, drawn again when the tab changes
 let pinsHidden = {}; // storage.local's, below
+let autoReload = {}; // storage.local's, below
 
 function render(state) {
   last = state;
@@ -67,6 +68,12 @@ function render(state) {
   }
 
   renderResolved(state);
+  // The reload setting for the site in front, when it runs Tweak.
+  const site = (state.sites ?? []).find((s) => s.tabId === activeTab)?.origin ?? "";
+  $("reload-setting").hidden = !site;
+  $("reload-setting").dataset.origin = site;
+  $("reload-site").textContent = site.replace(/^https?:\/\//, "");
+  $("auto-reload").checked = autoReload[site] !== false;
 
   // The tab in front: whether a session claims it, with the command to
   // claim it when none does (design.md § Claims; a lapsed claim has its own
@@ -324,6 +331,26 @@ $("pins-shown").addEventListener("change", async (e) => {
   if (e.target.checked) delete h[origin];
   else h[origin] = true;
   await chrome.storage.local.set({ pinsHidden: h });
+});
+
+// Auto-reload is on unless turned off for a site: storage.local's
+// autoReload is {origin: false}, which the tab reads when a change lands.
+chrome.storage.local.get("autoReload").then(({ autoReload: a = {} }) => {
+  autoReload = a;
+  if (last) render(last);
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !("autoReload" in changes)) return;
+  autoReload = changes.autoReload.newValue ?? {};
+  if (last) render(last);
+});
+$("auto-reload").addEventListener("change", async (e) => {
+  const origin = $("reload-setting").dataset.origin;
+  if (!origin) return;
+  const { autoReload: a = {} } = await chrome.storage.local.get("autoReload");
+  if (e.target.checked) delete a[origin];
+  else a[origin] = false;
+  await chrome.storage.local.set({ autoReload: a });
 });
 
 // Dismissing a suggestion is remembered for its site, in storage.local,

@@ -106,6 +106,17 @@
         </div>
       </section>
       <p class="sr-only" id="page-said" role="status" aria-live="polite"></p>
+      <section class="reload-setting" id="reload-setting" hidden aria-labelledby="reload-title">
+        <h2 id="reload-title">After a change</h2>
+        <label class="switch">
+          <input type="checkbox" id="auto-reload" role="switch" aria-describedby="reload-note" />
+          <span>Reload <code id="reload-site"></code> when the page doesn't update itself</span>
+        </label>
+        <p class="note" id="reload-note">
+          Tweak waits about a second for your dev server's own update, and never reloads while you're in the middle
+          of something.
+        </p>
+      </section>
 
       <section class="claims" id="claims" hidden aria-labelledby="claims-title">
         <h2 id="claims-title">Claimed pages</h2>

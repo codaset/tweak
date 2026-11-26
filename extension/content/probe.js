@@ -142,8 +142,23 @@
   });
 
   // ---- HMR signals ----
-  // The reload ticket (#42) opens a createHotContext here on Vite pages
-  // (/@vite/client) and passes vite:afterUpdate to the content script with
-  // a tweak:probe-result-style event on document (design.md, "Reloading
-  // after a change").
+  // On a Vite page (one that loads /@vite/client) the probe opens a hot
+  // context of its own and tells the content script of each hot update
+  // with tweak:updated on document, so no reload follows one (design.md,
+  // "Reloading after a change"). It imports the client from the very URL
+  // the page did, so it shares the page's HMR client rather than starting
+  // another. The probe runs before the page's scripts exist, so it looks
+  // once the HTML has been read.
+  function hot() {
+    const client = [...(document.scripts ?? [])].find((s) => s.type === "module" && /\/@vite\/client(?:[?#]|$)/.test(s.src));
+    if (!client) return;
+    import(client.src)
+      .then((vite) => {
+        const context = vite.createHotContext?.("/@codaset-tweak/probe");
+        context?.on("vite:afterUpdate", () => document.dispatchEvent(new CustomEvent("tweak:updated", { detail: JSON.stringify({ via: "vite" }) })));
+      })
+      .catch(() => {});
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hot, { once: true });
+  else hot();
 })();

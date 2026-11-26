@@ -3,7 +3,8 @@
     "name": "export button, two components deep",
     "pick": { "selector": ".export-button" },
     "locations": [{ "file": "src/Button.jsx", "line": 3, "role": "element", "via": "react" }],
-    "clues": ["text Export", "class export-button"]
+    "clues": ["text Export", "class export-button"],
+    "edit": { "file": "src/Toolbar.jsx", "find": "label=\"Export\"", "replace": "label=\"Export all\"", "text": "Export all" }
   },
   {
     "name": "save button, written in App and passed to Panel",

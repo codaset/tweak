@@ -1,4 +1,5 @@
 {
   "start": ["node", "node_modules/vite/bin/vite.js", "--port", "{port}", "--strictPort"],
-  "ready": "/"
+  "ready": "/",
+  "hot": true
 }

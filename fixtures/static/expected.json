@@ -4,7 +4,7 @@
     "pick": { "selector": "#save" },
     "locations": [],
     "clues": ["data-testid=save", "id=save", "text Save", "class btn-primary"],
-    "edit": { "file": "public/index.html", "find": ">Save<", "replace": ">Save draft<" }
+    "edit": { "file": "public/index.html", "find": ">Save<", "replace": ">Save draft<", "text": "Save draft" }
   },
   {
     "name": "save button in a modal dialog",

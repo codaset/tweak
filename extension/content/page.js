@@ -13,6 +13,7 @@
   const tweaks = new Map(); // number -> tweak: this page's, and the open card's
   const FINISHED = new Set(["done", "declined"]);
   let frame = 0;
+  let listed = false; // the worker has sent this page's tweaks once
   let claimed = true; // the scripts run only on claimed pages; the worker says otherwise
   let draftsAdopted = false; // once this load has the drafts kept for its tab
   // A lapsed claim's page counts as unclaimed (no picker), but keeps its
@@ -44,7 +45,10 @@
     const keep = on || lapsed;
     if (on === claimed && keep === kept) return;
     claimed = on;
-    if (!on) ns.picker.release();
+    if (!on) {
+      ns.picker.release();
+      ns.reload.left(); // a dormant page reloads for nothing
+    }
     if (keep !== kept) {
       kept = keep;
       ns.panel.sleep(!keep);
@@ -55,6 +59,8 @@
 
   ns.page = {
     tweak: (number) => tweaks.get(number),
+    // tweaks are the ones this page shows a pin for.
+    tweaks: () => list(),
     // redraw puts the pins and card in step with the tweaks.
     redraw() {
       ns.pins.render(list());
@@ -99,10 +105,17 @@
         // event, rather than wait as a card still sending.
         const card = ns.panel.showing();
         const had = card !== null && tweaks.has(card);
+        // A list after the first replaces one the tab had: a tweak that was
+        // done (or undone) meanwhile, while the port was away, counts too.
+        const before = new Map(tweaks);
         tweaks.clear();
         for (const t of msg.tweaks) tweaks.set(t.number, t);
+        if (listed && claimed) for (const t of msg.tweaks) if (t.page === shownPage && before.has(t.number)) ns.reload.heard(before.get(t.number), t);
         if (had && !tweaks.has(card)) ns.panel.close();
         if (typeof msg.claimed === "boolean") setClaimed(msg.claimed, msg.lapsed); // absent: unchanged
+        // The page's first list: a tweak under way may have reloaded it.
+        if (!listed) ns.reload.loaded(msg.tweaks, msg.card);
+        listed = true;
         ns.page.redraw();
         // The drafts kept for this tab come with its first tweaks after a
         // load; a later port (a restarted worker) brings nothing new.
@@ -117,11 +130,15 @@
         break;
       }
       case "tweak": {
-        // msg.event is the bridge's event: tweak-undone means a change was
-        // undone, which reloads the page as after a change (#42). A
-        // resolved tweak (resolved or withdrawn) leaves the page: its pin
-        // goes, and its card closes.
+        // Done, or a change undone, reloads the page if it hasn't updated.
+        // It's heard first, before a resolved tweak is dropped: an Undo from
+        // the side panel's resolved list undoes a tweak the page no longer
+        // pins. Only for this page, while it's claimed: an open card's tweak
+        // from another page doesn't reload this one.
         const was = tweaks.get(msg.tweak.number);
+        if (claimed && msg.tweak.page === shownPage) ns.reload.heard(was, msg.tweak);
+        // A resolved tweak (resolved or withdrawn) leaves the page: its pin
+        // goes, and its card closes.
         if (msg.tweak.resolvedAt) {
           tweaks.delete(msg.tweak.number);
           ns.panel.gone(msg.tweak);
@@ -194,6 +211,7 @@
       return;
     }
     shownPage = pageKey();
+    ns.reload.left();
     const card = ns.panel.showing();
     if (ns.panel.open() && card === null) ns.panel.close();
     for (const n of tweaks.keys()) if (n !== card) tweaks.delete(n);

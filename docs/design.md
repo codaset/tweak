@@ -1218,8 +1218,13 @@ enters `working`:
 - on Vite pages (detected by `/@vite/client`), `vite:afterUpdate` from a `createHotContext` the page
   probe opens (asserted by the `vite-react19` round trip, see [Testing](#testing))
 
-When `done` arrives, it waits about a second. If any signal arrived since `working`, it doesn't
-reload; otherwise it reloads. Hot updates that change only JavaScript outside Vite (Next's Fast
+When `done` arrives, it waits about a second. If any signal arrived since `working` (or during that
+second), it doesn't reload; otherwise it reloads. An undo is treated the same, its signals recorded
+from **Undo** (or from the undo going to Claude) until about a second after `undone`. A tweak whose
+git check found no files changed reloads nothing. A held-back reload happens by itself once nothing
+holds it; **Reload** on the card reloads at once. With auto-reload off for the site, the card shows
+"Change saved · Reload" with that as the reason. The setting is `autoReload` in `chrome.storage.local`
+(`{origin: false}`), which the side panel writes and the tab reads. Hot updates that change only JavaScript outside Vite (Next's Fast
 Refresh) go unnoticed and cause one reload too many. That's harmless, and the per-site setting turns
 it off.
 
@@ -1388,7 +1393,8 @@ Each fixture has:
   poll for readiness (`ready`), the toolchain commands it needs beyond Node (`needs`, e.g. `ruby`),
   and environment variables for the start command (`env`, e.g. the one that turns Rails'
   annotations on), and optionally `loaded`, a selector each page waits for once opened (SvelteKit's
-  layout marks hydration, which brings the metadata). The ready path is polled on the host the app is opened on: for `localhost`, on
+  layout marks hydration, which brings the metadata), and `hot`, set when the dev server updates the
+  page itself after an edit (`vite-react19`), so its round trip expects no reload from us. The ready path is polled on the host the app is opened on: for `localhost`, on
   both `127.0.0.1` and `::1`, as Chrome tries both, so a server bound to either is ready;
 - `expected.json`: the golden cases (below).
 
@@ -1419,7 +1425,7 @@ selection of that text inside the element `in`) or `{area}` (a box: `{x, y, widt
 CSS pixels, dragged; or `{around: [selectors], margin}`, the box around those elements). `brief`,
 optional, lists strings the brief must contain as written. `first`, optional, is `{click: selector}`: a page control clicked before the pick, such as the one that opens a dialog.
 Paths are project-relative.
-`edit` appears only on round-trip cases. Assertions are made against the **brief** that `tweak work`
+`edit` appears only on round-trip cases; its `text` is the picked element's text once the edit shows. Assertions are made against the **brief** that `tweak work`
 prints, since that is what Claude reads, and it covers the bridge's path normalisation. The listed
 locations must be the first N under "Where to look", in order, matched on `` `file:line` `` and the
 role and `via` tokens. The listed clues must all be present. The rest of the brief's layout is
@@ -1477,7 +1483,8 @@ reaches a live bridge). A **scripted stand-in for Claude**, a Node helper with a
 4. runs `tweak done <n> "…"`.
 
 The test then asserts that the card shows Done, the page updates, Undo restores the file byte for
-byte, and the card shows the change undone. Round trips run on one fixture per reload path:
+byte and the page as it was, and the card shows the change undone. Auto-reload starts off for the
+app in every e2e run, so a Done elsewhere reloads nothing under a test; a round trip turns it on. Round trips run on one fixture per reload path:
 
 - `static`: our reload;
 - `vite-react19`: the `vite:afterUpdate` signal from the probe's `createHotContext`, so **no** reload

@@ -1,0 +1,11 @@
+@scope (.card) {
+  :scope > button {
+    color: red;
+  }
+  :scope {
+    color: blue;
+  }
+  & > .x {
+    color: green;
+  }
+}

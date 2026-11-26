@@ -491,7 +491,7 @@
       "additionalProperties": false
     },
     "rule": {
-      "description": "A CSS rule matching the element: its selector, the sheet's file where known (a <style data-vite-dev-id> or the sheet's href), and a line where a source map gives one.",
+      "description": "A CSS rule matching the element: its selector, its file where known, and a line and column where the sheet's source map gives one. A mapped rule's file is the map's source (the file the line is in); otherwise it is the sheet's (a <style data-vite-dev-id> or the sheet's href).",
       "type": "object",
       "properties": {
         "selector": {

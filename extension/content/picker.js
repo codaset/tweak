@@ -31,7 +31,7 @@
     clearTimeout(sourceTimer);
     source = { el, text: "" };
     sourceTimer = setTimeout(async () => {
-      const text = await ns.mappers.hover(el).catch(() => "");
+      const text = await ns.hover.source(el).catch(() => "");
       if (source.el !== el || !text) return;
       source.text = text;
       const shown = hovered ?? ns.picker.held;

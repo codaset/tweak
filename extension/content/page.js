@@ -61,10 +61,13 @@
   // improvements are the side panel's suggestions for this page, once its
   // HTML has loaded: {suggestions}, or nothing before then. A page still
   // loading says them when it has.
-  const improvements = () => (document.readyState === "loading" ? {} : { suggestions: ns.mappers.suggestions() });
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => ns.worker.post({ type: "page", url: location.href, ...improvements() }), { once: true });
-  }
+  // A client-side navigation carries them for the new page; Turbo renders
+  // its new body after the URL changes, so they're said again then.
+  const improvements = () => (document.readyState === "loading" ? {} : { suggestions: ns.improvements.suggestions() });
+  const sayImprovements = () => ns.worker.post({ type: "page", url: location.href, ...improvements() });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sayImprovements, { once: true });
+  document.addEventListener("turbo:load", sayImprovements);
+  ns.teardowns.push(() => document.removeEventListener("turbo:load", sayImprovements));
 
   const off = ns.worker.on((msg) => {
     switch (msg.type) {
@@ -129,7 +132,7 @@
     if (urlKey() === shownURL) return;
     shownURL = urlKey();
     if (pageKey() === shownPage) {
-      ns.worker.post({ type: "page", url: location.href });
+      ns.worker.post({ type: "page", url: location.href, ...improvements() });
       return;
     }
     shownPage = pageKey();
@@ -137,7 +140,7 @@
     if (ns.panel.open() && card === null) ns.panel.close();
     for (const n of tweaks.keys()) if (n !== card) tweaks.delete(n);
     ns.page.redraw();
-    ns.worker.post({ type: "page", url: location.href });
+    ns.worker.post({ type: "page", url: location.href, ...improvements() });
   };
   globalThis.navigation?.addEventListener("currententrychange", onNavigate);
 

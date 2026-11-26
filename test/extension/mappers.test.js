@@ -20,7 +20,8 @@ function load({ fetch = () => Promise.reject(new Error("no fetch")), rules = () 
   };
   runInNewContext(read("../../extension/content/sourcemap.js"), context);
   runInNewContext(read("../../extension/content/mappers.js"), context);
-  return ns.mappers;
+  runInNewContext(read("../../extension/content/hover.js"), context);
+  return { ...ns.mappers, ...ns.hover };
 }
 const mappers = load();
 
@@ -125,8 +126,8 @@ const served = (text) => ({ ok: true, text: async () => text });
 test("the hover label falls back to the stylesheet of the latest rule when nothing maps without fetching", async () => {
   const sheet = { href: "http://localhost:3000/styles.css" };
   const m = load({ rules: () => [rule(".btn", "http://localhost:3000/styles.css", sheet), rule(".btn-primary", "http://localhost:3000/theme.css", sheet)] });
-  assert.equal(await m.hover({}), "theme.css");
-  assert.equal(await load().hover({}), "");
+  assert.equal(await m.source({}), "theme.css");
+  assert.equal(await load().source({}), "");
 });
 
 test("a stylesheet replaced at the same URL is read again, and so is its map", async () => {
@@ -135,12 +136,31 @@ test("a stylesheet replaced at the same URL is read again, and so is its map", a
   const answers = { "http://localhost:3000/theme.css": [read("./fixtures/css/theme.css")], "http://localhost:3000/theme.css.map": [JSON.stringify(map), moved] };
   const m = load({ fetch: async (url) => served(answers[url].length > 1 ? answers[url].shift() : answers[url][0]) });
   const lineOf = async (sheet) => {
-    const rules = [rule(".badge", "http://localhost:3000/theme.css", sheet)];
-    await m.run({}, { rules });
-    return `${rules[0].file}:${rules[0].line}`;
+    const [at] = await m.ruleLines([rule(".badge", "http://localhost:3000/theme.css", sheet)]);
+    return `${at.file}:${at.line}`;
   };
   const first = { href: "http://localhost:3000/theme.css" };
   assert.equal(await lineOf(first), "http://localhost:3000/src/theme.css:16");
   assert.equal(await lineOf(first), "http://localhost:3000/src/theme.css:16", "the same sheet is read once");
   assert.equal(await lineOf({ href: "http://localhost:3000/theme.css" }), "http://localhost:3000/src/moved.css:16", "a new sheet at the URL is read again");
+});
+
+test("the CSS rules mapper gives locations and leaves the gathered rules as they were", async () => {
+  const m = load({ fetch: async (url) => served(read(url.endsWith(".map") ? "./fixtures/css/theme.css.map" : "./fixtures/css/theme.css")) });
+  const sheet = { href: "http://localhost:3000/theme.css" };
+  const rules = [rule(".badge", "http://localhost:3000/theme.css", sheet), rule(".missing", "http://localhost:3000/theme.css", sheet)];
+  const got = await m.run({}, { rules });
+  assert.deepEqual(plain(got), [{ file: "http://localhost:3000/src/theme.css", line: 16, column: 1, role: "style", via: "css" }]);
+  assert.deepEqual(plain(rules), [{ selector: ".badge", file: "http://localhost:3000/theme.css" }, { selector: ".missing", file: "http://localhost:3000/theme.css" }]);
+});
+
+test("a <style>'s inline map is decoded once, however often it's hovered", async () => {
+  const m = load();
+  const text = read("./fixtures/css/buttons.min.css");
+  const sheet = { href: null, ownerNode: { textContent: text } };
+  const rules = [rule(".btn-primary", "", sheet)];
+  const first = await m.ruleLines(rules, { fetch: false });
+  sheet.ownerNode = { get textContent() { throw new Error("read again"); } };
+  assert.deepEqual(plain(await m.ruleLines(rules, { fetch: false })), plain(first));
+  assert.equal(first[0].line, 5);
 });

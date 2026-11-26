@@ -11,14 +11,25 @@
 // comments, Proscenium CSS-module class names, and CSS rules (with a line
 // where the sheet has a source map). The framework mappers, which ask the
 // page probe, go ahead of them. Options: fetch (false for the hover label:
-// no sheet or source-map fetches, only what is cached) and rules (the
-// element's gathered CSS rules, whose lines the CSS rules mapper fills in).
+// no sheet or source-map fetches, only what has been read) and rules (the
+// element's gathered CSS rules, so the CSSOM is walked once).
+//
+// What a hover repeats is cached: each document's annotation comments
+// (until its comments change), and each sheet's text, source map and rule
+// preludes (per sheet object, so a replaced sheet is read again).
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
 
   const TIMEOUT = 300;
   const ROLES = new Set(["element", "component", "usage", "style"]);
+
+  // within is what a promise gives in TIMEOUT, or `none` (failures too).
+  function within(promise, none) {
+    let timer;
+    const late = new Promise((done) => (timer = setTimeout(() => done(none), TIMEOUT)));
+    return Promise.race([Promise.resolve(promise).catch(() => none), late]).finally(() => clearTimeout(timer));
+  }
 
   // ---- Rails: <!-- BEGIN/END path --> from annotate_rendered_view_with_filenames ----
 
@@ -63,27 +74,69 @@
     });
   }
 
-  // comments walks the page's comments from el: back (nearest first) or on.
-  function* comments(el, back) {
-    const walker = document.createTreeWalker(document, NodeFilter.SHOW_COMMENT);
-    walker.currentNode = el;
-    for (let node; (node = back ? walker.previousNode() : walker.nextNode()); ) yield node.data;
+  // A document's annotation comments, in document order, found in one walk
+  // and kept until a comment is added, removed or changed.
+  const indexes = new WeakMap();
+  const watched = new WeakSet();
+
+  function annotations(doc) {
+    let list = indexes.get(doc);
+    if (list) return list;
+    list = [];
+    const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_COMMENT);
+    for (let node; (node = walker.nextNode()); ) if (annotation(node.data)) list.push(node);
+    indexes.set(doc, list);
+    if (!watched.has(doc)) {
+      watched.add(doc);
+      const observer = new MutationObserver((records) => {
+        const now = indexes.get(doc);
+        if (now && records.some((r) => touchesComments(r, now))) indexes.delete(doc);
+      });
+      observer.observe(doc, { childList: true, subtree: true, characterData: true });
+      ns.teardowns.push(() => observer.disconnect());
+    }
+    return list;
   }
 
-  // suggestions are the optional improvements this page could use, for the
-  // side panel (design.md, Optional improvements): a Rails page (its CSRF
-  // meta tag names Rails' authenticity_token) with no template annotations.
-  function suggestions() {
-    const isRails = document.querySelector('meta[name="csrf-param"][content="authenticity_token"]');
-    if (!isRails) return [];
-    for (const comment of comments(document.documentElement, false)) if (annotation(comment)) return [];
-    for (const comment of comments(document.documentElement, true)) if (annotation(comment)) return [];
-    return ["rails-annotations"];
+  // touchesComments says whether a mutation may change the annotations: a
+  // comment changed, added or removed, or an element brought in with
+  // comments inside, or one taken out holding an indexed one.
+  function touchesComments(record, list) {
+    if (record.type === "characterData") return record.target.nodeType === Node.COMMENT_NODE;
+    for (const node of record.addedNodes) {
+      if (node.nodeType === Node.COMMENT_NODE) return true;
+      if (node.nodeType === Node.ELEMENT_NODE && node.ownerDocument.createTreeWalker(node, NodeFilter.SHOW_COMMENT).nextNode()) return true;
+    }
+    for (const node of record.removedNodes) {
+      if (node.nodeType === Node.COMMENT_NODE) return true;
+      if (node.nodeType === Node.ELEMENT_NODE && list.some((c) => node.contains(c))) return true;
+    }
+    return false;
+  }
+
+  // around is el's annotation comments: before it (nearest first) and after
+  // it (its own descendants first), found by a binary search of the index.
+  function around(el) {
+    const list = annotations(el.ownerDocument);
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) lo = mid + 1;
+      else hi = mid;
+    }
+    function* before() {
+      for (let i = lo - 1; i >= 0; i--) yield list[i].data;
+    }
+    function* after() {
+      for (let i = lo; i < list.length; i++) yield list[i].data;
+    }
+    return [before(), after()];
   }
 
   const rails = {
     via: "rails",
-    map: async (el) => templates(comments(el, true), comments(el, false)).map((file) => ({ file, role: "component", via: "rails" })),
+    map: async (el) => templates(...around(el)).map((file) => ({ file, role: "component", via: "rails" })),
   };
 
   // ---- Proscenium: CSS-module class names like title_<8 hex>_app-components-card-module ----
@@ -107,13 +160,13 @@
   // modules are the CSS modules an element's class names come from, found
   // among the sheets the page loaded ({url, id?}: a <link>'s href, or
   // Proscenium's own <style id="_<hash>" data-href>), as server paths.
-  function modules(classNames, sheets) {
+  function modules(classNames, loaded) {
     const out = [];
     for (const name of classNames) {
       const m = MODULE_CLASS.exec(name);
       if (!m) continue;
       const [, hash, want] = m;
-      const sheet = sheets.find((s) => s.id === `_${hash}`) ?? sheets.find((s) => suffix(pathOf(s.url).slice(1)) === want);
+      const sheet = loaded.find((s) => s.id === `_${hash}`) ?? loaded.find((s) => suffix(pathOf(s.url).slice(1)) === want);
       const file = sheet && pathOf(sheet.url);
       if (file && !out.includes(file)) out.push(file);
     }
@@ -123,11 +176,11 @@
   const proscenium = {
     via: "proscenium",
     map: async (el) => {
-      const sheets = [...document.querySelectorAll('link[rel~="stylesheet"][href], style[data-href]')].map((node) => ({
+      const loaded = [...document.querySelectorAll('link[rel~="stylesheet"][href], style[data-href]')].map((node) => ({
         url: node.localName === "link" ? node.href : node.dataset.href,
         id: node.id,
       }));
-      return modules([...el.classList], sheets).map((file) => ({ file, role: "style", via: "proscenium" }));
+      return modules([...el.classList], loaded).map((file) => ({ file, role: "style", via: "proscenium" }));
     },
   };
 
@@ -137,14 +190,26 @@
   // around combinators and commas.
   const squash = (s) => s.replace(/\s+/g, " ").replace(/ ?([>+~,]) ?/g, "$1").trim();
 
-  // prelude finds a selector in a sheet's text as a whole rule prelude (the
-  // text before a {), skipping comments and strings: its 0-based line and
-  // column, or null when it is there other than once.
-  function prelude(text, selector) {
-    const want = squash(selector);
-    let found = null;
-    let count = 0;
+  // preludes indexes a sheet's text: each rule prelude (the text before a
+  // {, comments and strings skipped), squashed, with how often it appears
+  // and where it first starts, 0-based.
+  function preludes(text) {
+    const index = new Map();
     let start = 0;
+    // at is a position's line and column; positions only move forward, so
+    // the text is counted through once.
+    let line = 0;
+    let lineStart = 0;
+    let counted = 0;
+    const at = (pos) => {
+      for (; counted < pos; counted++) {
+        if (text[counted] === "\n") {
+          line++;
+          lineStart = counted + 1;
+        }
+      }
+      return { line, column: pos - lineStart };
+    };
     for (let i = 0; i < text.length; i++) {
       const c = text[i];
       if (c === "/" && text[i + 1] === "*") {
@@ -156,72 +221,73 @@
         for (i++; i < text.length && text[i] !== c; i++) if (text[i] === "\\") i++;
         continue;
       }
-      if (c === "{" || c === "}" || c === ";") {
-        if (c === "{") {
-          const raw = text.slice(start, i).replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length));
-          if (squash(raw) === want) {
-            count++;
-            found = start + (raw.length - raw.trimStart().length);
-          }
-        }
-        start = i + 1;
+      if (c !== "{" && c !== "}" && c !== ";") continue;
+      if (c === "{") {
+        const raw = text.slice(start, i).replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length));
+        const key = squash(raw);
+        const seen = index.get(key);
+        if (seen) seen.count++;
+        else index.set(key, { count: 1, ...at(start + (raw.length - raw.trimStart().length)) });
       }
+      start = i + 1;
     }
-    if (count !== 1) return null;
-    const before = text.slice(0, found);
-    const line = before.split("\n").length - 1;
-    return { line, column: found - (before.lastIndexOf("\n") + 1) };
+    return index;
   }
 
-  // Each sheet object's text and source map, read once: {loading, text,
-  // map, done}. A dev server that replaces a sheet (even at the same URL)
-  // gives a new sheet object, so both are read again, the map reloaded.
-  const sheets = new WeakMap();
+  // prelude finds a selector in an indexed sheet's text: its 0-based line
+  // and column, or null when it is there other than once.
+  function prelude(index, selector) {
+    if (typeof index === "string") index = preludes(index);
+    const found = index.get(squash(selector));
+    return found?.count === 1 ? { line: found.line, column: found.column } : null;
+  }
 
-  function read(sheet) {
-    let entry = sheets.get(sheet);
-    if (entry) return entry.loading;
-    entry = { text: "", map: null, done: false };
+  // Each sheet object's text, source map and prelude index:
+  // {loading, text, map, index, done, fetched}. A dev server that replaces
+  // a sheet (even at the same URL) gives a new sheet object, so it is read
+  // again and its map reloaded.
+  const sheetCache = new WeakMap();
+
+  // read reads a sheet. Without fetch, a <style>'s own text and inline map
+  // are read (an external map only if already loaded), and a <link>'s
+  // nothing; a later read with fetch completes it.
+  function read(sheet, fetching) {
+    let entry = sheetCache.get(sheet);
+    if (entry && (entry.fetched || !fetching)) return entry.loading;
+    if (!fetching && sheet.href) return Promise.resolve({});
+    entry = { done: false, fetched: fetching };
     entry.loading = (async () => {
       const text = sheet.href
         ? await fetch(sheet.href, { credentials: "same-origin" }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
         : sheet.ownerNode?.textContent ?? "";
-      const map = text ? await ns.sourcemap.forText(text, sheet.href ?? location.href, { reload: true }) : null;
-      return Object.assign(entry, { text, map, done: true });
-    })().catch(() => (sheets.delete(sheet), entry)); // tried again on the next pick
-    sheets.set(sheet, entry);
+      const map = text ? await ns.sourcemap.forText(text, sheet.href ?? location.href, { fetch: fetching, reload: fetching }) : null;
+      return Object.assign(entry, { text, map, index: map ? preludes(text) : null, done: true });
+    })().catch(() => (sheetCache.delete(sheet), {})); // tried again on the next pick
+    sheetCache.set(sheet, entry);
     return entry.loading;
   }
 
-  // sheetMap is a sheet's {text, map}, read if need be; without fetch, only
-  // what has been read already, or a <style>'s own text and inline map.
-  async function sheetMap(sheet, fetching) {
-    if (fetching) return read(sheet);
-    const entry = sheets.get(sheet);
-    if (entry?.done) return entry;
-    if (sheet.href) return {};
-    const text = sheet.ownerNode?.textContent ?? "";
-    return { text, map: text ? await ns.sourcemap.forText(text, location.href, { fetch: false }) : null };
-  }
-
-  // line gives a gathered rule its source's file, line and column, when the
-  // sheet has a source map and the rule's selector is in it once.
+  // line is where a gathered rule's source is, {file, line, column}, when
+  // its sheet has a source map and its selector is there once; else null.
   async function line(rule, fetching) {
     const { sheet, selector } = rule.source ?? {};
     if (!sheet) return null;
-    const { text, map } = await sheetMap(sheet, fetching);
-    const at = map && prelude(text, selector);
+    const { map, index } = await read(sheet, fetching);
+    const at = map && prelude(index, selector);
     const found = at && ns.sourcemap.lookup(map, at.line, at.column);
-    if (!found) return null;
-    Object.assign(rule, { file: found.source, line: found.line, column: found.column });
-    return { file: found.source, line: found.line, column: found.column, role: "style", via: "css" };
+    return found ? { file: found.source, line: found.line, column: found.column } : null;
   }
+
+  // ruleLines are the gathered rules' source lines, in their order (null
+  // where there's none), within the timeout. The rules aren't changed.
+  const ruleLines = (rules, { fetch: fetching = true } = {}) =>
+    within(Promise.all(rules.map((rule) => line(rule, fetching).catch(() => null))), rules.map(() => null));
 
   const css = {
     via: "css",
     map: async (el, { fetch: fetching = true, rules } = {}) => {
-      const lines = await Promise.all((rules ?? ns.context.rules(el)).map((rule) => line(rule, fetching)));
-      return lines.filter(Boolean);
+      const lines = await ruleLines(rules ?? ns.context.rules(el), { fetch: fetching });
+      return lines.filter(Boolean).map((at) => ({ ...at, role: "style", via: "css" }));
     },
   };
 
@@ -232,42 +298,19 @@
 
   const valid = (l) => l && typeof l.file === "string" && l.file.trim() !== "" && ROLES.has(l.role) && typeof l.via === "string";
 
-  // within is a mapper's result, or nothing if it fails or takes too long.
-  function within(mapper, el, options) {
-    let timer;
-    const late = new Promise((done) => (timer = setTimeout(() => done([]), TIMEOUT)));
-    const result = Promise.resolve()
-      .then(() => mapper.map(el, options))
-      .then((ls) => (Array.isArray(ls) ? ls.filter(valid) : []), () => []);
-    return Promise.race([result, late]).finally(() => clearTimeout(timer));
-  }
-
   // run is every mapper's locations for el, one mapper after another in
   // priority order, each innermost first.
   async function run(el, { mappers = MAPPERS, ...options } = {}) {
-    const results = await Promise.all(mappers.map((m) => within(m, el, options)));
+    const results = await Promise.all(
+      mappers.map((m) =>
+        within(
+          Promise.resolve().then(() => m.map(el, options)).then((ls) => (Array.isArray(ls) ? ls.filter(valid) : [])),
+          [],
+        ),
+      ),
+    );
     return results.flat();
   }
 
-  // label is how the hover label names an element's source: the first
-  // place that isn't a style (the mappers come in priority order), else the
-  // first style, by its last two path segments, with a line if it has one.
-  function label(locations) {
-    const best = locations.find((l) => l.role !== "style") ?? locations[0];
-    if (!best) return "";
-    const path = best.file.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "").replace(/[?#].*$/, "");
-    const short = path.split("/").filter(Boolean).slice(-2).join("/");
-    return best.line ? `${short}:${best.line}` : short;
-  }
-
-  // hover is the hover label's source for el: the mappers without
-  // fetching, else the file of the latest CSS rule matching it.
-  async function hover(el) {
-    const found = await run(el, { fetch: false }).catch(() => []);
-    if (found.length) return label(found);
-    const latest = [...ns.context.rules(el)].reverse().find((r) => r.file);
-    return latest ? label([{ file: latest.file, role: "style", via: "css" }]) : "";
-  }
-
-  ns.mappers = { run, hover, label, templates, modules, prelude, suggestions };
+  ns.mappers = { run, ruleLines, annotations, templates, modules, preludes, prelude };
 })();

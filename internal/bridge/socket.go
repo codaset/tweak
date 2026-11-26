@@ -145,8 +145,8 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	b.extensionHello(hello)
-	defer b.extensionGone()
+	b.extensionHello(c, hello)
+	defer b.extensionGone(c)
 
 	seq, claims, tweaks, err := b.store.Snapshot()
 	if err != nil {
@@ -233,7 +233,7 @@ func (b *Bridge) handle(ctx context.Context, c *websocket.Conn, raw []byte) {
 	case "access":
 		var in accessIn
 		if json.Unmarshal(raw, &in) == nil {
-			b.heardAccess(&in.Granted)
+			b.heardAccess(c, &in.Granted)
 		}
 	case "create":
 		var in createIn

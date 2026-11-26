@@ -11,6 +11,7 @@ import (
 
 	tweak "github.com/codaset/tweak"
 	"github.com/codaset/tweak/internal/extfolder"
+	"github.com/coder/websocket"
 )
 
 // The bridge's half of the extension's self-update (docs/design.md, "The
@@ -74,7 +75,7 @@ const extensionAway = 30 * time.Second
 // was seen a moment ago: at its hello, and at every sweep since. Its last
 // seen is read before it counts as a browser, or a sweep in between would
 // mark it seen now and the sessions wouldn't hear it.
-func (b *Bridge) extensionHello(h helloIn) {
+func (b *Bridge) extensionHello(c *websocket.Conn, h helloIn) {
 	seen, err := b.store.ExtensionSeen()
 	if err != nil {
 		b.log.Print(err)
@@ -82,7 +83,7 @@ func (b *Bridge) extensionHello(h helloIn) {
 	b.browsers.Add(1)
 	b.log.Printf("extension %s connected", h.Version)
 	b.heardFrom(h.Version, h.ReloadedFor)
-	b.heardAccess(h.Granted)
+	b.heardAccess(c, h.Granted)
 	b.sawExtension()
 	if seen.IsZero() || b.opts.Clock().Sub(seen) >= extensionAway {
 		if err := b.store.ExtensionConnected(); err != nil {
@@ -92,7 +93,8 @@ func (b *Bridge) extensionHello(h helloIn) {
 }
 
 // extensionGone is its socket closing.
-func (b *Bridge) extensionGone() {
+func (b *Bridge) extensionGone(c *websocket.Conn) {
+	b.heardAccess(c, nil)
 	b.sawExtension()
 	b.browsers.Add(-1)
 	b.log.Printf("extension disconnected")
@@ -119,18 +121,39 @@ func (b *Bridge) heardFrom(extensionVersion string, reloadedFor *string) {
 	b.settled = reloadedFor == nil || *reloadedFor == b.helloVersion()
 }
 
-// heardAccess records whether the extension has site access, from its
-// hello (nil: it doesn't say) or an access message.
-func (b *Bridge) heardAccess(granted *bool) {
+// heardAccess records whether the extension on socket c has site access,
+// from its hello or an access message; nil forgets it (it doesn't say, or
+// has gone). Each connected extension (one per Chrome profile) has its own.
+func (b *Bridge) heardAccess(c *websocket.Conn, granted *bool) {
 	b.heardMu.Lock()
 	defer b.heardMu.Unlock()
-	b.granted = granted
+	if granted == nil {
+		delete(b.access, c)
+		return
+	}
+	if b.access == nil {
+		b.access = map[*websocket.Conn]bool{}
+	}
+	b.access[c] = *granted
+}
+
+// noAccessAnywhere is whether a connected extension says it has no site
+// access and none says it has: ⌥-click works nowhere. Call with heardMu held.
+func (b *Bridge) noAccessAnywhere() bool {
+	denied := false
+	for _, granted := range b.access {
+		if granted {
+			return false
+		}
+		denied = true
+	}
+	return denied
 }
 
 // noAccess is the warning while the extension has no site access: its
 // content scripts don't inject, so ⌥-click does nothing until the side
 // panel's Allow access is clicked.
-const noAccess = "site access not granted: open the Codaset Tweak side panel and click Allow access, or ⌥-click won't work"
+const noAccessWarning = "site access not granted: open the Codaset Tweak side panel and click Allow access, or ⌥-click won't work"
 
 // claimWarnings are the lines tweak claim prints after claiming: the
 // extension not connected (never, or not now), connected from another
@@ -151,11 +174,11 @@ func (b *Bridge) claimWarnings() []string {
 		return nil
 	}
 	b.heardMu.Lock()
-	heard, settled, granted := b.heard, b.settled, b.granted
+	heard, settled, noAccess := b.heard, b.settled, b.noAccessAnywhere()
 	b.heardMu.Unlock()
 	var w []string
-	if granted != nil && !*granted {
-		w = append(w, noAccess)
+	if noAccess {
+		w = append(w, noAccessWarning)
 	}
 	// The extension reloaded and still isn't this version: Chrome loads a
 	// copy from somewhere else.

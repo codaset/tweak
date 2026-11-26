@@ -22,6 +22,7 @@ import (
 	"github.com/codaset/tweak/internal/config"
 	"github.com/codaset/tweak/internal/store"
 	"github.com/codaset/tweak/internal/version"
+	"github.com/coder/websocket"
 )
 
 // Options configure a bridge.
@@ -97,11 +98,11 @@ type Bridge struct {
 	changeMu     sync.Mutex
 	change       chan struct{} // closed and replaced on each event-log change
 
-	extensionVersion string     // the embedded extension's version
-	heardMu          sync.Mutex // guards heard, settled and granted
-	heard            string     // the version of the extension that last said hello
-	settled          bool       // and whether it has finished updating itself (extension.go)
-	granted          *bool      // and whether it has site access; nil when it doesn't say
+	extensionVersion string                   // the embedded extension's version
+	heardMu          sync.Mutex               // guards heard, settled and access
+	heard            string                   // the version of the extension that last said hello
+	settled          bool                     // and whether it has finished updating itself (extension.go)
+	access           map[*websocket.Conn]bool // whether each connected extension that says has site access
 
 	shotsMu sync.Mutex
 	shots   map[int64]chan struct{} // screenshots on their way: closed when stored or given up on

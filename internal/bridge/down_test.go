@@ -264,3 +264,18 @@ func TestAClaimWithoutSiteAccessSaysHowToAllowIt(t *testing.T) {
 	s.send(map[string]any{"type": "access", "granted": false})
 	eventually(t, "the removal to be heard", func() bool { return len(claimWarnings(t, h)) == 1 })
 }
+
+// Each connected extension (one per Chrome profile) has its own access:
+// one with access is enough for ⌥-click, until it goes.
+func TestTheAccessWarningCountsEachConnectedExtension(t *testing.T) {
+	h, _ := downBridge(t)
+	h.extensionConnects(map[string]any{"version": embeddedVersion(t), "granted": false})
+	with := h.extensionConnects(map[string]any{"version": embeddedVersion(t), "granted": true})
+	if w := claimWarnings(t, h); len(w) != 0 {
+		t.Fatalf("warned with one profile allowed: %q", w)
+	}
+	with.leaves(h)
+	if w := claimWarnings(t, h); len(w) != 1 || !strings.HasPrefix(w[0], "site access not granted") {
+		t.Fatalf("warnings = %q", w)
+	}
+}

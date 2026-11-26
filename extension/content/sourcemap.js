@@ -161,7 +161,9 @@
       entry = { map: null };
       entry.loading = fetch(url, { credentials: "same-origin" })
         .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
-        .then((text) => forText(text, url))
+        // A module read afresh (a hot update's new ?t= URL) reads its
+        // external map afresh too, though the map's URL is the same.
+        .then((text) => forText(text, url, { reload: true }))
         .then((map) => (map ? (entry.map = map) : Promise.reject(new Error("no source map"))))
         .catch(() => (modules.delete(url), null));
       modules.set(url, entry);

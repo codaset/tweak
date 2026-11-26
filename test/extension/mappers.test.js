@@ -145,6 +145,20 @@ test("a stylesheet replaced at the same URL is read again, and so is its map", a
   assert.equal(await lineOf({ href: "http://localhost:3000/theme.css" }), "http://localhost:3000/src/moved.css:16", "a new sheet at the URL is read again");
 });
 
+test("a map that fails to load (a rebuild's 503) is tried again on the next pick", async () => {
+  let maps = 0;
+  const m = load({
+    fetch: async (url) => {
+      if (!url.endsWith(".map")) return served(read("./fixtures/css/theme.css"));
+      return ++maps === 1 ? { ok: false, status: 503, text: async () => "" } : served(read("./fixtures/css/theme.css.map"));
+    },
+  });
+  const rules = [rule(".badge", "http://localhost:3000/theme.css", { href: "http://localhost:3000/theme.css" })];
+  assert.deepEqual(plain(await m.ruleLines(rules)), [null]);
+  assert.equal((await m.ruleLines(rules))[0]?.line, 16);
+  assert.equal(maps, 2);
+});
+
 test("the CSS rules mapper gives locations and leaves the gathered rules as they were", async () => {
   const m = load({ fetch: async (url) => served(read(url.endsWith(".map") ? "./fixtures/css/theme.css.map" : "./fixtures/css/theme.css")) });
   const sheet = { href: "http://localhost:3000/theme.css" };

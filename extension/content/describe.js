@@ -7,15 +7,17 @@
 
   // How each status reads, and its tone (the pin and dot colour).
   const STATUS = {
-    sent: ["Waiting for a session", "sent"],
-    delivered: ["Claude has it", "sent"],
-    queued: ["Queued", "sent"],
-    working: ["Claude is working on it", "working"],
-    question: ["Claude has a question", "question"],
-    done: ["Change saved", "done"],
-    declined: ["Declined", "ended"],
-    withdrawn: ["Withdrawn", "ended"],
+    sent: { text: "Waiting for a session", tone: "sent" },
+    delivered: { text: "Claude has it", tone: "sent" },
+    queued: { text: "Queued", tone: "sent" },
+    working: { text: "Claude is working on it", tone: "working" },
+    question: { text: "Claude has a question", tone: "question" },
+    done: { text: "Change saved", tone: "done" },
+    declined: { text: "Declined", tone: "ended" },
+    withdrawn: { text: "Withdrawn", tone: "ended" },
   };
+  // SENDING is a card's tweak that the bridge hasn't sent back yet.
+  const SENDING = { text: "Sending…", tone: "sent" };
 
   // elapsed is a duration as the card shows it: 12 s, 6 min, 1 h 5 min.
   function elapsed(ms) {
@@ -28,13 +30,19 @@
 
   // status is how a tweak's status reads now: while working, with the time
   // since it started (the bridge's statusAt, so a reload keeps the count).
+  // No tweak yet is a card still sending.
   function status(tweak, now = Date.now()) {
-    const [text, tone] = STATUS[tweak.status] ?? [tweak.status, "sent"];
+    if (!tweak) return SENDING;
+    const { text, tone } = STATUS[tweak.status] ?? { text: tweak.status, tone: "sent" };
     if (tweak.status === "working" && tweak.statusAt) {
       return { text: `${text} · ${elapsed(now - Date.parse(tweak.statusAt))}`, tone };
     }
     return { text, tone };
   }
+
+  // classes are the status modifier classes a pin and the card's status
+  // share: the tone, and working (the pulse).
+  const classes = (tweak) => `tone-${status(tweak).tone}${tweak?.status === "working" ? " working" : ""}`;
 
   // label is the tag plus an ID or up to two classes: button.btn-primary.
   function label(el) {
@@ -76,5 +84,8 @@
     return steps.join(" > ");
   }
 
-  ns.describe = { status, elapsed, label, text, selector };
+  // element is one element as a tweak's targets carry it (schema/create.json).
+  const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
+
+  ns.describe = { status, classes, elapsed, label, text, selector, element };
 })();

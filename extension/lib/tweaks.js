@@ -29,3 +29,12 @@ export function applyTweaks(state = empty, msg) {
 // forPage lists a page's tweaks, by number.
 export const forPage = (state, page) =>
   [...state.tweaks.values()].filter((t) => t.page === page).sort((a, b) => a.number - b.number);
+
+// A tab's card stays open as the tab navigates, so a tab hears about its
+// page's tweaks and its open card's, wherever that one's page is. tab is
+// {page, card}: the page it shows and the number of its open card, or null.
+export const reachesTab = (tweak, tab) => tweak.page === tab.page || tweak.number === tab.card;
+
+// forTab lists what a tab hears about, by number.
+export const forTab = (state, tab) =>
+  [...state.tweaks.values()].filter((t) => reachesTab(t, tab)).sort((a, b) => a.number - b.number);

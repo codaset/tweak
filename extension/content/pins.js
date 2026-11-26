@@ -51,8 +51,8 @@
           pins.set(tweak.number, p);
         }
         p.tweak = tweak;
-        const { text, tone } = ns.describe.status(tweak);
-        p.el.className = `pin tone-${tone}${tweak.status === "working" ? " working" : ""}${ns.panel.showing() === tweak.number ? " open" : ""}`;
+        const { text } = ns.describe.status(tweak);
+        p.el.className = `pin ${ns.describe.classes(tweak)}${ns.panel.showing() === tweak.number ? " open" : ""}`;
         p.el.title = `Tweak ${tweak.number}: ${text}`;
         p.el.setAttribute("aria-label", `Tweak ${tweak.number}: ${text}`);
       }

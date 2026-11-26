@@ -25,3 +25,15 @@ test("while working, the card counts the time since it started", () => {
   assert.equal(status(t, at(t.statusAt, 65 * 60_000)).text, "Claude is working on it · 1 h 5 min");
   assert.equal(status(t, at(t.statusAt, -3_000)).text, "Claude is working on it · 0 s");
 });
+
+test("pins and the card share the status classes: the tone, and working", () => {
+  const { classes } = ns.describe;
+  assert.equal(classes({ status: "working" }), "tone-working working");
+  assert.equal(classes({ status: "question" }), "tone-question");
+  assert.equal(classes({ status: "withdrawn" }), "tone-ended");
+  assert.equal(classes(undefined), "tone-sent"); // a card whose tweak hasn't arrived yet
+});
+
+test("a card whose tweak hasn't arrived yet reads Sending", () => {
+  assert.deepEqual({ ...status(undefined) }, { text: "Sending…", tone: "sent" });
+});

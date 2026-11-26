@@ -9,7 +9,7 @@ import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
-import { applyTweaks, forPage, pageOf } from "./lib/tweaks.js";
+import { applyTweaks, forTab, pageOf, reachesTab } from "./lib/tweaks.js";
 import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
 
@@ -44,7 +44,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && "port" in changes) bridge.reconnect();
 });
 chrome.action.onClicked.addListener((tab) => {
-  // First, while the click's gesture lasts. Pick mode comes with the tracer.
+  // First, while the click's gesture lasts. Toggling pick mode on a claimed
+  // page (design.md § Toolbar button) is still to come; ⌥-click picks for now.
   chrome.sidePanel.open({ tabId: tab.id });
 });
 chrome.runtime.onConnect.addListener((port) => {
@@ -81,7 +82,9 @@ const tweaksRestored = restoreTweaks();
 
 // Each tab port says which page it shows; it gets that page's tweaks and
 // the card that was open in the tab (kept per tab in storage.session, so it
-// reopens in place after a reload), then every change to one of them.
+// reopens in place after a reload), then every change to one of them. The
+// card stays open as the tab navigates, so its tweak reaches the tab too,
+// whatever page it's on (port.card).
 const cardKey = (tabId) => `card-${tabId}`;
 
 async function onTabMessage(port, msg) {
@@ -93,10 +96,12 @@ async function onTabMessage(port, msg) {
       await tweaksRestored;
       const key = cardKey(tabId);
       const { [key]: card = null } = await chrome.storage.session.get(key);
-      port.postMessage({ type: "tweaks", tweaks: forPage(tweakState, port.page), card, claimed: claimed(port.url) });
+      if (!("card" in port)) port.card = card; // a card message since then is newer
+      port.postMessage({ type: "tweaks", tweaks: forTab(tweakState, port), card, claimed: claimed(port.url) });
       break;
     }
     case "card":
+      port.card = msg.number || null;
       if (msg.number) await chrome.storage.session.set({ [cardKey(tabId)]: msg.number });
       else await chrome.storage.session.remove(cardKey(tabId));
       break;
@@ -123,8 +128,8 @@ function adoptTweaks(next, msg) {
   chrome.storage.session.set({ tweaks: [...next.tweaks.values()] });
   for (const port of tabs) {
     if (!port.page) continue;
-    if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forPage(next, port.page), claimed: claimed(port.url) });
-    else if (msg.tweak.page === port.page) port.postMessage({ type: "tweak", tweak: msg.tweak });
+    if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forTab(next, port), claimed: claimed(port.url) });
+    else if (reachesTab(msg.tweak, port)) port.postMessage({ type: "tweak", tweak: msg.tweak });
   }
 }
 

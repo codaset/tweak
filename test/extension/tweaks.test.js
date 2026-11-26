@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyTweaks, forPage, pageOf } from "../../extension/lib/tweaks.js";
+import { applyTweaks, forPage, forTab, pageOf, reachesTab } from "../../extension/lib/tweaks.js";
 import { apply } from "../../extension/lib/claims.js";
 
 const tweak = (number, page, status = "sent") => ({ number, page, url: page, status });
@@ -31,4 +31,26 @@ test("an event already seen, or not about tweaks, changes nothing", () => {
 test("a tweak event leaves the claims as they were", () => {
   const claims = apply({ seq: 0, claims: [] }, { type: "snapshot", seq: 1, claims: [{ id: 1, pattern: "https://a.localhost/*" }] });
   assert.equal(apply(claims, { type: "event", seq: 2, event: "tweak-created", tweak: tweak(1, "p") }), claims);
+});
+
+// The card stays open as the tab navigates, so the tab keeps hearing about
+// its tweak wherever that tweak's page is.
+test("a tab gets its page's tweaks and its open card's", () => {
+  const s = applyTweaks(undefined, {
+    type: "snapshot",
+    seq: 1,
+    claims: [],
+    tweaks: [tweak(1, "https://a.localhost/"), tweak(2, "https://a.localhost/x"), tweak(3, "https://a.localhost/y")],
+  });
+  assert.deepEqual(forTab(s, { page: "https://a.localhost/x", card: 1 }).map((t) => t.number), [1, 2]);
+  assert.deepEqual(forTab(s, { page: "https://a.localhost/x", card: 2 }).map((t) => t.number), [2]);
+  assert.deepEqual(forTab(s, { page: "https://a.localhost/x", card: null }).map((t) => t.number), [2]);
+  assert.deepEqual(forTab(s, { page: "https://a.localhost/x", card: 9 }).map((t) => t.number), [2]);
+});
+
+test("a tweak's changes reach the tabs showing its page or its card", () => {
+  const t = tweak(1, "https://a.localhost/");
+  assert.equal(reachesTab(t, { page: "https://a.localhost/", card: null }), true);
+  assert.equal(reachesTab(t, { page: "https://a.localhost/x", card: 1 }), true);
+  assert.equal(reachesTab(t, { page: "https://a.localhost/x", card: 2 }), false);
 });

@@ -127,6 +127,10 @@
     requestAnimationFrame(() => text.focus({ preventScroll: true }));
   }
 
+  // questionOf says which of a tweak's questions is the latest (1 for the
+  // first): a reply draft is kept for that one only.
+  const questionOf = (tweak) => (tweak?.entries ?? []).filter((e) => e.kind === "question").length;
+
   // composeDraft is the open composer as ns.drafts keeps it: what it points
   // at, by selector, and its text, so it can open again after a reload.
   const pageKey = () => `${location.origin}${location.pathname}`;
@@ -349,11 +353,11 @@
     // for another, is back.
     // One kept for a question that's over since is dropped.
     if (tweak && tweak.status !== "question") ns.drafts.setReply(mode.number, "");
-    box.value = ns.drafts.reply(mode.number);
+    box.value = ns.drafts.reply(mode.number, questionOf(tweak));
     box.addEventListener("input", () => {
       mode.replyError = "";
       ns.busy?.set("draft", box.value.trim() !== "");
-      ns.drafts.setReply(mode.number, box.value);
+      ns.drafts.setReply(mode.number, box.value, questionOf(ns.page.tweak(mode.number)));
       refreshReply();
     });
     box.addEventListener("keydown", (e) => {

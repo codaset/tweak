@@ -136,7 +136,8 @@ async function publishSuggestions() {
 const cardKey = (tabId) => `card-${tabId}`;
 // And its drafts, kept as you type so they survive a reload:
 // {compose: {page, kind, selectors, anchor, selection?, whole?, area?, text} | null,
-// replies: {[number]: text}}.
+// replies: {[number]: {text, question}}}, question being which of the
+// tweak's questions the reply answers.
 const draftKey = (tabId) => `draft-${tabId}`;
 
 async function onTabMessage(port, msg) {

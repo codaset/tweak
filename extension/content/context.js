@@ -87,6 +87,8 @@
       copy.textContent = "…";
     }
     if (!copy) return "";
+    // The overlay host lives inside an open modal dialog: it isn't the page's.
+    for (const host of copy.querySelectorAll("codaset-tweak")) host.remove();
     for (const node of [copy, ...copy.querySelectorAll("*")]) {
       for (const attr of [...node.attributes]) {
         if (attr.value.length > ATTR_CAP) node.setAttribute(attr.name, cut(attr.value, ATTR_CAP));

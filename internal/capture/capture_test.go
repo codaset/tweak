@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, path, contents string) {
@@ -220,6 +221,32 @@ func TestABeforeCopyIsComparedAsGitSeesIt(t *testing.T) {
 	}
 	if _, known := Differs(Tree{}, at("app.css"), text("a\n")); known {
 		t.Error("with no snapshot, nothing is known")
+	}
+}
+
+// An edit in the same clock tick as the repo's index was written ("racy
+// git") is still seen: the copied index keeps the original's time, so git
+// re-reads the file rather than trusting its cached stat.
+func TestAnEditInTheIndexsClockTickIsSeen(t *testing.T) {
+	needGit(t)
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	git(t, dir, "config", "core.trustctime", "false") // mtime and size only, as with a coarse clock
+	file, index := filepath.Join(dir, "a.txt"), filepath.Join(dir, ".git", "index")
+	tick := time.Now().Add(-time.Hour).Truncate(time.Second)
+	write(t, file, "one\n")
+	os.Chtimes(file, tick, tick)
+	git(t, dir, "add", "-A")
+	// Edited in the same tick the index was written: same size, same mtime.
+	write(t, file, "two\n")
+	os.Chtimes(file, tick, tick)
+	os.Chtimes(index, tick, tick)
+	base, err := Snapshot(dir, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := git(t, dir, "cat-file", "-p", base.Hash+":a.txt"); got != "two\n" {
+		t.Fatalf("the snapshot has %q", got)
 	}
 }
 

@@ -196,12 +196,23 @@ func writeTree(top, scratch string) (string, error) {
 	return gitOut(top, env, "write-tree")
 }
 
+// copyFile copies the repo's index, keeping its modification time: git
+// trusts an entry's cached stat only when the file is older than the index,
+// so a copy stamped "now" would hide an edit made in the same clock tick as
+// the index was written (racy git) and snapshot the old contents.
 func copyFile(from, to string) error {
+	info, err := os.Stat(from)
+	if err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(from)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(to, raw, 0o600)
+	if err := os.WriteFile(to, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Chtimes(to, info.ModTime(), info.ModTime())
 }
 
 // gitOut runs git in dir and returns its trimmed stdout. It runs with none

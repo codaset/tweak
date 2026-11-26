@@ -1,7 +1,10 @@
 name: CI
 
 on:
+  # main on push; any other branch through its pull request, so a push to a
+  # PR's branch runs CI once, not twice.
   push:
+    branches: [main]
   pull_request:
   # The release workflow runs every job here first.
   workflow_call:

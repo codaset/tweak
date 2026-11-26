@@ -589,3 +589,13 @@ test("a list after a navigation watches the new page's tweaks already under way"
   await p.advance(2000);
   assert.deepEqual(p.reloads, [], "the hot update showed it");
 });
+
+test("after a reconnect, an undo of a tweak the tab had that's now gone from the list has ended", async () => {
+  const p = page();
+  const open = { number: 1, page: "http://localhost:3000/", status: "done" };
+  p.event({ ...open, change: recorded });
+  p.event({ ...open, change: { ...recorded, state: "undo-requested" } });
+  // Meanwhile resolved from the side panel, and its undo done, unheard.
+  p.ns.reload.relisted([], new Set([1]));
+  assert.notEqual(p.ns.reload.state(1), "watching");
+});

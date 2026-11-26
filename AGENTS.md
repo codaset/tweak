@@ -14,7 +14,8 @@ Point at any element on your dev server, describe a tweak, and the Claude Code s
   - The overlay is in a closed shadow root: reach it with `contentScript(page)` (`test/e2e/harness/browser.js`), which evaluates in the content script's world. The test copy of the extension (`harness/extension.js`) patches the bridge port and pre-grants `http://localhost/*`.
 - Versions: `npm run check:consistency`. The plugin, extension and launcher share one `X.Y.Z`; only the release workflow changes it.
 - Plugin: `claude plugin validate plugins/codaset` and `claude plugin validate .`; load it in place with `claude --plugin-dir plugins/codaset`.
-- Run a local build through the launcher with `TWEAK_BIN=<path to the build>`.
+- Run a local build through the launcher with `TWEAK_BIN=<path to the build>` (`make build` writes `dist/tweak`).
+- `make install` is the developer's own Tweak, on the live port and state folder (README § Trying your changes). Never run it from a task or a test: it stops the live bridge.
 - The bridge contract lives in `schema/`: add a schema, a valid example and the invalid cases together (see `schema/README.md`).
 - Never test against the live bridge or its sessions.
 

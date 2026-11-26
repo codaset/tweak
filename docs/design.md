@@ -1,7 +1,6 @@
 # Codaset Tweak: design
 
-Status: agreed design for v1 (2026-11-25). A prototype validated the core loop; it lives on the
-`prototype` branch of `~/dev/ui-notes`.
+Status: agreed design for v1 (2026-11-25). A prototype, since retired, validated the core loop.
 
 ## What it is
 
@@ -1642,6 +1641,14 @@ quarantine flag on macOS, and Go ad-hoc signs `darwin/arm64` binaries itself.
   state folder: database, screenshots, `bridge.json`, capture markers). When `TWEAK_BIN` is set, the
   CLI refuses to run on the default port or state folder, so a development build never reaches the
   live bridge or its sessions.
+- To use a local build as your own Tweak, in existing sessions and without environment variables,
+  `make install` builds it stamped with the plugin's version into `bin/X.Y.Z/` in the live state
+  folder (renamed into place, like the launcher's download), which the launcher runs instead of
+  downloading, and sends the running bridge `POST /shutdown`; a watcher starts the new one after
+  10 seconds. With the marketplace added from the checkout's path, Claude Code loads the plugin in
+  place, so skill, hook and launcher edits need only `/reload-plugins`. The extension is the repo's
+  `extension/`, loaded unpacked; the bridge's `hello` reply carries the same version, so it never
+  reloads itself.
 
 ### Extension key
 

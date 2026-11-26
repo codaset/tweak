@@ -172,6 +172,12 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range events {
+			// A lost claim is news for its session only: the page already
+			// left the extension's claims when it lapsed.
+			if e.Type == store.EventClaimLost {
+				seq = e.Seq
+				continue
+			}
 			if write(ctx, c, b.eventJSON(e)) != nil {
 				return
 			}

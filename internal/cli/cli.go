@@ -91,6 +91,19 @@ type context struct {
 	Env
 	cfg     config.Config
 	session string
+	warned  map[string]bool
+}
+
+// warn prints one of the bridge's warnings (no watcher running, a claim
+// lost) on stderr, once per command.
+func (c *context) warn(line string) {
+	if c.warned == nil {
+		c.warned = map[string]bool{}
+	}
+	if !c.warned[line] {
+		c.warned[line] = true
+		fmt.Fprintln(c.Stderr, line)
+	}
 }
 
 type usageError string

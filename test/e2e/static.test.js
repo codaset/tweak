@@ -2,6 +2,8 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { standIn } from "./harness/claude.js";
+import { sleep } from "./harness/util.js";
 import { join } from "node:path";
 import { contentScript, inWorker } from "./harness/browser.js";
 import { CARD, CARD_RESEND, CARD_STATUS, COMPOSER_INPUT, conversation, loadFixture, open, pick, setup, skipReason, tracer, undoFromCard, until } from "./harness/index.js";
@@ -644,5 +646,88 @@ describe("static on 127.0.0.1, through activeTab", { skip: skipReason(fixture) ?
     const { n } = await sendTweak(env, { selector: "#save" }, "make the save button green");
     const shot = await storedScreenshot(env, n);
     assert.deepEqual({ width: shot.width, height: shot.height }, crop);
+  });
+});
+// When the session goes quiet (design.md): a bridge whose claims lapse after
+// 2 s without a check-in instead of 10 minutes, and whose commands warn after
+// 1 s without a watcher instead of a minute. The tests run in order: the
+// stand-in's claim lapses and comes back, then is lost to a second session.
+describe("static, when the session goes quiet", { skip: skipReason(fixture) ?? false }, () => {
+  const env = setup(fixture, { lapseAfter: "2s", unwatchedAfter: "1s" });
+  const pattern = () => `${env.app.url("")}/*`;
+  const escaped = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const statusOf = (n) => `ns.page.tweak(${n})?.status`;
+  const send = async (selector, request) => {
+    await open(env);
+    await pick(env, { selector });
+    await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer" });
+    await env.page.keyboard.type(request);
+    const from = env.watcher.lines.length;
+    await env.page.keyboard.press("Enter");
+    const [, n] = await env.watcher.line(/^tweak (\d+) new: .*/, { from });
+    await env.page.keyboard.press("Escape");
+    return Number(n);
+  };
+
+  test("with no watcher, a command warns on stderr until the watcher is back", async () => {
+    env.watcher.stop();
+    // Each command checks in, so the claim can't lapse while this waits.
+    const warning = "no watcher running: start a Monitor with tweak watch\n";
+    await until(async () => (await env.claude.tweakBoth("claims")).stderr === warning, { what: "the no-watcher warning" });
+    env.watcher = env.claude.watch();
+    await until(async () => (await env.claude.tweakBoth("claims")).stderr === "", { what: "the warning to stop once the watcher listens" });
+  });
+
+  test("a lapsed claim comes back at the next check-in, with its tweak as it was", async () => {
+    const n = await send("#save", "make the save button green");
+    await env.tab.until(statusOf(n), { is: (s) => s === "delivered", what: "the tweak delivered" });
+    env.watcher.stop();
+    await env.tab.until(statusOf(n), { is: (s) => s === "sent", what: "the lapse to send the tweak back to waiting" });
+    env.watcher = env.claude.watch();
+    await env.watcher.line(new RegExp(`^claim restored: ${escaped(pattern())}$`));
+    await env.tab.until(statusOf(n), { is: (s) => s === "delivered", what: "the tweak back as delivered" });
+    assert.equal(env.watcher.lines.filter((l) => l.startsWith(`tweak ${n} `)).length, 0, "no line for the tweak again");
+    await env.claude.work(n);
+    await env.claude.done(n, "made it green");
+  });
+
+  test("a working tweak lapses to the next session to claim the page, with a notice; the first session's claim is lost", async () => {
+    const n = await send("#docs", "reword the docs link");
+    await env.claude.work(n);
+    await env.claude.edit({ file: "public/index.html", find: ">Docs<", replace: ">Read the docs<" });
+    env.watcher.stop();
+    await env.tab.until(statusOf(n), { is: (s) => s === "sent", what: "the lapse to send the tweak back to waiting" });
+
+    const second = standIn(env.bridge, { folder: env.app.folder, session: `claude-second-${process.pid}` });
+    try {
+      await second.claim(pattern());
+      const { number, brief } = await second.nextTweak(second.watch());
+      assert.equal(number, n);
+      assert.match(brief, /The session in .+ stopped responding\. Files already changed: public\/index\.html\./);
+      await second.done(n, "reworded the docs link");
+      await env.tab.until(statusOf(n), { is: (s) => s === "done", what: "the second session to finish it" });
+
+      const lost = new RegExp(`^claim lost: ${escaped(pattern())} is now claimed by the session in .+\\n$`);
+      assert.match((await env.claude.tweakBoth("claims")).stderr, lost);
+      await assert.rejects(env.claude.done(n, "me too"), /claim lost: /);
+    } finally {
+      second.stop();
+    }
+  });
+
+  test("the SessionEnd hook releases the session's claims, and its watcher stops", async () => {
+    const third = standIn(env.bridge, { folder: env.app.folder, session: `claude-third-${process.pid}` });
+    try {
+      await third.claim("http://elsewhere.localhost/*");
+      const watcher = third.watch();
+      // Once a second has passed since the claim, no warning means its watcher is listening.
+      await sleep(1100);
+      await until(async () => (await third.tweakBoth("claims")).stderr === "", { what: "the third session's watcher to listen" });
+      await third.end("clear");
+      await watcher.line(/^claim released: http:\/\/elsewhere\.localhost\/\*$/);
+      assert.equal(await watcher.exited, 0);
+    } finally {
+      third.stop();
+    }
   });
 });

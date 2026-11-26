@@ -11,10 +11,14 @@ import (
 const (
 	EventClaimMade     = "claim-made"
 	EventClaimReleased = "claim-released"
+	EventClaimLapsed   = "claim-lapsed"   // its session stopped checking in: kept 24 hours to come back
+	EventClaimRestored = "claim-restored" // a lapsed claim back with its session
+	EventClaimLost     = "claim-lost"     // a lapsed claim that can't come back: another session claimed an overlapping pattern
 	EventTweakCreated  = "tweak-created"
 	EventTweakStatus   = "tweak-status"  // its status changed, or an entry was added
 	EventTweakReplied  = "tweak-replied" // the developer answered Claude's question
 	EventTweakAgain    = "tweak-again"   // a delivered tweak Claude hasn't confirmed, sent again
+	EventTweakHanded   = "tweak-handed"  // a tweak whose session let go of its page, sent to the session claiming it now
 	// An undo that needs Claude: to the session that claims the page now.
 	EventTweakUndoConflict = "tweak-undo-conflict"
 	// A change undone, by the bridge or by Claude by hand: the page reloads
@@ -45,6 +49,7 @@ type claimRecord struct {
 	Folder      string `json:"folder"`
 	Label       string `json:"label"`
 	LastCheckIn int64  `json:"lastCheckIn"`
+	LostTo      string `json:"lostTo,omitempty"`
 }
 
 // OnEvent sets the function called after every commit that wrote to the event
@@ -82,7 +87,7 @@ func (t *eventTx) logClaim(typ string, c Claim) error {
 	payload, _ := json.Marshal(claimRecord{
 		ID: c.ID, Pattern: c.Pattern, Created: c.Created.UnixMilli(),
 		Session: c.Session.ID, Agent: c.Session.Agent, Folder: c.Session.Folder,
-		Label: c.Session.Label, LastCheckIn: c.Session.LastCheckIn.UnixMilli(),
+		Label: c.Session.Label, LastCheckIn: c.Session.LastCheckIn.UnixMilli(), LostTo: c.LostTo,
 	})
 	_, err := t.Exec(`INSERT INTO events (type, claim, payload, at) VALUES (?, ?, ?, ?)`, typ, c.ID, string(payload), t.s.now())
 	t.logged = t.logged || err == nil
@@ -105,6 +110,7 @@ type tweakRecord struct {
 	Resends  int             `json:"resends,omitempty"`
 	WaitFrom int64           `json:"waitFrom,omitempty"`
 	Change   *Change         `json:"change,omitempty"`
+	Line     string          `json:"line,omitempty"`
 }
 
 type entryRecord struct {
@@ -117,7 +123,7 @@ type entryRecord struct {
 func (t *eventTx) logTweak(typ string, tw Tweak) error {
 	r := tweakRecord{Number: tw.Number, Session: tw.Session, Page: tw.Page, URL: tw.URL, Status: tw.Status,
 		StatusAt: tw.StatusAt.UnixMilli(), Created: tw.Created.UnixMilli(), Updated: tw.Updated.UnixMilli(),
-		Targets: tw.Targets, Anchor: tw.Anchor, Entries: []entryRecord{}, Resends: tw.Resends, Change: tw.Change}
+		Targets: tw.Targets, Anchor: tw.Anchor, Entries: []entryRecord{}, Resends: tw.Resends, Change: tw.Change, Line: tw.Line}
 	if !tw.WaitFrom.IsZero() {
 		r.WaitFrom = tw.WaitFrom.UnixMilli()
 	}
@@ -133,7 +139,7 @@ func (t *eventTx) logTweak(typ string, tw Tweak) error {
 func (r tweakRecord) tweak() *Tweak {
 	tw := &Tweak{Number: r.Number, Session: r.Session, Page: r.Page, URL: r.URL, Status: r.Status,
 		StatusAt: fromMillis(r.StatusAt), Created: fromMillis(r.Created), Updated: fromMillis(r.Updated),
-		Targets: r.Targets, Anchor: r.Anchor, Resends: r.Resends, Change: r.Change}
+		Targets: r.Targets, Anchor: r.Anchor, Resends: r.Resends, Change: r.Change, Line: r.Line}
 	if r.WaitFrom != 0 {
 		tw.WaitFrom = fromMillis(r.WaitFrom)
 	}
@@ -144,7 +150,7 @@ func (r tweakRecord) tweak() *Tweak {
 }
 
 func (r claimRecord) claim() *Claim {
-	return &Claim{ID: r.ID, Pattern: r.Pattern, Created: fromMillis(r.Created), Session: Session{
+	return &Claim{ID: r.ID, Pattern: r.Pattern, Created: fromMillis(r.Created), LostTo: r.LostTo, Session: Session{
 		ID: r.Session, Agent: r.Agent, Folder: r.Folder, Label: r.Label, LastCheckIn: fromMillis(r.LastCheckIn),
 	}}
 }

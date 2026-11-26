@@ -187,26 +187,30 @@ func TestANewWatcherSkipsAnOldRelease(t *testing.T) {
 	}
 }
 
+// A watcher whose session has no claims left prints what's waiting (here,
+// its lapsed claim lost to another session) and acknowledges it before it
+// exits, so the next watcher doesn't print it again.
 func TestAWatcherAcknowledgesWhatItPrintedBeforeExiting(t *testing.T) {
 	s := newSandbox(t)
+	s.extra = append(s.extra, "TWEAK_TEST_LAPSE_AFTER=300ms")
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
-	ext := s.extension()
-	old := ext.create("https://ernie.localhost/", "make it green")
-	s.tweak("s1", ernie, "release")
+	time.Sleep(700 * time.Millisecond)
+	if r := s.tweak("s2", s.folder("ernie-2"), "claim", "https://ernie.localhost/*"); r.code != 0 {
+		t.Fatalf("claiming the lapsed page: %s", r.stderr)
+	}
 	first := s.watch("s1", ernie)
-	if got := first.line(); !strings.HasPrefix(got, fmt.Sprintf("tweak %d new:", old)) {
+	if got := first.line(); !strings.HasPrefix(got, "claim lost: https://ernie.localhost/* is now claimed by the session in ") {
 		t.Fatalf("first watcher's line %q", got)
 	}
 	if code := first.exited(); code != 0 {
 		t.Fatalf("first watcher exited %d: %s", code, first.err)
 	}
 
-	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
-	w := s.watch("s1", ernie)
-	n := ext.create("https://ernie.localhost/", "make it blue")
-	if got := w.line(); !strings.HasPrefix(got, fmt.Sprintf("tweak %d new:", n)) {
-		t.Fatalf("the next watcher's first line is %q, want tweak %d's", got, n)
+	// The next watcher has nothing left to print, so it stops at once.
+	r := s.tweak("s1", ernie, "watch")
+	if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "this session has no claims") {
+		t.Fatalf("the next watcher: exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 }
 

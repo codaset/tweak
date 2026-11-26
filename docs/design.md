@@ -390,7 +390,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   database (`screenshots/<n>.png`; 204, or `no-tweak`, `bad-request` for anything but a PNG, or
   `too-large` over 16 MiB).
 - **CLI ↔ bridge**: plain HTTP. Every request carries `x-tweak: 1`, `x-tweak-protocol: <n>` and the
-  session ID. Endpoints: `POST /sessions` (register and check in), `GET/POST/DELETE /claims`,
+  session ID. Endpoints: `POST /sessions` (register and check in), `POST /sessions/end` (the
+  session-end hook: releases everything, answers 204), `GET/POST/DELETE /claims`,
   `GET /inbox?after=<seq>` (long-poll; one line of at most 500 characters per event; it also
   acknowledges, see below), `POST /tweaks/:n/work` (returns the brief as text, sets `working` and
   starts undo capture for the session; a POST because fetching changes state),
@@ -402,7 +403,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   with `undo: "declined"`), and `POST /edits/before` (`{path}`, absolute: the edit hook sends a file's path
   before an agent edits it; the bridge saves the before copy if the session is capturing, then
   answers 204 either way; see [Undo](#undo)). Every CLI request counts as the
-  session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
+  session checking in (an inbox long-poll for as long as it's held), and a reply may carry
+  `x-tweak-warning` lines (`no watcher running`, `claim lost: …`), which the CLI prints on stderr
+  once each; the watcher's inbox and the hooks get none. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
 - **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version}` (the extension's
   version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `again`, `resolve`,
@@ -414,7 +417,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   when Claude isn't waiting on a question, `no-tweak` or `bad-request`. `again` is `{ref, number}`, the card's
   **Send again**, answered with the number, or `picked-up` once Claude has confirmed the tweak. `undo` is `{ref, number}`, the card's
   **Undo** or **Ask Claude to undo**, answered with the number, `not-undoable` (with why, as the card shows it) or `undo-failed`
-  (a write failed and nothing changed); a `tweak-undone` or `tweak-undo-conflict` event follows (see [Undo](#undo)). A snapshot holds only the open (unresolved) tweaks, and `tweak-created`,
+  (a write failed and nothing changed); a `tweak-undone` or `tweak-undo-conflict` event follows (see [Undo](#undo)). A snapshot holds only the open (unresolved) tweaks; `claim-lapsed` and
+  `claim-restored` events carry the claim like `claim-released` and `claim-made` (a restored claim
+  has a new id), and `tweak-created`, `tweak-handed` (passed to the session claiming its page now),
   `tweak-status`, `tweak-replied`, `tweak-again`, `tweak-undo-conflict` and `tweak-undone` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`
   reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
   `tweak watch` exits on), are in `schema/`.
@@ -471,6 +476,7 @@ when a tweak passes to another session; see [When the session goes quiet](#when-
 |---|---|
 | `sessions` | id (agent session ID), agent, folder, label, last check-in |
 | `claims` | id, session, pattern, created |
+| `lapsed_claims` | id, session, pattern, created, lapsed at, lost to (the folder that claimed an overlapping pattern since), reported |
 | `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
 | `entries` | tweak, from, kind, text, at |
 | `changes` | tweak (one change each), state, unrecorded files (JSON), capturing session, folder, git repo and tree, whether the check ran, conflicts (while `undo-requested`) |
@@ -508,7 +514,9 @@ Monitor research saw a burst lose one line and cut another):
   out the text from the wait and the number of resends: a delivered tweak carries `resends` and
   `againAt` (when the current wait ends), and the card says so once `resends` is 2 or more and
   `againAt` has passed. A tweak delivered afresh (a reply) starts again from none. Tests shorten the
-  3 minutes with `TWEAK_TEST_AGAIN_AFTER` (a Go duration), which only a development build reads.
+  3 minutes with `TWEAK_TEST_AGAIN_AFTER` (a Go duration), which only a development build reads;
+  `TWEAK_TEST_LAPSE_AFTER` and `TWEAK_TEST_UNWATCHED_AFTER` shorten the 10-minute lapse and the
+  60-second no-watcher wait the same way.
 
 ### When the session goes quiet
 
@@ -517,7 +525,8 @@ The bridge has two signals about a session: a fast one, whether its watcher's lo
 connected, and a slow one, the [claim lapse](#claims) after 10 minutes with no check-in. Because the
 watcher counts as checking in, a lapse in practice means the watcher has been gone for 10 minutes.
 
-- **No watcher**: after about 60 seconds without a connected watcher, while the session still has
+- **No watcher**: after about 60 seconds without a connected watcher (counted from its last
+  long-poll, its newest claim or the bridge starting), while the session still has
   claims, every `tweak` command from it prints `no watcher running: start a Monitor with tweak watch`
   on stderr (the skill re-arms), and the card of a tweak waiting on it says "Waiting for the session
   in `<folder>`, which isn't listening right now". The badge doesn't change.
@@ -530,8 +539,10 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
   git check, as at `done`. A crashed session can't leave its edit hook recording.
 - **Handed over part-way**: a `working` tweak that passes to another session keeps its one change.
   The next `tweak work` extends it, keeping the first before copies. The bridge adds a `notice` entry
-  to the conversation, shown on the card and in the brief: "The session in `~/dev/ernie` stopped
-  responding. Files already changed: `app/views/x.rb`."
+  to the conversation when the next session claims the page (so a restored session's conversation
+  has none), shown on the card and in the brief: "The session in `/Users/joel/dev/ernie` stopped
+  responding. Files already changed: `app/views/x.rb`." (or "released this page", or "ended"; the
+  folder is absolute, as in every bridge message).
 - **While lapsed**, the card of each tweak it held says "The session stopped responding · Waiting for
   a session", plus "Files already changed: …" if there are any (no Undo there: the tweak isn't
   finished). The page counts as unclaimed (grey `!` badge), and the side panel's claim status says

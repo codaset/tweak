@@ -135,12 +135,13 @@ func replyLine(number int64, text string) string {
 }
 
 // againLine is a delivered tweak sent again: "tweak <n> again: " and the
-// line it repeats, the reply when the developer has answered a question
+// line it repeats, the reply when the session's last line for it was one
 // (only a reply sends a tweak again after Claude has had it), else the new
-// tweak's line.
+// tweak's line: a tweak handed to another session is new to it, whatever
+// its conversation holds.
 func againLine(tw store.Tweak) string {
 	repeat := newLine(tw.Number, tw.Page, tw.Request(), tw.Targets)
-	if en, ok := tw.LastEntry(store.KindReply); ok {
+	if en, ok := tw.LastEntry(store.KindReply); ok && tw.Line == store.LineReply {
 		repeat = replyLine(tw.Number, en.Text)
 	}
 	return fmt.Sprintf("tweak %d again: %s", tw.Number, repeat)
@@ -149,7 +150,7 @@ func againLine(tw store.Tweak) string {
 // line is an inbox event as the watcher prints it.
 func line(e store.Event) string {
 	switch e.Type {
-	case store.EventTweakCreated:
+	case store.EventTweakCreated, store.EventTweakHanded:
 		return newLine(e.Tweak.Number, e.Tweak.Page, e.Tweak.Request(), e.Tweak.Targets)
 	case store.EventTweakReplied:
 		if en, ok := e.Tweak.LastEntry(store.KindReply); ok {
@@ -161,6 +162,10 @@ func line(e store.Event) string {
 		return undoConflictLine(*e.Tweak)
 	case store.EventClaimReleased:
 		return "claim released: " + e.Claim.Pattern
+	case store.EventClaimRestored:
+		return "claim restored: " + e.Claim.Pattern
+	case store.EventClaimLost:
+		return e.Claim.LostLine()
 	}
 	return ""
 }
@@ -182,6 +187,9 @@ func (b *Bridge) inbox(w http.ResponseWriter, r *http.Request) {
 		}
 		after = n
 	}
+	// While the long-poll is held the watcher is listening, and checked in.
+	b.watching(id, true)
+	defer b.watching(id, false)
 	deadline := time.NewTimer(b.opts.InboxWait)
 	defer deadline.Stop()
 	for {
@@ -266,7 +274,10 @@ func (b *Bridge) refuseChange(w http.ResponseWriter, n int64, err error) bool {
 func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string) {
 	var notYours *store.NotYoursError
 	var wrong *store.TransitionError
+	var lost *store.LostError
 	switch {
+	case errors.As(err, &lost):
+		return 409, "claim-lost", err.Error()
 	case errors.Is(err, store.ErrNoTweak):
 		return 404, "no-tweak", noTweak(strconv.FormatInt(n, 10))
 	case errors.As(err, &notYours):

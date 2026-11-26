@@ -21,6 +21,7 @@ const (
 	HeaderProtocol = "x-tweak-protocol" // the client's protocol integer
 	HeaderSession  = "x-tweak-session"  // the agent's session ID
 	HeaderVersion  = "x-tweak-version"  // on every response: the bridge's version
+	HeaderWarning  = "x-tweak-warning"  // a line for the CLI to print on stderr, once per value
 )
 
 func (b *Bridge) routes() http.Handler {
@@ -33,6 +34,7 @@ func (b *Bridge) routes() http.Handler {
 
 	api := http.NewServeMux()
 	api.HandleFunc("POST /sessions", b.registerSession)
+	api.HandleFunc("POST /sessions/end", b.endSession)
 	api.HandleFunc("GET /claims", b.listClaims)
 	api.HandleFunc("POST /claims", b.claim)
 	api.HandleFunc("DELETE /claims", b.release)
@@ -112,12 +114,26 @@ func (b *Bridge) checkProtocol(next http.Handler) http.Handler {
 	})
 }
 
-// checkIn counts every request from a registered session as a check-in.
+// checkIn counts every request from a registered session as a check-in,
+// which brings back its lapsed claims (see quiet.go). Every command's
+// reply carries the session's warnings in x-tweak-warning, for the CLI to
+// print on stderr: a claim lost, or no watcher running. The watcher's own
+// inbox gets neither (its lines say so), and a session ending is not a
+// return.
 func (b *Bridge) checkIn(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if id := r.Header.Get(HeaderSession); id != "" {
-			if _, err := b.store.CheckIn(id); err != nil {
-				b.log.Printf("check-in %s: %v", id, err)
+		id := r.Header.Get(HeaderSession)
+		if id == "" || r.URL.Path == "/sessions/end" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		lost := b.returning(id)
+		if r.URL.Path != "/inbox" {
+			for _, l := range lost {
+				w.Header().Add(HeaderWarning, l)
+			}
+			if b.unwatched(id) {
+				w.Header().Add(HeaderWarning, noWatcher)
 			}
 		}
 		next.ServeHTTP(w, r)

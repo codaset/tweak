@@ -23,12 +23,13 @@ type client struct {
 	port    int
 	session string
 	http    *http.Client
+	warn    func(string) // prints the bridge's warnings; nil (a hook) prints nothing
 }
 
 // connect finds the running bridge (bridge.json first, then the configured
 // port) or starts one.
 func (c *context) connect() (*client, error) {
-	cl := &client{session: c.session, http: &http.Client{Timeout: 30 * time.Second}}
+	cl := &client{session: c.session, http: &http.Client{Timeout: 30 * time.Second}, warn: c.warn}
 	if f, err := bridge.ReadBridgeFile(c.cfg.StateDir); err == nil && cl.ping(f.Port) {
 		cl.port = f.Port
 		return cl, nil
@@ -111,6 +112,11 @@ func (cl *client) send(timeout time.Duration, method, path string, body any) ([]
 		return nil, fmt.Errorf("the bridge didn't answer: %v", err)
 	}
 	defer resp.Body.Close()
+	if cl.warn != nil {
+		for _, w := range resp.Header.Values(bridge.HeaderWarning) {
+			cl.warn(w)
+		}
+	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("the bridge didn't answer: %v", err)

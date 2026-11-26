@@ -32,7 +32,10 @@ func runBridge(c *context, args []string) error {
 	}
 
 	b, err := bridge.Start(bridge.Options{Config: c.cfg, Version: version.Version, Development: c.Getenv("TWEAK_BIN") != "",
-		AgainAfter: testAgainAfter(c.Getenv), Log: c.Stderr})
+		AgainAfter:     testDuration(c.Getenv, "TWEAK_TEST_AGAIN_AFTER"),
+		LapseAfter:     testDuration(c.Getenv, "TWEAK_TEST_LAPSE_AFTER"),
+		UnwatchedAfter: testDuration(c.Getenv, "TWEAK_TEST_UNWATCHED_AFTER"),
+		Log:            c.Stderr})
 	if errors.Is(err, bridge.ErrAlreadyRunning) {
 		if byCLI {
 			status(lineAlready)
@@ -56,16 +59,22 @@ func runBridge(c *context, args []string) error {
 	return b.Serve()
 }
 
-// testAgainAfter is the test-only TWEAK_TEST_AGAIN_AFTER (a Go duration such
-// as 2s): how long a delivered tweak waits for Claude before the bridge
-// sends it again, so the e2e suite needn't wait 3 minutes. Only a
-// development build (TWEAK_BIN set) reads it; otherwise, or when it isn't a
-// positive duration, it is 0, the bridge's 3 minutes.
-func testAgainAfter(getenv func(string) string) time.Duration {
+// testDuration reads one of the test-only knobs, each a Go duration such as
+// 2s, so the e2e suite needn't wait minutes:
+//   - TWEAK_TEST_AGAIN_AFTER: how long a delivered tweak waits for Claude
+//     before the bridge sends it again (3 minutes);
+//   - TWEAK_TEST_LAPSE_AFTER: how long a session may go without checking
+//     in before its claims lapse (10 minutes);
+//   - TWEAK_TEST_UNWATCHED_AFTER: how long a session with claims may have
+//     no watcher before its commands warn (60 seconds).
+//
+// Only a development build (TWEAK_BIN set) reads them; otherwise, or when
+// one isn't a positive duration, it is 0, the bridge's own.
+func testDuration(getenv func(string) string, name string) time.Duration {
 	if getenv("TWEAK_BIN") == "" {
 		return 0
 	}
-	d, err := time.ParseDuration(getenv("TWEAK_TEST_AGAIN_AFTER"))
+	d, err := time.ParseDuration(getenv(name))
 	if err != nil || d <= 0 {
 		return 0
 	}

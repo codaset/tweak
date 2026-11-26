@@ -17,7 +17,10 @@
       "enum": [
         "claim-made",
         "claim-released",
+        "claim-lapsed",
+        "claim-restored",
         "tweak-created",
+        "tweak-handed",
         "tweak-status",
         "tweak-replied",
         "tweak-again",
@@ -26,11 +29,11 @@
       ]
     },
     "claim": {
-      "description": "With claim events: the claim as it was when the event happened.",
+      "description": "With claim events: the claim as it was when the event happened (claim-lapsed: its session stopped checking in, and it can come back to it; claim-restored: back with its session, under a new id).",
       "$ref": "#/$defs/claim"
     },
     "tweak": {
-      "description": "With tweak events: the tweak as it was after the event (tweak-status: its status changed or an entry was added; tweak-replied: the developer answered Claude's question, and the tweak is sent again; tweak-again: a delivered tweak Claude hasn't confirmed, sent to its session again).",
+      "description": "With tweak events: the tweak as it was after the event (tweak-handed: a tweak whose session let go of its page, now for the session claiming it; tweak-status: its status changed or an entry was added; tweak-replied: the developer answered Claude's question, and the tweak is sent again; tweak-again: a delivered tweak Claude hasn't confirmed, sent to its session again).",
       "$ref": "#/$defs/tweak"
     }
   },
@@ -673,7 +676,9 @@
           "event": {
             "enum": [
               "claim-made",
-              "claim-released"
+              "claim-released",
+              "claim-lapsed",
+              "claim-restored"
             ]
           }
         }
@@ -694,6 +699,7 @@
           "event": {
             "enum": [
               "tweak-created",
+              "tweak-handed",
               "tweak-status",
               "tweak-replied",
               "tweak-again"

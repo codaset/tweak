@@ -18,9 +18,12 @@ type Inbox struct {
 }
 
 // inboxWhere picks the events a session's watcher hears about: its new
-// tweaks, the replies to its questions, the tweaks sent again, the undos
-// that need it, and its released claims.
-const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-replied', 'tweak-again', 'tweak-undo-conflict', 'claim-released')`
+// tweaks and those handed to it, the replies to its questions, the tweaks
+// sent again, undo conflicts, and its claims released, restored or lost. A
+// tweak's lines are only for the session it is for now: one that passed to
+// another session is no longer this one's.
+const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-handed', 'tweak-replied', 'tweak-again', 'tweak-undo-conflict', 'claim-released', 'claim-restored', 'claim-lost')
+	AND (tweak IS NULL OR tweak IN (SELECT number FROM tweaks WHERE session = ?))`
 
 // Inbox acknowledges the session's events up to after, then returns those
 // after it. after < 0 means "where the last watcher left off" and
@@ -57,7 +60,7 @@ func (s *Store) Inbox(sessionID string, after int64) (Inbox, error) {
 		where += ` AND type != 'claim-released'`
 	}
 	rows, err := tx.Query(`SELECT seq, type, payload, at FROM events WHERE seq > ? AND seq <= ? AND `+where+` ORDER BY seq`,
-		cursor, in.Seq, sessionID)
+		cursor, in.Seq, sessionID, sessionID)
 	if err != nil {
 		return Inbox{}, err
 	}
@@ -96,7 +99,7 @@ func (t *eventTx) deliver(sessionID string, acked, upto int64) error {
 	}
 	at := t.s.now()
 	// A tweak sent again after upto (a reply since) waits for that line's ack.
-	sent, err := t.acknowledged(`'tweak-created', 'tweak-replied'`, sessionID, acked, upto)
+	sent, err := t.acknowledged(`'tweak-created', 'tweak-handed', 'tweak-replied'`, sessionID, acked, upto)
 	if err != nil {
 		return err
 	}

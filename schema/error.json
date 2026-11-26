@@ -18,6 +18,7 @@
         "not-found",
         "no-tweak",
         "not-yours",
+        "claim-lost",
         "wrong-status",
         "not-undoable",
         "not-undo-requested",

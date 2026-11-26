@@ -54,10 +54,11 @@ const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 // - serve(host): the same fixture again on another host, e.g. 127.0.0.1
 //   for the activeTab path, stopped with the rest.
 // Options go to devBridge: againAfter shortens the bridge's 3-minute wait
-// before an again: line. Give such a setup its own describe, so its again:
-// lines and card text reach no other test. allUrls gives the test copy
-// <all_urls>, as after Allow access, which screenshots need; deviceScaleFactor
-// sets the page's.
+// before an again: line, lapseAfter its 10-minute claim lapse, and
+// unwatchedAfter its minute before "no watcher running". Give such a setup
+// its own describe, so what they make happen reaches no other test. allUrls
+// gives the test copy <all_urls>, as after Allow access, which screenshots
+// need; deviceScaleFactor sets the page's.
 export function setup(fixture, options = {}) {
   const extra = [];
   const env = {

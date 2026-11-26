@@ -48,6 +48,14 @@ type Options struct {
 	// ScreenshotWait is how long after a create that says a screenshot
 	// follows a brief waits for it (5 seconds when zero).
 	ScreenshotWait time.Duration
+	// LapseAfter is how long a session may go without checking in before
+	// its claims lapse (10 minutes when zero), RestoreFor how long a lapsed
+	// claim is kept to come back (24 hours), and LapseCheck how often the
+	// bridge looks (every 10 seconds, or a tenth of LapseAfter when that is
+	// shorter). UnwatchedAfter is how long a session with claims may have
+	// no watcher before its commands warn (60 seconds). See docs/design.md,
+	// "When the session goes quiet".
+	LapseAfter, RestoreFor, LapseCheck, UnwatchedAfter time.Duration
 	// Clock is the bridge's time, and its store's (time.Now when nil).
 	Clock func() time.Time
 	Log   io.Writer
@@ -88,6 +96,13 @@ type Bridge struct {
 
 	shotsMu sync.Mutex
 	shots   map[int64]chan struct{} // screenshots on their way: closed when stored or given up on
+	// The watchers' long-polls (quiet.go): how many each session has open,
+	// and when its last one started or ended. upSince is when this bridge
+	// started, before which no watcher counts as missing.
+	watchMu sync.Mutex
+	polls   map[string]int
+	polled  map[string]time.Time
+	upSince time.Time
 }
 
 // Info is bridge.json, and the body of GET /bridge.
@@ -118,6 +133,18 @@ func Start(o Options) (*Bridge, error) {
 	if o.AgainCheck == 0 {
 		o.AgainCheck = min(5*time.Second, o.AgainAfter/10)
 	}
+	if o.LapseAfter == 0 {
+		o.LapseAfter = 10 * time.Minute
+	}
+	if o.RestoreFor == 0 {
+		o.RestoreFor = 24 * time.Hour
+	}
+	if o.LapseCheck == 0 {
+		o.LapseCheck = min(10*time.Second, o.LapseAfter/10)
+	}
+	if o.UnwatchedAfter == 0 {
+		o.UnwatchedAfter = time.Minute
+	}
 	if o.Clock == nil {
 		o.Clock = time.Now
 	}
@@ -131,7 +158,8 @@ func Start(o Options) (*Bridge, error) {
 	if err != nil {
 		return nil, whyNotListening(o.Config.Port, err)
 	}
-	b := &Bridge{opts: o, listener: l, log: log.New(o.Log, "bridge: ", log.LstdFlags), stop: make(chan struct{}), change: make(chan struct{})}
+	b := &Bridge{opts: o, listener: l, log: log.New(o.Log, "bridge: ", log.LstdFlags), stop: make(chan struct{}), change: make(chan struct{}),
+		polls: map[string]int{}, polled: map[string]time.Time{}, upSince: o.Clock()}
 	b.closing, b.stopSockets = context.WithCancel(context.Background())
 	b.gitSnapshot, b.gitChanged = capture.Snapshot, capture.Changed
 	b.opts.Config.Port = l.Addr().(*net.TCPAddr).Port
@@ -160,6 +188,8 @@ func Start(o Options) (*Bridge, error) {
 	if err := b.store.CheckInAll(); err != nil {
 		return fail(err)
 	}
+	// Sessions that ended while no bridge ran.
+	b.endReleased()
 	// Before bridge.json, so no extension says hello before its folder is written.
 	b.installExtension()
 	if err := b.writeBridgeFile(); err != nil {
@@ -206,8 +236,9 @@ func (b *Bridge) Serve() error {
 	served := make(chan error, 1)
 	go func() { served <- b.server.Serve(b.listener) }()
 	go b.watchIdle()
-	b.loops.Add(1)
+	b.loops.Add(2)
 	go b.watchAgain()
+	go b.watchLapses()
 
 	var err error
 	select {

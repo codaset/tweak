@@ -1,0 +1,8 @@
+[
+  {
+    "name": "save button",
+    "pick": { "selector": "#save" },
+    "locations": [],
+    "clues": []
+  }
+]

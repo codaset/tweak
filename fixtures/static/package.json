@@ -1,0 +1,9 @@
+{
+  "name": "tweak-fixture-static",
+  "private": true,
+  "description": "The e2e static fixture: plain files, no framework, no dependencies.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

@@ -55,6 +55,9 @@ jobs:
 
   js:
     runs-on: ubuntu-latest
+    env:
+      # Only the e2e job needs the browser.
+      PUPPETEER_SKIP_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -63,6 +66,29 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Chrome for Testing version
+        id: chrome
+        run: echo "version=$(node -p 'require("./.puppeteerrc.cjs").chrome.version')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/puppeteer
+          key: chrome-for-testing-${{ runner.os }}-${{ steps.chrome.outputs.version }}
+      # The pinned version from .puppeteerrc.cjs; nothing to do on a cache hit.
+      - run: npx puppeteer browsers install chrome
+      - run: npm run e2e
 
   consistency:
     runs-on: ubuntu-latest

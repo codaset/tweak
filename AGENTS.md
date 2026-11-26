@@ -5,7 +5,11 @@ Point at any element on your dev server, describe a tweak, and the Claude Code s
 ## Working on the code
 
 - Go: `go test -race ./...`, `go vet ./...`, `gofmt -l .` (CI fails on any output).
-- JavaScript: `npm ci`, then `npm test` (`node --test`; `ajv` is the only dev dependency so far).
+- JavaScript: `npm ci`, then `npm test` (`node --test`; `ajv` and `puppeteer` are the only dev dependencies).
+- End to end: `npm run e2e` (needs Go; Chrome for Testing comes from `npx puppeteer browsers install chrome`, pinned in `.puppeteerrc.cjs`). It builds the binary, then runs `test/e2e/<fixture>.test.js` in headless Chrome against `fixtures/<fixture>/`, a development bridge on a random port with a temporary state folder, and a scripted stand-in for Claude. Run it before every push, like the other checks.
+  - A new case: add it to the fixture's `expected.json` (design.md § Golden data); the fixture's test file runs every case through `tracer()` in `test/e2e/harness/index.js`.
+  - A new fixture: `fixtures/<name>/` with `fixture.json` (`start`, an argv with `{port}`; `ready`, a path; optional `needs`, toolchain commands), `expected.json`, a lockfile, a `test/e2e/<name>.test.js` copied from `static.test.js`, and a grouped entry in `.github/dependabot.yml`. `npm test` checks each is there.
+  - The overlay is in a closed shadow root: reach it with `contentScript(page)` (`test/e2e/harness/browser.js`), which evaluates in the content script's world. The test copy of the extension (`harness/extension.js`) patches the bridge port and pre-grants `http://localhost/*`.
 - Versions: `npm run check:consistency`. The plugin, extension and launcher share one `X.Y.Z`; only the release workflow changes it.
 - Plugin: `claude plugin validate plugins/codaset` and `claude plugin validate .`; load it in place with `claude --plugin-dir plugins/codaset`.
 - Run a local build through the launcher with `TWEAK_BIN=<path to the build>`.

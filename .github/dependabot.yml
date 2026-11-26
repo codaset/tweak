@@ -12,3 +12,13 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # The e2e fixtures, one entry each, every update in one PR per fixture. A
+  # red one is the point: a framework changed the metadata a mapper reads
+  # (design.md § Fixture apps). Add an entry with each new fixture.
+  - package-ecosystem: npm
+    directory: /fixtures/static
+    schedule:
+      interval: monthly
+    groups:
+      static:
+        patterns: ["*"]

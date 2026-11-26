@@ -129,23 +129,45 @@ func TestALapseEndsCaptureAndTheSessionGetsItsTweakBack(t *testing.T) {
 }
 
 func TestAWatcherHoldingItsLongPollDoesntLapse(t *testing.T) {
-	h, s, c := quietBridge(t, "/dev/ernie", func(o *Options) { o.InboxWait = 400 * time.Millisecond })
+	// The test sweeps, so the clock jumps only once the long-poll is held.
+	h, _, c := quietBridge(t, "/dev/ernie", func(o *Options) {
+		o.InboxWait = 400 * time.Millisecond
+		o.LapseCheck = time.Hour
+	})
 	in := poll(t, h, -1)
 	held := make(chan struct{})
 	go func() {
 		defer close(held)
 		h.do(as("s1", req{method: "GET", path: "/inbox?after=" + jsonInt(in.Seq)}))
 	}()
-	time.Sleep(50 * time.Millisecond)
+	eventually(t, "the long-poll held", func() bool { return h.b.listening("s1") })
 	c.advance(time.Hour)
-	time.Sleep(100 * time.Millisecond)
+	h.b.lapse()
 	<-held
-	time.Sleep(50 * time.Millisecond)
+	h.b.lapse()
 	_, body := h.do(req{method: "GET", path: "/claims"})
 	if !strings.Contains(string(body), "ernie.localhost") {
 		t.Fatalf("lapsed while its watcher listened: %s", body)
 	}
-	_ = s
+}
+
+// A long-poll ending is listening until its check-in lands: a sweep just
+// before that check-in still finds the session listening. The poll is held
+// past LapseAfter, as across a laptop's sleep.
+func TestASweepAsALongPollEndsDoesntLapseIt(t *testing.T) {
+	h, _, c := quietBridge(t, "/dev/ernie", func(o *Options) { o.LapseCheck = time.Hour })
+	b := h.b
+	checkIn := b.storeCheckIn
+	b.storeCheckIn = func(session string) (bool, error) {
+		b.lapse()
+		return checkIn(session)
+	}
+	b.watching("s1", true)
+	c.advance(time.Hour)
+	b.watching("s1", false)
+	if _, body := h.do(req{method: "GET", path: "/claims"}); !strings.Contains(string(body), "ernie.localhost") {
+		t.Fatalf("lapsed as its long-poll ended: %s", body)
+	}
 }
 
 func TestAClaimLostMeanwhileIsSaidAndRefused(t *testing.T) {

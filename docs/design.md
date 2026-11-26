@@ -960,8 +960,10 @@ How it's made (decided in [Extension architecture](https://github.com/codaset/tw
    runs and after it (a capture of another tab is never kept); the host comes back when the
    worker answers, or after 1.5 s. Without `<all_urls>` or `activeTab` Chrome refuses, and the tweak
    goes without one. The side panel slides in over several frames, narrowing the view, so the tab
-   first waits until its size has held for three frames (at most half a second), and a capture
-   taken while the size changed is thrown away and taken again (three tries).
+   first waits until its size has held for three frames (at most a second), and a capture
+   taken while the size changed, or followed by more of the slide (a busy machine drops frames, so
+   a slide can pause), is thrown away and taken again (three tries): the size must hold still
+   after the capture too.
 3. The content script sends the rects of the elements, text or area, taken at pick time
    (`ns.panel.rects()`: `{kind: element|text|area, number?, x, y, width, height}`, viewport CSS px). In an `OffscreenCanvas`, the
    worker crops to their union plus a 48 CSS-px margin (clipped to the viewport, converted to device

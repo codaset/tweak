@@ -26,13 +26,14 @@
 
   const TRIES = 3;
   const size = () => ({ width: innerWidth, height: innerHeight });
-  // steady waits until the view's size has held for three frames (at most
-  // about half a second): the side panel's slide is over.
+  // steady waits until the view's size has held for three frames (at most a
+  // second, which a busy machine's slide can take): the side panel's slide
+  // is over, or paused.
   const steady = () =>
     new Promise((done) => {
       let last = size();
       let still = 0;
-      const timer = setTimeout(done, 500);
+      const timer = setTimeout(done, 1000);
       const check = () => {
         const now = size();
         still = now.width === last.width && now.height === last.height ? still + 1 : 0;
@@ -68,7 +69,9 @@
     // The view can change size meanwhile: the side panel slides in over
     // several frames, narrowing it. The worker scales the capture by the
     // viewport sent with it, so a capture taken at another size than that
-    // is thrown away and taken again, once the size holds still.
+    // is thrown away and taken again, once the size holds still. A slide that
+    // only paused (a busy machine drops frames) can go on after the capture,
+    // so the size must also hold still after it.
     async take() {
       if (ns.worker.connection !== "connected") return null;
       conceal(true);
@@ -85,6 +88,7 @@
           });
           if (ok === "late") this.drop(id); // still capturing: it isn't kept
           if (ok !== true) return null;
+          await steady();
           const now = size();
           if (now.width === viewport.width && now.height === viewport.height) return id;
           this.drop(id);

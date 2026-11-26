@@ -35,6 +35,8 @@ type snapshotOut struct {
 	Claims  []claimOut `json:"claims"`
 	Lapsed  []claimOut `json:"lapsed"` // lapsed claims that can still come back to their session
 	Tweaks  []tweakOut `json:"tweaks"`
+	// Resolved are the resolved tweaks still kept: the side panel's list.
+	Resolved []tweakOut `json:"resolved"`
 }
 
 type eventOut struct {
@@ -143,7 +145,7 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusInternalError, "the bridge failed")
 		return
 	}
-	snap := snapshotOut{Type: "snapshot", Seq: seq, Version: b.helloVersion(), Folder: b.helloFolder(), Claims: []claimOut{}, Lapsed: []claimOut{}, Tweaks: []tweakOut{}}
+	snap := snapshotOut{Type: "snapshot", Seq: seq, Version: b.helloVersion(), Folder: b.helloFolder(), Claims: []claimOut{}, Lapsed: []claimOut{}, Tweaks: []tweakOut{}, Resolved: []tweakOut{}}
 	for _, cl := range claims {
 		snap.Claims = append(snap.Claims, b.heldClaimJSON(cl))
 	}
@@ -155,7 +157,11 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 		snap.Lapsed = append(snap.Lapsed, claimJSON(cl))
 	}
 	for _, tw := range tweaks {
-		snap.Tweaks = append(snap.Tweaks, b.tweakJSON(tw))
+		if tw.ResolvedAt.IsZero() {
+			snap.Tweaks = append(snap.Tweaks, b.tweakJSON(tw))
+		} else {
+			snap.Resolved = append(snap.Resolved, b.tweakJSON(tw))
+		}
 	}
 	if write(ctx, c, snap) != nil {
 		return
@@ -240,6 +246,12 @@ func (b *Bridge) handle(ctx context.Context, c *websocket.Conn, raw []byte) {
 			return
 		}
 		write(ctx, c, b.undo(in))
+	case "withdraw", "resolve":
+		var in againIn
+		if json.Unmarshal(raw, &in) != nil || in.Ref == "" {
+			return
+		}
+		write(ctx, c, map[string]func(againIn) resultOut{"withdraw": b.withdraw, "resolve": b.resolve}[m.Type](in))
 	}
 }
 

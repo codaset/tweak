@@ -56,6 +56,11 @@ type Options struct {
 	// no watcher before its commands warn (60 seconds). See docs/design.md,
 	// "When the session goes quiet".
 	LapseAfter, RestoreFor, LapseCheck, UnwatchedAfter time.Duration
+	// KeepResolved is how long a resolved tweak is kept, with its change and
+	// screenshot (7 days when zero; see docs/design.md, "Storage");
+	// ExpireCheck is how often the bridge looks (hourly, or a tenth of
+	// KeepResolved when that is shorter).
+	KeepResolved, ExpireCheck time.Duration
 	// Clock is the bridge's time, and its store's (time.Now when nil).
 	Clock func() time.Time
 	Log   io.Writer
@@ -145,6 +150,12 @@ func Start(o Options) (*Bridge, error) {
 	}
 	if o.UnwatchedAfter == 0 {
 		o.UnwatchedAfter = time.Minute
+	}
+	if o.KeepResolved == 0 {
+		o.KeepResolved = 7 * 24 * time.Hour
+	}
+	if o.ExpireCheck == 0 {
+		o.ExpireCheck = min(time.Hour, o.KeepResolved/10)
 	}
 	if o.Clock == nil {
 		o.Clock = time.Now
@@ -244,9 +255,10 @@ func (b *Bridge) Serve() error {
 	served := make(chan error, 1)
 	go func() { served <- b.server.Serve(b.listener) }()
 	go b.watchIdle()
-	b.loops.Add(2)
+	b.loops.Add(3)
 	go b.watchAgain()
 	go b.watchLapses()
+	go b.watchExpire()
 
 	var err error
 	select {

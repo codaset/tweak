@@ -69,7 +69,7 @@ func undoable(tx *eventTx, number int64) (Undoing, error) {
 		return Undoing{}, err
 	}
 	c := tw.Change
-	if c == nil || c.Capturing || (tw.Status != StatusDone && tw.Status != StatusDeclined) {
+	if c == nil || c.Capturing || (tw.Status != StatusDone && tw.Status != StatusDeclined && tw.Status != StatusWithdrawn) {
 		return Undoing{}, errUnfinished
 	}
 	switch c.State {

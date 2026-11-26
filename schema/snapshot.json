@@ -38,7 +38,14 @@
       }
     },
     "tweaks": {
-      "description": "Every unresolved tweak, by number.",
+      "description": "Every open (unresolved) tweak, by number.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tweak"
+      }
+    },
+    "resolved": {
+      "description": "The resolved tweaks still kept (until their deleteAt), by number: the side panel's list, with Undo.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/tweak"
@@ -218,6 +225,16 @@
             "why"
           ],
           "additionalProperties": false
+        },
+        "resolvedAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T",
+          "description": "RFC 3339. When the developer resolved or withdrew it: its pin leaves the page, and the side panel lists it with the resolved tweaks. Absent while it's open."
+        },
+        "deleteAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T",
+          "description": "RFC 3339. With resolvedAt: when the tweak, its change and its screenshot are deleted (7 days after resolution), and Undo goes with them."
         }
       },
       "required": [
@@ -232,7 +249,15 @@
         "anchor",
         "entries"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "dependentRequired": {
+        "resolvedAt": [
+          "deleteAt"
+        ],
+        "deleteAt": [
+          "resolvedAt"
+        ]
+      }
     },
     "targets": {
       "description": "What the tweak points at, gathered at pick time: one or more elements, numbered in order; or selected text, in element 1; or an area, inside element 1 and holding elements 2 on.",

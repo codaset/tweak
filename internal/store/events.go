@@ -25,6 +25,11 @@ const (
 	// A change undone, by the bridge or by Claude by hand: the page reloads
 	// as after a change.
 	EventTweakUndone = "tweak-undone"
+	// Withdrawn by the developer after it reached its session: the inbox's
+	// withdrawn line. (A sent tweak withdrawn is logged as tweak-resolved.)
+	EventTweakWithdrawn = "tweak-withdrawn"
+	// Resolved by the developer: its pin leaves the page.
+	EventTweakResolved = "tweak-resolved"
 )
 
 // Event is one entry in the append-only event log. Seq is monotonic. It
@@ -116,6 +121,7 @@ type tweakRecord struct {
 	Line     string          `json:"line,omitempty"`
 	LeftBy   string          `json:"leftBy,omitempty"`
 	LeftWhy  string          `json:"leftWhy,omitempty"`
+	Resolved int64           `json:"resolvedAt,omitempty"`
 }
 
 type entryRecord struct {
@@ -132,6 +138,9 @@ func (t *eventTx) logTweak(typ string, tw Tweak) error {
 	if !tw.WaitFrom.IsZero() {
 		r.WaitFrom = tw.WaitFrom.UnixMilli()
 	}
+	if !tw.ResolvedAt.IsZero() {
+		r.Resolved = tw.ResolvedAt.UnixMilli()
+	}
 	for _, e := range tw.Entries {
 		r.Entries = append(r.Entries, entryRecord{From: e.From, Kind: e.Kind, Text: e.Text, At: e.At.UnixMilli()})
 	}
@@ -147,6 +156,9 @@ func (r tweakRecord) tweak() *Tweak {
 		Targets: r.Targets, Anchor: r.Anchor, Resends: r.Resends, Change: r.Change, Line: r.Line, LeftFolder: r.LeftBy, LeftWhy: r.LeftWhy}
 	if r.WaitFrom != 0 {
 		tw.WaitFrom = fromMillis(r.WaitFrom)
+	}
+	if r.Resolved != 0 {
+		tw.ResolvedAt = fromMillis(r.Resolved)
 	}
 	for _, e := range r.Entries {
 		tw.Entries = append(tw.Entries, Entry{From: e.From, Kind: e.Kind, Text: e.Text, At: fromMillis(e.At)})
@@ -182,7 +194,8 @@ func decodeEvent(e *Event, payload string) error {
 	return nil
 }
 
-// Snapshot returns the current claims and open tweaks and the sequence of
+// Snapshot returns the current claims and the tweaks kept (open, and
+// resolved ones with ResolvedAt set) and the sequence of
 // the last event they include, read together so events after seq are
 // exactly what changed since.
 func (s *Store) Snapshot() (seq int64, claims []Claim, tweaks []Tweak, err error) {
@@ -191,13 +204,13 @@ func (s *Store) Snapshot() (seq int64, claims []Claim, tweaks []Tweak, err error
 		return 0, nil, nil, err
 	}
 	defer tx.Rollback()
-	if err := tx.QueryRow(`SELECT coalesce(max(seq), 0) FROM events`).Scan(&seq); err != nil {
+	if err := tx.QueryRow(`SELECT ` + lastSeq).Scan(&seq); err != nil {
 		return 0, nil, nil, err
 	}
 	if claims, err = listClaims(tx); err != nil {
 		return 0, nil, nil, err
 	}
-	if tweaks, err = openTweaks(tx); err != nil {
+	if tweaks, err = keptTweaks(tx); err != nil {
 		return 0, nil, nil, err
 	}
 	return seq, claims, tweaks, tx.Commit()

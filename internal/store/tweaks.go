@@ -12,7 +12,8 @@ import (
 	"github.com/codaset/tweak/internal/pattern"
 )
 
-// Statuses (docs/design.md, "Statuses"). Withdrawn comes with Withdraw.
+// Statuses (docs/design.md, "Statuses"). Withdrawn is the developer's
+// move (Withdraw), never Claude's.
 const (
 	StatusSent      = "sent"
 	StatusDelivered = "delivered"
@@ -21,6 +22,7 @@ const (
 	StatusQuestion  = "question"
 	StatusDone      = "done"
 	StatusDeclined  = "declined"
+	StatusWithdrawn = "withdrawn"
 )
 
 // Who wrote an entry, and its kind (docs/design.md, "Conversation entries").
@@ -67,6 +69,9 @@ type Tweak struct {
 	// the session that let go of its page and how (WhyLapsed, WhyReleased,
 	// WhyEnded).
 	LeftFolder, LeftWhy string
+	// ResolvedAt is when the developer finished with it (Resolve, or
+	// Withdraw); zero while it's open. Its pin leaves the page.
+	ResolvedAt time.Time
 }
 
 // Entry is one turn of a tweak's conversation.
@@ -147,6 +152,8 @@ func (e *TransitionError) Error() string {
 		return fmt.Sprintf("tweak %d is already done: there's nothing more to do", e.Number)
 	case e.From == StatusDeclined:
 		return fmt.Sprintf("tweak %d was declined: there's nothing more to do", e.Number)
+	case e.From == StatusWithdrawn:
+		return fmt.Sprintf("tweak %d was withdrawn by the developer: skip it", e.Number)
 	case e.From == StatusQuestion:
 		return fmt.Sprintf("tweak %d is waiting for the developer's reply to your question: their answer comes as a reply event; or decline it with tweak decline %d '<why>'", e.Number, e.Number)
 	case e.From == StatusWorking && e.To == StatusQueued:
@@ -275,6 +282,17 @@ func (s *Store) SetStatusEnding(sessionID string, number int64, status string, e
 	// keeps the change and the tweak's status.
 	if status == StatusDeclined && tw.Change != nil && tw.Change.State == ChangeUndoRequested {
 		if tw, err = tx.declineUndo(tw, entry); err != nil {
+			return Tweak{}, err
+		}
+		return tw, tx.commit()
+	}
+	// Claude's last word on a tweak the developer withdrew ends its capture
+	// and keeps the change, for Undo; the status stays withdrawn.
+	if tw.Status == StatusWithdrawn && finishing[status] {
+		if end == nil {
+			return tw, nil
+		}
+		if tw, err = tx.endWithdrawn(sessionID, *end); err != nil {
 			return Tweak{}, err
 		}
 		return tw, tx.commit()
@@ -410,13 +428,16 @@ func sessionIn(q queryRower, id string) (Session, error) {
 	return se, err
 }
 
-const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, ''), resends, coalesce(wait_from, 0), line, coalesce(left_why, ''), coalesce((SELECT folder FROM sessions WHERE id = tweaks.left_by), '')`
+const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, ''), resends, coalesce(wait_from, 0), line, coalesce(left_why, ''), coalesce((SELECT folder FROM sessions WHERE id = tweaks.left_by), ''), coalesce(resolved_at, 0)`
 
 func scanTweak(row interface{ Scan(...any) error }) (Tweak, error) {
 	var tw Tweak
-	var statusAt, created, updated, waitFrom int64
+	var statusAt, created, updated, waitFrom, resolvedAt int64
 	var targets, anchor string
-	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor, &tw.Resends, &waitFrom, &tw.Line, &tw.LeftWhy, &tw.LeftFolder)
+	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor, &tw.Resends, &waitFrom, &tw.Line, &tw.LeftWhy, &tw.LeftFolder, &resolvedAt)
+	if resolvedAt != 0 {
+		tw.ResolvedAt = fromMillis(resolvedAt)
+	}
 	if waitFrom != 0 && tw.Status == StatusDelivered {
 		tw.WaitFrom = fromMillis(waitFrom)
 	}
@@ -440,9 +461,10 @@ func getTweak(q queryRower, number int64) (Tweak, error) {
 	return tw, err
 }
 
-// openTweaks lists the unresolved tweaks, oldest first, with their entries.
-func openTweaks(q queryRower) ([]Tweak, error) {
-	rows, err := q.Query(`SELECT ` + tweakColumns + ` FROM tweaks WHERE resolved_at IS NULL ORDER BY number`)
+// keptTweaks lists every tweak kept: the open ones, and the resolved ones
+// not yet deleted (DeleteResolved), oldest first, with their entries.
+func keptTweaks(q queryRower) ([]Tweak, error) {
+	rows, err := q.Query(`SELECT ` + tweakColumns + ` FROM tweaks ORDER BY number`)
 	if err != nil {
 		return nil, err
 	}

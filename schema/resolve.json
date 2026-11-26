@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/resolve.json",
+  "title": "resolve",
+  "description": "To the bridge on the WebSocket: the card's Resolve, for a done or declined tweak. Answered by a result with the tweak's number (not-finished while Claude is still on it: withdraw it instead). A tweak-resolved event follows; its pin leaves the page.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "resolve"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "number": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "type",
+    "ref",
+    "number"
+  ],
+  "additionalProperties": false
+}

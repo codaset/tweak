@@ -35,6 +35,7 @@ func runBridge(c *context, args []string) error {
 		AgainAfter:     testDuration(c.Getenv, "TWEAK_TEST_AGAIN_AFTER"),
 		LapseAfter:     testDuration(c.Getenv, "TWEAK_TEST_LAPSE_AFTER"),
 		UnwatchedAfter: testDuration(c.Getenv, "TWEAK_TEST_UNWATCHED_AFTER"),
+		KeepResolved:   testDuration(c.Getenv, "TWEAK_TEST_KEEP_RESOLVED"),
 		Log:            c.Stderr})
 	if errors.Is(err, bridge.ErrAlreadyRunning) {
 		if byCLI {
@@ -66,7 +67,8 @@ func runBridge(c *context, args []string) error {
 //   - TWEAK_TEST_LAPSE_AFTER: how long a session may go without checking
 //     in before its claims lapse (10 minutes);
 //   - TWEAK_TEST_UNWATCHED_AFTER: how long a session with claims may have
-//     no watcher before its commands warn (60 seconds).
+//     no watcher before its commands warn (60 seconds);
+//   - TWEAK_TEST_KEEP_RESOLVED: how long a resolved tweak is kept (7 days).
 //
 // Only a development build (TWEAK_BIN set) reads them; otherwise, or when
 // one isn't a positive duration, it is 0, the bridge's own.

@@ -26,7 +26,9 @@
         "tweak-replied",
         "tweak-again",
         "tweak-undo-conflict",
-        "tweak-undone"
+        "tweak-undone",
+        "tweak-withdrawn",
+        "tweak-resolved"
       ]
     },
     "claim": {
@@ -34,7 +36,7 @@
       "$ref": "#/$defs/claim"
     },
     "tweak": {
-      "description": "With tweak events: the tweak as it was after the event (tweak-handed: a tweak whose session let go of its page, now for the session claiming it; tweak-status: its status changed or an entry was added; tweak-replied: the developer answered Claude's question, and the tweak is sent again; tweak-again: a delivered tweak Claude hasn't confirmed, sent to its session again).",
+      "description": "With tweak events: the tweak as it was after the event (tweak-handed: a tweak whose session let go of its page, now for the session claiming it; tweak-status: its status changed or an entry was added; tweak-replied: the developer answered Claude's question, and the tweak is sent again; tweak-again: a delivered tweak Claude hasn't confirmed, sent to its session again; tweak-withdrawn: the developer withdrew it after it reached its session, whose withdrawn line it is; tweak-resolved: the developer resolved it, or withdrew it before it reached a session).",
       "$ref": "#/$defs/tweak"
     }
   },
@@ -210,6 +212,16 @@
             "why"
           ],
           "additionalProperties": false
+        },
+        "resolvedAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T",
+          "description": "RFC 3339. When the developer resolved or withdrew it: its pin leaves the page, and the side panel lists it with the resolved tweaks. Absent while it's open."
+        },
+        "deleteAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T",
+          "description": "RFC 3339. With resolvedAt: when the tweak, its change and its screenshot are deleted (7 days after resolution), and Undo goes with them."
         }
       },
       "required": [
@@ -224,7 +236,15 @@
         "anchor",
         "entries"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "dependentRequired": {
+        "resolvedAt": [
+          "deleteAt"
+        ],
+        "deleteAt": [
+          "resolvedAt"
+        ]
+      }
     },
     "targets": {
       "description": "What the tweak points at, gathered at pick time: one or more elements, numbered in order; or selected text, in element 1; or an area, inside element 1 and holding elements 2 on.",

@@ -58,7 +58,7 @@ func (s *Store) RegisterSession(se Session) error {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT OR IGNORE INTO deliveries (session, last_ack)
-		VALUES (?, (SELECT coalesce(max(seq), 0) FROM events))`, se.ID); err != nil {
+		VALUES (?, `+lastSeq+`)`, se.ID); err != nil {
 		return err
 	}
 	return tx.Commit()

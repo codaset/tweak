@@ -626,18 +626,21 @@ describe("static on 127.0.0.1, through activeTab", { skip: skipReason(fixture) ?
     await until(() => inWorker(env.browser, `chrome.scripting.getRegisteredContentScripts().then((r) => r.length >= 4)`), {
       what: "the 127.0.0.1 claim's scripts to be registered",
     });
+    // No emulated viewport here: the page measures the tab's real view, which
+    // is what captureVisibleTab takes. Emulated, a capture after the side
+    // panel's resize sometimes got the real view anyway, smaller than the
+    // view the page measured, and the crop came out wrong.
+    await env.page.setViewport(null);
     await env.page.goto(app.url("/"));
-    // The tab's real width, behind the emulated viewport.
     const width = () => inWorker(env.browser, `chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t.width)`);
     const before = await width();
     const [extension] = (await env.browser.extensions()).values();
     await env.page.triggerExtensionAction(extension);
-    // The button also opens the side panel, which narrows the real view, and
-    // with it the capture, but not the emulated viewport the page measures.
-    // Closed again, the capture is of the whole viewport, as on the granted copy.
+    // The button also opens the side panel, which slides in, narrowing the
+    // view as it goes. Closed again, the view holds still.
     await until(width, { is: (w) => w < before, what: "the side panel to open" });
     await inWorker(env.browser, `chrome.windows.getLastFocused().then((w) => chrome.sidePanel.close({ windowId: w.id }))`);
-    await until(width, { is: (w) => w === before, what: "the tab's real view to be whole again" });
+    await until(width, { is: (w) => w === before, what: "the tab's view to be whole again" });
     await env.page.reload();
     await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the content script on 127.0.0.1" });
     const crop = await expectedCrop(env, "#save");

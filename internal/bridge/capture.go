@@ -1,7 +1,6 @@
 package bridge
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,34 +57,21 @@ func (b *Bridge) checkGit(c store.Capture, files []store.Before) *gitEnd {
 }
 
 // judge checks each recorded file's before copy against the snapshot of
-// the round it was recorded in. One that differs was changed before the
-// hook saw it, so Undo can't fully reverse it.
+// the round it was recorded in, as git sees it (through its filters). One
+// that differs was changed before the hook saw it, so Undo can't fully
+// reverse it.
 func (b *Bridge) judge(g *gitEnd, repo string, files []store.Before) {
-	byBase := map[string][]store.Before{}
 	for _, f := range files {
-		if f.Base != "" && f.Text {
-			byBase[f.Base] = append(byBase[f.Base], f)
-		}
-	}
-	for base, fs := range byBase {
-		var paths []string
-		for _, f := range fs {
-			paths = append(paths, f.Path)
-		}
-		then, err := capture.SnapshotOf(capture.Tree{Repo: repo, Hash: base}, paths)
-		if err != nil {
-			b.log.Printf("tweak %d: checking before copies: %v", g.tweak, err)
+		if f.Base == "" || !f.Text {
 			continue
 		}
-		for _, f := range fs {
-			s, known := then[f.Path]
-			if !known {
-				continue
-			}
-			g.judged[f.Path] = true
-			if s.Absent != f.Absent || !bytes.Equal(s.Data, f.Data) {
-				g.tainted[f.Path] = true
-			}
+		differs, known := capture.Differs(capture.Tree{Repo: repo, Hash: f.Base}, f.Path, capture.File{Absent: f.Absent, Text: true, Data: f.Data})
+		if !known {
+			continue
+		}
+		g.judged[f.Path] = true
+		if differs {
+			g.tainted[f.Path] = true
 		}
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/codaset/tweak/internal/capture"
+	"github.com/codaset/tweak/internal/config"
 )
 
 // An empty file is a file: one Claude filled is emptied again, not
@@ -42,7 +42,7 @@ func TestTweakUndoShowsPathsFromTheReadersFolder(t *testing.T) {
 	s.undo("u1", 1, "tweak-undo-conflict")
 	_, body := h.do(as("s2", req{method: "GET", path: "/tweaks/1/undo"}))
 	out := string(body)
-	if !strings.Contains(out, "## `new.js`: created") || !strings.Contains(out, "## `"+filepath.Join(capture.Canonical(dir), "app.css")+"`") {
+	if !strings.Contains(out, "## `new.js`: created") || !strings.Contains(out, "## `"+filepath.Join(config.Canonical(dir), "app.css")+"`") {
 		t.Fatalf("tweak undo from web/:\n%s", out)
 	}
 }

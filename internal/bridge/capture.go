@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/codaset/tweak/internal/capture"
+	"github.com/codaset/tweak/internal/config"
 	"github.com/codaset/tweak/internal/pattern"
 	"github.com/codaset/tweak/internal/store"
 )
@@ -131,7 +132,7 @@ func (b *Bridge) ending(session string, n int64, g *gitEnd) (*store.CaptureEnd, 
 		}
 	}
 	for _, p := range g.changed {
-		if p = capture.Canonical(p); !recorded[p] {
+		if p = config.Canonical(p); !recorded[p] {
 			unrecorded(fileIn(c.Folder, p))
 		}
 	}
@@ -293,7 +294,7 @@ func (b *Bridge) setStatusEnding(session string, n int64, status string, e *stor
 // card shows it: relative to the session's folder, or outside it absolute,
 // with ~ for the home folder.
 func fileIn(folder, path string) store.ChangeFile {
-	path = capture.Canonical(path)
+	path = config.Canonical(path)
 	if rel, inside := capture.Within(folder, path); inside {
 		return store.ChangeFile{Path: path, Shown: rel}
 	}

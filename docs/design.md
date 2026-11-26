@@ -1157,7 +1157,8 @@ Each fixture has:
 
 - a `package.json` with **exact** versions and a committed lockfile (`rails`: `Gemfile`,
   `Gemfile.lock`, `.ruby-version`);
-- `fixture.json`: the start command with a `{port}` placeholder, and the path to poll for readiness;
+- `fixture.json`: the start command as an argv with a `{port}` placeholder (`start`), the path to
+  poll for readiness (`ready`), and the toolchain commands it needs beyond Node (`needs`, e.g. `ruby`);
 - `expected.json`: the golden cases (below).
 
 Dependabot opens monthly update PRs, grouped per fixture. A red one is the point: it means a framework
@@ -1200,13 +1201,19 @@ Files run concurrently (node's default), each with its own Chrome. For each fixt
 
 Chrome loads a **test copy of the extension**: the manifest with `http://localhost/*` moved into
 `host_permissions` (a pre-grant, since the prompt can't be driven headlessly), and a test-only
-message that calls the shortcut and context-menu handlers. The side panel is tested as `panel.html`
+message that calls the shortcut and context-menu handlers. The worker checks for `<all_urls>`, so the
+copy shows the grey `!` and **Allow access** while working on `localhost`. The message is sent from a
+page click the content script hears: handlers like `sidePanel.open` need a user gesture, and CDP's
+`userGesture` flag doesn't carry one to the worker. The side panel is tested as `panel.html`
 open in a tab. The `activeTab` path serves `static` a second time on `127.0.0.1`, which the copy has
 no grant for, and uses `page.triggerExtensionAction`, asserting the screenshot is captured.
 Captures are spaced more than 1 s apart (Chrome's 2-per-second quota). `--no-sandbox` is passed only
-on Linux CI (the ubuntu-24.04 AppArmor restriction).
+on Linux CI (the ubuntu-24.04 AppArmor restriction). Confirmed on an ubuntu-24.04 runner: without it,
+Chrome for Testing exits at launch with "No usable sandbox!"; with it, Puppeteer loads the test copy.
+Each file reports its fixture's boot time as a test diagnostic (`static ready in N ms`): `static`
+boots in about 120 ms there.
 
-`npm run e2e` runs it locally. Without `ruby` on the machine, `rails` is skipped with a message
+`npm run e2e` runs it locally, after building the binary (so it needs Go). Without `ruby` on the machine, `rails` is skipped with a message
 saying so. In CI (`CI=true`) a missing toolchain fails the run instead.
 
 ### Round trips
@@ -1375,7 +1382,7 @@ On every push and pull request:
 |---|---|
 | `go` | `gofmt` check, `go vet`, `go test -race` on Ubuntu and macOS; a cross-compile of all five targets (Windows is build-only); the Go licence check (`scripts/notices`) |
 | `js` | `node --test` for the extension's unit and contract tests |
-| `e2e` | Puppeteer and pinned Chrome for Testing (new headless) on Ubuntu, with the test copy of the unpacked extension loaded, against the fixture apps and a real development bridge (branded Chrome 137+ no longer loads unpacked extensions from the command line); needs Node and Ruby; see [Testing](#testing) |
+| `e2e` | Puppeteer and pinned Chrome for Testing (new headless) on Ubuntu, with the test copy of the unpacked extension loaded, against the fixture apps and a real development bridge (branded Chrome 137+ no longer loads unpacked extensions from the command line); needs Go, Node and Ruby; see [Testing](#testing) |
 | `consistency` | the version in `plugin.json`, `manifest.json` and the launcher agree; `claude plugin validate plugins/codaset` passes |
 
 ### Releasing

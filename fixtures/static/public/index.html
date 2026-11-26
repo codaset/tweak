@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Static fixture</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <h1>Static fixture</h1>
+      <a id="docs" href="/docs">Docs</a>
+    </header>
+    <main>
+      <p class="lede">A page with no framework: search clues and CSS rules only.</p>
+      <form class="settings" onsubmit="return false">
+        <label>Name <input id="name" name="name" placeholder="Your name" /></label>
+        <button id="save" class="btn btn-primary" type="submit" data-testid="save">Save</button>
+      </form>
+    </main>
+    <script>
+      // What reached the page, so a test can tell a swallowed click.
+      window.heard = [];
+      for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+        document.getElementById("save").addEventListener(type, () => heard.push(type));
+      }
+    </script>
+  </body>
+</html>

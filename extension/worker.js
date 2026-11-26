@@ -43,11 +43,9 @@ chrome.permissions.onRemoved.addListener(() => refreshAccess());
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && "port" in changes) bridge.reconnect();
 });
-chrome.action.onClicked.addListener((tab) => {
-  // First, while the click's gesture lasts. Toggling pick mode on a claimed
-  // page (design.md § Toolbar button) is still to come; ⌥-click picks for now.
-  chrome.sidePanel.open({ tabId: tab.id });
-});
+// Toggling pick mode on a claimed page (design.md § Toolbar button) is still
+// to come; ⌥-click picks for now.
+chrome.action.onClicked.addListener((tab) => openSidePanel(tab));
 chrome.runtime.onConnect.addListener((port) => {
   const ports = { panel: panels, tab: tabs }[port.name];
   if (!ports) return;
@@ -60,6 +58,12 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(cardKey(tabId)));
 
 // ---- The side panel and tabs ----
+
+// Called first in its handler, while the gesture lasts. The e2e test copy
+// calls it by message, as the shortcut and context menu will.
+function openSidePanel(tab) {
+  return chrome.sidePanel.open({ tabId: tab.id });
+}
 
 const panels = new Set();
 const tabs = new Set();

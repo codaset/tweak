@@ -167,6 +167,29 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     }
   });
 
+  test("a field the page's own script fills doesn't hold the reload back", async () => {
+    await open(env);
+    await autoReload(env, true);
+    try {
+      await pick(env, { selector: "#docs" });
+      await env.tab.until(composing, { what: "the composer to open with the focus" });
+      await env.page.keyboard.type("not held back");
+      const from = env.watcher.lines.length;
+      await env.page.keyboard.press("Enter");
+      const { number: n } = await env.claude.nextTweak(env.watcher, { from });
+      await env.claude.tweak("work", String(n));
+      // As a time picker checks its first slot: set by script, not by you.
+      await env.page.evaluate(() => (document.querySelector("#name").value = "set by the page"));
+      await mark(env);
+      await env.claude.tweakWith("done\n", "done", String(n), "-");
+      await until(() => env.page.evaluate(() => window.e2eNotReloaded === undefined && document.readyState === "complete"), { what: "Done to reload the page" });
+      await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the content script back after the reload" });
+      await env.page.keyboard.press("Escape");
+    } finally {
+      await autoReload(env, false);
+    }
+  });
+
   // The update signals a page with no Vite can give, recorded from working:
   // a stylesheet swapped, and a full reload with the card open. Either
   // means the page already shows the change, so Done reloads nothing.

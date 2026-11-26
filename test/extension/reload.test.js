@@ -105,6 +105,15 @@ test("unsaved input is a field that differs from what the page loaded with", () 
   assert.equal(unsaved([{ tagName: "SELECT", size: 2, options: [option(true), option(false)] }]), true);
 });
 
+test("only a field you've typed in or clicked counts: one the page's script or the browser filled doesn't", () => {
+  const radio = (o) => ({ tagName: "INPUT", type: "radio", checked: true, defaultChecked: false, ...o });
+  const picked = radio({}); // checked by the page's script on load, as a time picker does
+  const typed = { tagName: "INPUT", type: "text", value: "typed", defaultValue: "" };
+  const byUser = (f) => f === typed;
+  assert.equal(unsaved([picked], undefined, byUser), false);
+  assert.equal(unsaved([picked, typed], undefined, byUser), true);
+});
+
 test("a field the browser gives a value of its own starts on that value, not on an empty default", () => {
   // An untouched range is "50" and a colour "#000000", with defaultValue "".
   const range = { tagName: "INPUT", type: "range", value: "50", defaultValue: "" };

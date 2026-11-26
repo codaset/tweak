@@ -62,10 +62,14 @@
   // loaded with: typed text, a box ticked, another option chosen. (A field a
   // framework controls keeps its default in step, so it never counts.)
   // initial is the value a field starts with: its default, except where the
-  // browser sanitises that (an empty range starts at its midpoint).
+  // browser sanitises that (an empty range starts at its midpoint). byUser
+  // says whether you've typed in or clicked a field since the page loaded:
+  // one only the page's script or the browser filled (a time picker
+  // choosing its first slot, autofill, restored form state) isn't yours.
   const UNTYPED = new Set(["hidden", "submit", "button", "reset", "image"]);
-  function unsaved(fields, initial = (f) => f.defaultValue) {
+  function unsaved(fields, initial = (f) => f.defaultValue, byUser = () => true) {
     for (const f of fields) {
+      if (!byUser(f)) continue;
       if (f.tagName === "SELECT") {
         const options = [...f.options];
         const marked = options.some((o) => o.defaultSelected);
@@ -152,6 +156,25 @@
 
   const onUpdated = () => signal("vite");
   document.addEventListener("tweak:updated", onUpdated);
+
+  // The fields you've typed in or clicked since the page loaded. Only
+  // trusted keyboard and pointer events count, never input or change, which
+  // autofill fires too. A radio group counts as a whole: the arrow keys
+  // check another radio than the one they were pressed on.
+  const touched = new WeakSet();
+  const touchedRadios = new Set(); // "name" of each radio group you've used, with its form
+  const FIELD = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+  const radioGroup = (f) => f.type === "radio" && f.name ? f.form ?? document : null;
+  function touch(e) {
+    if (!e.isTrusted) return;
+    let f = e.composedPath?.()[0] ?? e.target;
+    if (f?.tagName === "LABEL") f = f.control;
+    if (!f || !FIELD.has(f.tagName)) return;
+    touched.add(f);
+    if (radioGroup(f)) touchedRadios.add(f);
+  }
+  for (const type of ["keydown", "pointerdown", "click", "paste", "drop"]) document.addEventListener(type, touch, true);
+  const byUser = (f) => touched.has(f) || (radioGroup(f) !== null && [...touchedRadios].some((r) => r.name === f.name && radioGroup(r) === radioGroup(f)));
 
   // set puts tweak number's machine in its next state (or none), and lets
   // the rest catch up.
@@ -261,7 +284,7 @@
       auto: on,
       drafting: ns.panel.drafting?.() ?? "",
       layer: layer(),
-      unsaved: unsaved(document.querySelectorAll("input, textarea, select"), initial),
+      unsaved: unsaved(document.querySelectorAll("input, textarea, select"), initial, byUser),
       others,
     });
     if (!why) return reload();

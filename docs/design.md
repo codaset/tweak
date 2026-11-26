@@ -1237,7 +1237,9 @@ briefly and reloads only if the page hasn't already. A per-site setting in the s
 auto-reload off. The reload is held back, and the card shows "Change saved · Reload" with the reason,
 while any of these is true:
 
-- a form on the page has unsaved input
+- a form on the page has unsaved input: a field you've typed in or clicked since the page loaded
+  differs from its default (only trusted key and pointer events count, so a value the page's own
+  script sets, such as a time picker checking its first slot, or autofill, holds nothing back)
 - a dialog or popover is open
 - you're drafting a tweak or a reply
 - another tweak on this page is still in progress (the reload waits for the last one)

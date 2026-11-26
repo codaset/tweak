@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { retryDelay } from "../../extension/lib/backoff.js";
-import { ago, apply, coverOf, heldBy, registered } from "../../extension/lib/claims.js";
+import { apply, coverOf, heldBy, registered } from "../../extension/lib/claims.js";
 import { badge, GREY } from "../../extension/lib/badge.js";
 
 test("retries back off 1, 2, 5 seconds, then every 10", () => {
@@ -150,15 +150,6 @@ test("a lapsed claim's pages keep their scripts, under an ID of their own, until
   assert.deepEqual(registered(state, Date.parse("2026-11-26T10:10:00.000Z")).map((c) => c.pattern), ["http://localhost/*"]);
 });
 
-test("the side panel says how long ago a session stopped responding", () => {
-  const lapsed = "2026-11-25T10:10:00.000Z";
-  const after = (ms) => ago(lapsed, Date.parse(lapsed) + ms);
-  assert.equal(after(20_000), "just now");
-  assert.equal(after(60_000), "1 min ago");
-  assert.equal(after(3 * 60_000 + 59_000), "3 min ago");
-  assert.equal(after(2 * 3600_000 + 5 * 60_000), "2 h ago");
-  assert.equal(after(-5_000), "just now");
-});
 
 test("a tweak learns whether the session holding its page is listening, from its own URL", () => {
   const state = apply(undefined, { type: "snapshot", seq: 3, claims: [held(1, "http://localhost/admin/*", false)], tweaks: [] });

@@ -3,7 +3,7 @@
 // chrome.storage.local, which the worker watches. Its one request, Undo on a
 // resolved tweak, goes through the same port.
 import { DEFAULT_PORT, validPort } from "../lib/bridge.js";
-import { ago, coverOf } from "../lib/claims.js";
+import { coverOf } from "../lib/claims.js";
 
 // The card's own wording (content/describe.js, loaded before this module).
 const describe = globalThis.codasetTweak.describe;
@@ -231,7 +231,7 @@ function renderCover(state) {
   if (say !== said) $("page-said").textContent = said = say;
   if (!lapsed) return;
   $("lapsed-folder").textContent = cover.folder;
-  $("lapsed-ago").textContent = ago(cover.lapsedAt);
+  $("lapsed-ago").textContent = describe.ago(cover.lapsedAt);
   $("lapsed-command").textContent = `/tweak ${cover.pattern}`;
 }
 setInterval(() => last && renderCover(last), 15_000);

@@ -16,12 +16,32 @@ test("each status reads as the card shows it", () => {
   assert.equal(status({ status: "done" }).tone, "done");
 });
 
+// One way to say a length of time, everywhere Tweak shows one (the CLI's
+// too): its largest whole unit, s, min and h, then days from 2 days on.
+test("a length of time reads in its largest whole unit", () => {
+  const { span } = ns.describe;
+  const s = 1000, min = 60 * s, h = 60 * min, day = 24 * h;
+  assert.equal(span(0), "0 s");
+  assert.equal(span(12_400), "12 s");
+  assert.equal(span(59_999), "59 s");
+  assert.equal(span(min), "1 min");
+  assert.equal(span(6 * min + 5 * s), "6 min");
+  assert.equal(span(65 * min), "1 h");
+  assert.equal(span(47 * h + 59 * min), "47 h");
+  assert.equal(span(2 * day), "2 days");
+  assert.equal(span(7 * day + 5 * h), "7 days");
+  assert.equal(span(-3_000), "0 s", "a clock a little behind");
+  // A time left rounds up, so it never says less than there is.
+  assert.equal(span(6 * day + 23 * h, Math.ceil), "7 days");
+  assert.equal(span(47 * h + 30 * min, Math.ceil), "2 days");
+  assert.equal(span(59 * min + 30 * s, Math.ceil), "1 h");
+  assert.equal(span(60_500, Math.ceil), "2 min");
+});
+
 test("while working, the card counts the time since it started", () => {
   const t = { status: "working", statusAt: "2026-11-26T10:00:00.000Z" };
   assert.equal(status(t, at(t.statusAt, 12_400)).text, "Claude is working on it · 12 s");
-  assert.equal(status(t, at(t.statusAt, 6 * 60_000 + 5_000)).text, "Claude is working on it · 6 min");
-  assert.equal(status(t, at(t.statusAt, 65 * 60_000)).text, "Claude is working on it · 1 h 5 min");
-  assert.equal(status(t, at(t.statusAt, -3_000)).text, "Claude is working on it · 0 s");
+  assert.equal(status(t, at(t.statusAt, 65 * 60_000)).text, "Claude is working on it · 1 h");
 });
 
 test("pins and the card share the status classes: the tone, and working", () => {
@@ -271,7 +291,19 @@ test("a resolved tweak says when it goes, with its Undo", () => {
   const { kept } = ns.describe;
   const now = Date.parse("2026-11-26T10:00:00Z");
   assert.equal(kept({ deleteAt: "2026-12-03T10:00:00Z" }, now), "Kept for 7 days");
-  assert.equal(kept({ deleteAt: "2026-11-27T09:00:00Z" }, now), "Kept for 23 hours");
-  assert.equal(kept({ deleteAt: "2026-11-26T10:00:40Z" }, now), "Kept for 1 minute");
+  assert.equal(kept({ deleteAt: "2026-12-03T09:59:59Z" }, now), "Kept for 7 days", "just resolved");
+  assert.equal(kept({ deleteAt: "2026-11-27T09:00:00Z" }, now), "Kept for 23 h");
+  assert.equal(kept({ deleteAt: "2026-11-26T10:00:40Z" }, now), "Kept for 1 min", "the panel redraws a minute at a time");
   assert.equal(kept({ deleteAt: "2026-11-26T10:00:00Z" }, now), "");
+});
+
+test("the side panel says how long ago a session stopped responding", () => {
+  const { ago } = ns.describe;
+  const lapsed = "2026-11-25T10:10:00.000Z";
+  const after = (ms) => ago(lapsed, Date.parse(lapsed) + ms);
+  assert.equal(after(20_000), "just now");
+  assert.equal(after(60_000), "1 min ago");
+  assert.equal(after(3 * 60_000 + 59_000), "3 min ago");
+  assert.equal(after(2 * 3600_000 + 5 * 60_000), "2 h ago");
+  assert.equal(after(-5_000), "just now");
 });

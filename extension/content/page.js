@@ -3,16 +3,22 @@
 // claim still covers the page, and the answers to its sends. It draws the
 // pins, keeps the card in step, and runs the frame loop that keeps both on
 // their elements as the page moves. On a page no claim covers (released, or
-// navigated outside every claim) it goes dormant: no picker, no pins, no card.
+// navigated outside every claim) it goes dormant: no picker, no pins, and the
+// card hides until a claim covers the page again.
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
 
-  const tweaks = new Map(); // number -> tweak, this page's
+  const tweaks = new Map(); // number -> tweak: this page's, and the open card's
   let frame = 0;
   let claimed = true; // the scripts run only on claimed pages; the worker says otherwise
+  // The page is origin and path: the query and hash don't change it.
+  const pageKey = () => `${location.origin}${location.pathname}`;
+  let shownPage = pageKey();
 
-  const list = () => (claimed ? [...tweaks.values()].sort((a, b) => a.number - b.number) : []);
+  // list is the tweaks that get a pin: this page's, while it's claimed.
+  const list = () =>
+    claimed ? [...tweaks.values()].filter((t) => t.page === shownPage).sort((a, b) => a.number - b.number) : [];
 
   function loop() {
     frame = 0;
@@ -27,10 +33,8 @@
   function setClaimed(on) {
     if (on === claimed) return;
     claimed = on;
-    if (!on) {
-      if (ns.panel.open()) ns.panel.close();
-      ns.picker.release();
-    }
+    if (!on) ns.picker.release();
+    ns.panel.sleep(!on);
     ns.page.redraw();
   }
   ns.picker.enable(() => claimed);
@@ -54,7 +58,7 @@
   const off = ns.worker.on((msg) => {
     switch (msg.type) {
       case "open": // the port (re)connected: say which page this is
-        shown = pageKey();
+        shownPage = pageKey();
         ns.worker.post({ type: "page", url: location.href });
         break;
       case "state":
@@ -65,7 +69,8 @@
         for (const t of msg.tweaks) tweaks.set(t.number, t);
         if (typeof msg.claimed === "boolean") setClaimed(msg.claimed); // absent: unchanged
         ns.page.redraw();
-        if (claimed && msg.card && tweaks.has(msg.card) && !ns.panel.open()) ns.panel.show(msg.card);
+        // The card open before a reload; on a dormant page it opens hidden.
+        if (msg.card && tweaks.has(msg.card) && !ns.panel.open() && ns.panel.showing() === null) ns.panel.show(msg.card);
         break;
       case "tweak":
         tweaks.set(msg.tweak.number, msg.tweak);
@@ -82,14 +87,15 @@
 
   // Client-side navigation (the page's own pushState included): a new path
   // is a new page, so its tweaks replace this one's, and the worker says
-  // whether a claim covers it. The query and hash don't change the page.
-  const pageKey = () => `${location.origin}${location.pathname}`;
-  let shown = pageKey();
+  // whether a claim covers it. The card stays open (it closes on esc or ×
+  // only) and keeps its tweak; a composer belongs to the page it was opened
+  // on, so it closes.
   const onNavigate = () => {
-    if (pageKey() === shown) return;
-    shown = pageKey();
-    if (ns.panel.open()) ns.panel.close();
-    tweaks.clear();
+    if (pageKey() === shownPage) return;
+    shownPage = pageKey();
+    const card = ns.panel.showing();
+    if (ns.panel.open() && card === null) ns.panel.close();
+    for (const n of tweaks.keys()) if (n !== card) tweaks.delete(n);
     ns.page.redraw();
     ns.worker.post({ type: "page", url: location.href });
   };

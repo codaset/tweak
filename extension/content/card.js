@@ -1,7 +1,9 @@
 // The composer and the live card share one floating panel. The composer opens
 // at once on a pick; Send turns it into the card, which shows the status live
 // (with the time spent while working), the request and Claude's summary. The
-// card stays open until esc or ×; clicking around the page leaves it open.
+// card stays open until esc or ×; clicking around the page, or navigating
+// within it, leaves it open. While the page is dormant (no claim covers it)
+// the card is hidden, and it comes back when a claim covers the page again.
 //
 // The panel is a non-modal dialog (aria-modal="false"): the page stays live
 // around it, so Tab isn't trapped. Opening it from a pin or a Send moves focus
@@ -21,6 +23,7 @@
   // returnTo, the element focus goes back to on close.
   let mode = null;
   let panel = null;
+  let asleep = false; // the page is dormant: the card is kept, but hidden
   let parts = {};
   let refs = 0;
 
@@ -29,6 +32,7 @@
   function frame(title, chip) {
     panel?.remove();
     panel = el("div", "panel");
+    panel.hidden = asleep;
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "false");
     panel.tabIndex = -1;
@@ -113,7 +117,7 @@
       ref: mode.ref,
       url: location.href,
       request: parts.text.value.trim(),
-      targets: { elements: [{ label: ns.describe.label(element), text: ns.describe.text(element), selector: ns.describe.selector(element) }] },
+      targets: { elements: [ns.describe.element(element)] },
       anchor: mode.anchor,
     });
   }
@@ -140,8 +144,8 @@
     const label = tweak?.targets?.elements?.[0]?.label ?? mode.label ?? "";
     if (chip.textContent !== label) chip.textContent = label;
     chip.hidden = !label;
-    const s = tweak ? ns.describe.status(tweak) : { text: "Sending…", tone: "sent" };
-    status.className = `status tone-${s.tone}${tweak?.status === "working" ? " working" : ""}`;
+    const s = ns.describe.status(tweak);
+    status.className = `status ${ns.describe.classes(tweak)}`;
     if (statusText.textContent !== s.text) statusText.textContent = s.text;
     const words = tweak?.entries?.find((e) => e.kind === "request")?.text ?? mode.request ?? "";
     if (request.textContent !== words) request.textContent = words;
@@ -211,7 +215,18 @@
       if (this.showing() === number) this.close();
       else this.show(number, { focus: true, returnTo: pin });
     },
+    // showing is the open card's number, hidden or not.
     showing: () => (mode?.kind === "card" ? mode.number : null),
+    // sleep hides the card while the page is dormant, and shows it again
+    // after. A composer closes: nothing can be sent from a dormant page.
+    sleep(on) {
+      if (on === asleep) return;
+      if (on && mode?.kind === "compose") this.close();
+      asleep = on;
+      if (!panel) return;
+      panel.hidden = on;
+      if (!on) place();
+    },
     close() {
       const was = mode;
       // Focus goes back only if it was in the overlay: never taken from the page.
@@ -251,11 +266,12 @@
     },
     // tick runs every frame while anything is shown.
     tick() {
-      if (!mode) return;
+      if (!mode || asleep) return;
       if (mode.kind === "card") updateCard();
       place();
     },
-    open: () => mode !== null,
+    // open is whether the panel is on screen.
+    open: () => mode !== null && !asleep,
   };
   ns.teardowns.push(() => panel?.remove());
 })();

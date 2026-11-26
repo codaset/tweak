@@ -19,8 +19,14 @@ export const COMPOSER_INPUT = ".panel textarea";
 export const CARD = ".panel";
 export const CARD_TITLE = ".panel .title";
 export const CARD_STATUS = ".panel .status span:last-child";
-export const CARD_SUMMARY = ".panel .summary";
+export const CARD_SUMMARY = ".panel .entry.kind-summary .entry-text";
+// The conversation under the request: one .entry per entry, its kind in a
+// kind-<kind> class; the reply box while Claude has a question.
+export const CARD_ENTRY = ".panel .entry";
+export const REPLY_INPUT = ".panel .answer textarea";
+export const REPLY_SEND = ".panel .answer .send";
 const text = (selector) => `root.querySelector(${JSON.stringify(selector)})?.textContent`;
+const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 
 // Starts everything one fixture's tests share, before its first test, and
 // stops it all after its last, failures included. Returns an object that's
@@ -93,6 +99,56 @@ export async function pick(env, target) {
     await env.page.keyboard.up("Alt");
   }
   return env.tab.evaluate(`ns.describe.element(document.querySelector(${JSON.stringify(target.selector)}))`);
+}
+
+// Answers Claude's question from the open card the way the developer would:
+// types into the reply box and presses ↵. It resolves once the card says the
+// reply is on its way back to Claude.
+export async function replyFromCard(env, answer) {
+  await env.tab.until(`(() => { const a = root.querySelector(".panel .answer"); return Boolean(a) && !a.hidden; })()`, {
+    what: "the card's reply box",
+  });
+  await env.tab.evaluate(`root.querySelector(${JSON.stringify(REPLY_INPUT)}).focus()`);
+  await env.page.keyboard.type(answer);
+  await env.page.keyboard.press("Enter");
+  await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Reply sent" || s === "Claude has your reply", what: "the card to show the reply sent" });
+}
+
+// A golden case as a conversation: pick it and send a tweak, let the
+// stand-in work it and ask a question, which opens the card without taking
+// the focus; reply from the card; the reply reaches the watcher; work again
+// gets the brief with the Latest line and the conversation; then done.
+export async function conversation(env, c, { request = `tweak the ${c.name}`, question = "Which colour?", answer = "green", summary = `made the ${c.name} green` } = {}) {
+  await open(env, c.path ?? "/");
+  await pick(env, c.pick);
+  await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
+  await env.page.keyboard.type(request);
+  const from = env.watcher.lines.length;
+  await env.page.keyboard.press("Enter");
+  const { number: n } = await env.claude.nextTweak(env.watcher, { from });
+  await env.tab.until(text(CARD_TITLE), { is: (t) => t === `Tweak ${n}`, what: `the card to be tweak ${n}` });
+
+  // Close the card: the question opens it again by itself.
+  await env.page.keyboard.press("Escape");
+  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
+  await env.claude.tweak("ask", String(n), question);
+  await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Claude has a question", what: "the question to open the card" });
+  assert.equal(await env.tab.evaluate(entryText("question")), question);
+  assert.equal(await env.tab.evaluate("root.activeElement"), null, "the question doesn't take the focus");
+
+  const replied = env.watcher.lines.length;
+  await replyFromCard(env, answer);
+  await env.watcher.line(new RegExp(`^tweak ${n} reply: ${answer}$`), { from: replied });
+  const brief = await env.claude.work(n);
+  assert.ok(brief.includes(`**Latest:** the developer replied to your question: "${answer}".`), "the brief leads with the reply");
+  assert.ok(brief.includes("## Conversation"), "the brief has the conversation");
+
+  await env.claude.tweakWith(`${summary}\n`, "done", String(n), "-");
+  await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
+  assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
+  await env.page.keyboard.press("Escape");
+  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
+  return n;
 }
 
 // A golden case through the tracer: pick it, send a tweak, let the stand-in

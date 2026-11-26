@@ -135,7 +135,9 @@
     kind: mode.pick.kind,
     selectors: mode.targets.elements.map((e) => e.selector),
     anchor: mode.anchor,
-    ...(mode.targets.selection && { selection: mode.targets.selection }),
+    // The selection as sent is capped (with an ellipsis); the whole text
+    // finds it again.
+    ...(mode.targets.selection && { selection: mode.targets.selection, whole: mode.pick.range?.toString() }),
     ...(mode.targets.area && { area: mode.targets.area }),
     text: parts.text.value,
   });
@@ -878,7 +880,7 @@
       if (!draft || mode || asleep || draft.page !== pageKey()) return;
       const elements = (draft.selectors ?? []).map(find);
       const pick = { kind: draft.kind, elements, anchor: draft.anchor ?? { x: 0.5, y: 0.5 } };
-      if (draft.kind === "text") Object.assign(pick, { selection: draft.selection, range: textIn(elements[0], draft.selection ?? {}) });
+      if (draft.kind === "text") Object.assign(pick, { selection: draft.selection, range: textIn(elements[0], { ...draft.selection, text: draft.whole ?? draft.selection?.text }) });
       if (draft.kind === "area") pick.area = draft.area;
       if (!elements.length || !elements.every(Boolean) || (draft.kind === "text" && !pick.range) || (draft.kind === "area" && !draft.area)) {
         ns.drafts.setCompose(null);

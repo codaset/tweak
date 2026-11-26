@@ -135,7 +135,7 @@ async function publishSuggestions() {
 // whatever page it's on (port.card).
 const cardKey = (tabId) => `card-${tabId}`;
 // And its drafts, kept as you type so they survive a reload:
-// {compose: {page, kind, selectors, anchor, selection?, area?, text} | null,
+// {compose: {page, kind, selectors, anchor, selection?, whole?, area?, text} | null,
 // replies: {[number]: text}}.
 const draftKey = (tabId) => `draft-${tabId}`;
 

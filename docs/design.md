@@ -158,7 +158,7 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own), and `shot: {id, rects}` when the pick has a capture: the worker keeps that, and uploads the PNG once the number comes back |
 | | `reply` | a `reply` for the bridge, with the tab's `ref`, likewise |
 | | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
-| | `draft` | `draft`: the tab's drafts as you type, `{compose, replies}` (the composer's page, pick kind, selectors, anchor, selection or area, and text; each card's reply by number), or `null` once none is left |
+| | `draft` | `draft`: the tab's drafts as you type, `{compose, replies}` (the composer's page, pick kind, selectors, anchor, selection (with its whole text, uncapped) or area, and text; each card's reply by number), or `null` once none is left |
 | | `capture` | `id`, and `viewport` (`innerWidth`, `innerHeight`): capture the tab now, its overlay hidden, and hold it under `id` |
 | | `drop` | `id`: throw that capture away (its composer closed unsent, or a new pick replaced it) || Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `draft`: the tab's drafts, in answer to `page`; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
 | | `tweak` | `tweak`: one changed tweak (a page's, or the open card's) |
@@ -1372,9 +1372,9 @@ golden-tested in Go, not here.
 
 ### The runner
 
-Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/`,
-plus `bridge-down.test.js` on `static`, which stops the development bridge mid-test
-(`bridge.shutdown()` keeps its state folder) and starts it again with the next `tweak claim`.
+Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/`.
+A test can stop the development bridge mid-test (`bridge.shutdown()` keeps its state folder) and
+start it again with the next `tweak claim`, as `static`'s bridge-down tests do.
 Files run concurrently (node's default), each with its own Chrome. For each fixture the runner:
 
 1. copies the fixture to a temporary folder (round trips edit files), with `node_modules` and

@@ -21,7 +21,7 @@
   const GAP = 14; // between the anchor point and the panel
   const EDGE = 8; // from the viewport's edges
 
-  // mode: null, {kind: "compose", element, anchor, sending, error, ref}
+  // mode: null, {kind: "compose", element, targets, anchor, sending, error, ref}
   // or {kind: "card", number, request, label, replying, replyError, replyRef}
   // (request and label are the local copies while the bridge's tweak hasn't
   // arrived yet; the reply fields are a reply on its way). Both may carry
@@ -111,7 +111,6 @@
 
   function submit() {
     if (mode?.kind !== "compose" || parts.send.disabled) return;
-    const element = mode.element;
     mode.sending = true;
     mode.error = "";
     mode.ref = `t${++refs}`;
@@ -122,7 +121,7 @@
       ref: mode.ref,
       url: location.href,
       request: parts.text.value.trim(),
-      targets: { elements: [ns.describe.element(element)] },
+      targets: mode.targets,
       anchor: mode.anchor,
     });
   }
@@ -324,7 +323,9 @@
   ns.panel = {
     compose(element, at) {
       if (mode?.kind === "compose" && mode.sending) return; // one send at a time
-      mode = { kind: "compose", element, anchor: at, sending: false, error: "", returnTo: element };
+      // The context is gathered now, while the page still shows what was picked.
+      const targets = ns.context.targets([element]);
+      mode = { kind: "compose", element, targets, anchor: at, sending: false, error: "", returnTo: element };
       drawCompose();
       place();
       composing(true);

@@ -10,10 +10,12 @@ import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
 import { applyTweaks, forPage, pageOf } from "./lib/tweaks.js";
+import { requests } from "./lib/requests.js";
 
 const KEEPALIVE_MS = 20_000; // WebSocket traffic keeps the worker awake (Chrome 116+)
 const ALARM = "reconnect";
 const ALL_URLS = { origins: ["<all_urls>"] };
+const NOT_CONNECTED = "Not connected to Tweak";
 
 // What the side panel shows (see lib/status.js for connection and message).
 const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], update: null };
@@ -95,9 +97,11 @@ async function onTabMessage(port, msg) {
       if (msg.number) await chrome.storage.session.set({ [cardKey(tabId)]: msg.number });
       else await chrome.storage.session.remove(cardKey(tabId));
       break;
-    case "create":
-      bridge.request(msg, (answer) => port.postMessage({ type: "created", ref: msg.ref, ...answer }));
+    case "create": {
+      const ref = bridge.request(msg, (answer) => port.postMessage({ type: "created", ref: msg.ref, ...answer }));
+      if (ref) port.onDisconnect.addListener(() => bridge.pending.forget(ref));
       break;
+    }
   }
 }
 
@@ -185,7 +189,7 @@ function onBridgeMessage(msg, port) {
     return "refused";
   }
   if (msg.type === "result") {
-    bridge.answer(msg);
+    bridge.pending.answer(msg);
     return;
   }
   if (msg.type === "snapshot") {
@@ -206,30 +210,20 @@ const bridge = {
   ws: null,
   attempt: 0,
   retryTimer: 0,
-  refs: 0,
-  pending: new Map(), // ref -> the function waiting for its result
+  pending: requests(), // waiting for the bridge's result
 
   // request sends a message that the bridge answers with a result, or
-  // answers at once when there's no connection: the action is refused, not held.
+  // answers at once when there's no connection: the action is refused, not
+  // held. It returns the ref, or "" when it answered at once.
   request(msg, reply) {
     const ws = this.ws?.socket;
     if (!ws || ws.readyState !== WebSocket.OPEN || !this.ws.ready) {
-      reply({ error: "Not connected to Tweak" });
-      return;
+      reply({ error: NOT_CONNECTED });
+      return "";
     }
-    const ref = `w${++this.refs}`;
-    this.pending.set(ref, reply);
+    const ref = this.pending.add(reply);
     ws.send(JSON.stringify({ ...msg, ref }));
-  },
-  answer(msg) {
-    const reply = this.pending.get(msg.ref);
-    this.pending.delete(msg.ref);
-    reply?.(msg.number ? { number: msg.number } : { error: msg.message });
-  },
-  // dropAnswers ends every request still waiting when the socket closes.
-  dropAnswers() {
-    for (const reply of this.pending.values()) reply({ error: "Not connected to Tweak" });
-    this.pending.clear();
+    return ref;
   },
 
   async connect() {
@@ -263,7 +257,7 @@ const bridge = {
     };
     ws.onclose = () => {
       clearInterval(conn.keepalive);
-      this.dropAnswers();
+      this.pending.dropAll(NOT_CONNECTED);
       if (this.ws !== conn) return; // closed on purpose
       this.ws = null;
       // The claims and registrations stay as they were: pages keep working

@@ -39,6 +39,7 @@
   const off = ns.worker.on((msg) => {
     switch (msg.type) {
       case "open": // the port (re)connected: say which page this is
+        shown = pageKey();
         ns.worker.post({ type: "page", url: location.href });
         break;
       case "state":
@@ -60,6 +61,21 @@
     }
   });
 
+  // Client-side navigation (the page's own pushState included): a new path
+  // is a new page, so its tweaks replace this one's. The query and hash
+  // don't change the page.
+  const pageKey = () => `${location.origin}${location.pathname}`;
+  let shown = pageKey();
+  const onNavigate = () => {
+    if (pageKey() === shown) return;
+    shown = pageKey();
+    if (ns.panel.open()) ns.panel.close();
+    tweaks.clear();
+    ns.page.redraw();
+    ns.worker.post({ type: "page", url: location.href });
+  };
+  globalThis.navigation?.addEventListener("currententrychange", onNavigate);
+
   // esc closes the panel wherever the focus is.
   const onKey = (e) => {
     if (e.key === "Escape" && ns.panel.open() && !ns.overlay.contains(e)) ns.panel.close();
@@ -70,5 +86,6 @@
     off();
     cancelAnimationFrame(frame);
     window.removeEventListener("keydown", onKey, true);
+    globalThis.navigation?.removeEventListener("currententrychange", onNavigate);
   });
 })();

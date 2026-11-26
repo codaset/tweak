@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+	"unicode"
 )
 
 // How page text is kept from passing for the brief's own voice: every page
@@ -11,7 +12,18 @@ import (
 // longer than any backtick run inside it; and it is capped.
 
 // oneLine collapses every run of whitespace, newlines included, to a space.
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+func oneLine(s string) string { return strings.Join(strings.Fields(printable(s)), " ") }
+
+// printable drops control characters other than whitespace (ESC, BEL,
+// NUL…), so page text can't drive the terminal the brief is read in.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && !unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
 
 // Cut puts s on one line and shortens it to at most n characters, ending in
 // … when it was longer.
@@ -68,7 +80,7 @@ func fenced(s, lang, indent string) string {
 	fence := strings.Repeat("`", max(3, longestRun(s)+1))
 	var b strings.Builder
 	b.WriteString(indent + fence + lang + "\n")
-	s = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s)
+	s = printable(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s))
 	for _, line := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
 		b.WriteString(indent + line + "\n")
 	}

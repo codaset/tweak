@@ -16,7 +16,8 @@ import (
 
 // Store is an open database.
 type Store struct {
-	db *sql.DB
+	db      *sql.DB
+	onEvent func() // see OnEvent
 }
 
 // Open opens (creating if needed) the database at path and brings it up to

@@ -9,9 +9,27 @@ import (
 	"time"
 
 	tweak "github.com/codaset/tweak"
+	"github.com/codaset/tweak/internal/pattern"
 	"github.com/codaset/tweak/internal/version"
 	"github.com/coder/websocket"
 )
+
+// Any write to the event log wakes the sockets, not only the HTTP handlers'.
+func TestAnEventFromOutsideTheHTTPHandlersReachesTheSocket(t *testing.T) {
+	h := start(t)
+	h.register("s1", "/dev/a")
+	s := h.connect()
+	s.hello(version.Protocol)
+	s.next("snapshot")
+
+	p, _ := pattern.Parse("https://elsewhere.localhost/*")
+	if _, err := h.b.store.Claim("s1", p); err != nil {
+		t.Fatal(err)
+	}
+	if e := s.next("event"); e["event"] != "claim-made" {
+		t.Fatalf("event = %v", e)
+	}
+}
 
 var ourOrigin = "chrome-extension://" + tweak.ExtensionID
 

@@ -6,16 +6,17 @@ import { plan, CONTENT_FILES, PROBE_FILES } from "./lib/registrations.js";
 import { retryDelay } from "./lib/backoff.js";
 import { apply } from "./lib/claims.js";
 import { badge } from "./lib/badge.js";
+import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 
 const KEEPALIVE_MS = 20_000; // WebSocket traffic keeps the worker awake (Chrome 116+)
 const ALARM = "reconnect";
 const ALL_URLS = { origins: ["<all_urls>"] };
 
-// What the side panel shows. connection is "connecting", "connected",
-// "disconnected" or "refused" (with message).
-const state = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [] };
-let claims = { seq: 0, claims: [] };
+// What the side panel shows (see lib/status.js for connection and message).
+const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [] };
+// The claims as of event seq, from the bridge or, until it answers, the cache.
+let claimState = { seq: 0, claims: [] };
 let heardFromBridge = false; // once true, the cache is out of date
 
 // ---- Listeners ----
@@ -23,41 +24,43 @@ let heardFromBridge = false; // once true, the cache is out of date
 chrome.runtime.onInstalled.addListener(() => restoreFromCache());
 chrome.runtime.onStartup.addListener(() => restoreFromCache());
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) connect();
+  if (alarm.name === ALARM) bridge.connect();
 });
 chrome.permissions.onAdded.addListener(async () => {
   await refreshAccess();
   // Registrations didn't inject before the grant: give open tabs the scripts.
-  injectIntoOpenTabs(claims.claims);
+  injectIntoOpenTabs(claimState.claims);
 });
 chrome.permissions.onRemoved.addListener(() => refreshAccess());
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && "port" in changes) reconnect();
+  if (area === "local" && "port" in changes) bridge.reconnect();
 });
 chrome.action.onClicked.addListener((tab) => {
   // First, while the click's gesture lasts. Pick mode comes with the tracer.
   chrome.sidePanel.open({ tabId: tab.id });
 });
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name === "panel") {
-    panels.add(port);
-    port.onDisconnect.addListener(() => panels.delete(port));
-    port.postMessage({ type: "state", ...state });
-  } else if (port.name === "tab") {
-    tabs.add(port);
-    port.onDisconnect.addListener(() => tabs.delete(port));
-    port.postMessage({ type: "state", connection: state.connection });
-  }
+  const ports = { panel: panels, tab: tabs }[port.name];
+  if (!ports) return;
+  ports.add(port);
+  port.onDisconnect.addListener(() => ports.delete(port));
+  port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
 });
+
+// ---- The side panel and tabs ----
 
 const panels = new Set();
 const tabs = new Set();
+const panelMessage = () => ({ type: "state", ...view });
+const tabMessage = () => ({ type: "state", connection: view.connection });
 
 function publish(changes) {
-  Object.assign(state, changes);
-  for (const p of panels) p.postMessage({ type: "state", ...state });
-  for (const p of tabs) p.postMessage({ type: "state", connection: state.connection });
+  Object.assign(view, changes);
+  for (const p of panels) p.postMessage(panelMessage());
+  for (const p of tabs) p.postMessage(tabMessage());
 }
+
+const setStatus = (event, changes = {}) => publish({ ...nextStatus(view, event), ...changes });
 
 // ---- Site access and the badge ----
 
@@ -108,80 +111,98 @@ async function injectIntoOpenTabs(list) {
 // last-known claims are registered again at once, before the bridge answers.
 async function restoreFromCache() {
   const { claims: cached = [] } = await chrome.storage.local.get("claims");
-  if (!heardFromBridge) claims = { seq: 0, claims: cached };
-  await syncRegistrations(claims.claims);
+  if (!heardFromBridge) claimState = { seq: 0, claims: cached };
+  await syncRegistrations(claimState.claims);
 }
 
-async function remember(next) {
-  claims = next;
+// adoptClaims takes the bridge's claims: shows them in the panel, caches
+// them in storage.local and brings the registrations in line.
+async function adoptClaims(next) {
+  claimState = next;
   heardFromBridge = true;
   publish({ claims: next.claims });
   await chrome.storage.local.set({ claims: next.claims });
   await syncRegistrations(next.claims);
 }
 
+function onBridgeMessage(msg, port) {
+  if (msg.type === "refusal") {
+    setStatus({ type: "refused", message: msg.message }, { port });
+    return "refused";
+  }
+  if (msg.type === "snapshot") setStatus({ type: "connected" }, { port });
+  const next = apply(claimState, msg);
+  if (next !== claimState) adoptClaims(next);
+}
+
 // ---- The bridge socket ----
 
-let socket = null;
-let attempt = 0;
-let retryTimer = 0;
+// One socket at a time. While awake, a closed socket is retried with
+// backoff; a refused one waits for the alarm.
+const bridge = {
+  ws: null,
+  attempt: 0,
+  retryTimer: 0,
+
+  async connect() {
+    if (this.ws) return;
+    clearTimeout(this.retryTimer);
+    // Claim the slot before the first await, so two callers can't both connect.
+    const conn = { refused: false, keepalive: 0 };
+    this.ws = conn;
+    const port = await bridgePort();
+    if (this.ws !== conn) return; // closed or replaced meanwhile
+    setStatus({ type: "connecting" }, { port });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    conn.socket = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, lastSeq: 0, version: chrome.runtime.getManifest().version }));
+      conn.keepalive = setInterval(() => ws.send(JSON.stringify({ type: "keepalive" })), KEEPALIVE_MS);
+    };
+    ws.onmessage = (e) => {
+      let msg;
+      try {
+        msg = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (msg.type === "snapshot") this.attempt = 0;
+      if (onBridgeMessage(msg, port) === "refused") conn.refused = true;
+    };
+    ws.onclose = () => {
+      clearInterval(conn.keepalive);
+      if (this.ws !== conn) return; // closed on purpose
+      this.ws = null;
+      // The claims and registrations stay as they were: pages keep working
+      // from the last-known claims until the bridge is back.
+      setStatus({ type: "closed", refused: conn.refused }, { port });
+      if (!conn.refused) this.retryTimer = setTimeout(() => this.connect(), retryDelay(this.attempt++));
+    };
+  },
+
+  close() {
+    const conn = this.ws;
+    this.ws = null;
+    clearTimeout(this.retryTimer);
+    if (conn) {
+      clearInterval(conn.keepalive);
+      conn.socket?.close();
+    }
+  },
+
+  // reconnect starts again at once, for a new port: an old refusal no longer applies.
+  reconnect() {
+    this.close();
+    this.attempt = 0;
+    setStatus({ type: "reconnect" });
+    this.connect();
+  },
+};
 
 async function bridgePort() {
   const { port } = await chrome.storage.local.get("port");
   return validPort(port) ? port : DEFAULT_PORT;
-}
-
-async function connect() {
-  if (socket) return;
-  clearTimeout(retryTimer);
-  const port = await bridgePort();
-  if (socket) return;
-  if (state.connection !== "refused") publish({ connection: "connecting", port });
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-  socket = ws;
-  let keepalive = 0;
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, lastSeq: 0, version: chrome.runtime.getManifest().version }));
-    keepalive = setInterval(() => ws.send(JSON.stringify({ type: "keepalive" })), KEEPALIVE_MS);
-  };
-  ws.onmessage = (e) => {
-    let msg;
-    try {
-      msg = JSON.parse(e.data);
-    } catch {
-      return;
-    }
-    if (msg.type === "snapshot") {
-      attempt = 0;
-      publish({ connection: "connected", message: "", port });
-    }
-    if (msg.type === "refusal") {
-      publish({ connection: "refused", message: msg.message, port });
-      return;
-    }
-    const next = apply(claims, msg);
-    if (next !== claims) remember(next);
-  };
-  ws.onclose = () => {
-    clearInterval(keepalive);
-    if (socket !== ws) return;
-    socket = null;
-    // The claims and registrations stay as they were: pages keep working
-    // from the last-known claims until the bridge is back.
-    if (state.connection === "refused") return; // only the alarm retries
-    publish({ connection: "disconnected", port });
-    retryTimer = setTimeout(connect, retryDelay(attempt++));
-  };
-}
-
-function reconnect() {
-  attempt = 0;
-  const ws = socket;
-  socket = null;
-  publish({ connection: "connecting", message: "" });
-  ws?.close();
-  connect();
 }
 
 // ---- Every worker start ----
@@ -192,4 +213,4 @@ function reconnect() {
 chrome.alarms.get(ALARM).then((a) => a || chrome.alarms.create(ALARM, { periodInMinutes: 0.5 }));
 refreshAccess();
 restoreFromCache();
-connect();
+bridge.connect();

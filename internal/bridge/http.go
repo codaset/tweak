@@ -182,7 +182,6 @@ func (b *Bridge) claim(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		b.internal(w, err)
 	default:
-		b.notify()
 		reply(w, 201, claimJSON(c))
 	}
 }
@@ -212,8 +211,6 @@ func (b *Bridge) release(w http.ResponseWriter, r *http.Request) {
 	default:
 		if released == nil {
 			released = []string{}
-		} else {
-			b.notify()
 		}
 		reply(w, 200, map[string][]string{"released": released})
 	}

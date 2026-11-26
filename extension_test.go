@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/codaset/tweak/internal/config"
 	"github.com/codaset/tweak/internal/version"
 )
 
@@ -49,13 +50,18 @@ func TestEmbeddedManifestKeyGivesExtensionID(t *testing.T) {
 }
 
 // The extension says hello in the bridge's protocol: both ship together.
-func TestExtensionSpeaksTheBridgesProtocol(t *testing.T) {
+// It also looks for the bridge on the bridge's default port.
+func TestExtensionAgreesWithTheBridge(t *testing.T) {
 	src, err := Extension.ReadFile("extension/lib/bridge.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("export const PROTOCOL = %d;", version.Protocol)
-	if !strings.Contains(string(src), want) {
-		t.Fatalf("extension/lib/bridge.js should say %q", want)
+	for _, want := range []string{
+		fmt.Sprintf("export const PROTOCOL = %d;", version.Protocol),
+		fmt.Sprintf("export const DEFAULT_PORT = %d;", config.DefaultPort),
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("extension/lib/bridge.js should say %q", want)
+		}
 	}
 }

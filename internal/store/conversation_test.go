@@ -25,7 +25,7 @@ func TestEveryStatusChangeIsGuarded(t *testing.T) {
 		StatusDeclined: {StatusDeclined},
 	}
 	const notWorking = "tweak 1 isn't being worked on: run tweak work 1 first"
-	const asked = "tweak 1 is waiting for the developer's reply to your question: carry on when its reply event arrives"
+	const asked = "tweak 1 is waiting for the developer's reply to your question: their answer comes as a reply event; or decline it with tweak decline 1 '<why>'"
 	const isDone = "tweak 1 is already done: there's nothing more to do"
 	const declined = "tweak 1 was declined: there's nothing more to do"
 	cases := []struct{ from, to, refusal string }{
@@ -199,5 +199,34 @@ func TestAReplyIsInTheAskingSessionsInbox(t *testing.T) {
 	s.Inbox("s1", in.Seq)
 	if got, _ := s.Tweak(tw.Number); got.Status != StatusDelivered {
 		t.Fatalf("after the ack: %s", got.Status)
+	}
+}
+
+// The card shows a refused reply's error as it is: each says what to do.
+func TestReplyRefusalsSayWhatToDo(t *testing.T) {
+	for err, want := range map[error]string{
+		ErrNotAsked:   "Claude has no question on this tweak, so there's nothing to answer: send a new tweak instead",
+		ErrBlankReply: "Write your answer first",
+	} {
+		if err.Error() != want {
+			t.Errorf("got %q, want %q", err, want)
+		}
+	}
+}
+
+func TestTheLastEntryOfAKind(t *testing.T) {
+	tw := Tweak{Entries: []Entry{
+		{From: FromYou, Kind: KindRequest, Text: "make it green"},
+		{From: FromClaude, Kind: KindQuestion, Text: "solid?"},
+		{From: FromYou, Kind: KindReply, Text: "first"},
+		{From: FromClaude, Kind: KindQuestion, Text: "outline?"},
+		{From: FromYou, Kind: KindReply, Text: "second"},
+		{From: FromClaude, Kind: KindPlan, Text: "editing"},
+	}}
+	if e, ok := tw.LastEntry(KindReply); !ok || e.Text != "second" {
+		t.Fatalf("last reply %+v %v", e, ok)
+	}
+	if _, ok := tw.LastEntry(KindSummary); ok {
+		t.Fatal("found a summary that isn't there")
 	}
 }

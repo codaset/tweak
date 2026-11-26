@@ -17,7 +17,7 @@ type Conversation struct {
 }
 
 // speakers name each side of the conversation from Claude's point of view.
-var speakers = map[string]string{"you": "Developer", "claude": "You", "bridge": "Tweak"}
+var speakers = map[string]string{store.FromYou: "Developer", store.FromClaude: "You", store.FromBridge: "Tweak"}
 
 // ConversationOf renders the Latest line and the Conversation section from
 // tw's entries. Every entry is the developer's, Claude's or the bridge's own
@@ -28,8 +28,8 @@ func ConversationOf(tw store.Tweak) Conversation {
 		return Conversation{}
 	}
 	var c Conversation
-	if last := tw.Entries[len(tw.Entries)-1]; last.From == "you" && last.Kind == "reply" {
-		c.Latest = fmt.Sprintf("**Latest:** the developer replied to your question: %s. Carry on from it.\n\n", Quote(last.Text))
+	if reply, ok := latestReply(tw); ok {
+		c.Latest = fmt.Sprintf("**Latest:** the developer replied to your question: %s. Carry on from it.\n\n", Quote(reply.Text))
 	}
 	var b strings.Builder
 	b.WriteString("## Conversation\n\n")
@@ -45,4 +45,18 @@ func ConversationOf(tw store.Tweak) Conversation {
 	b.WriteString("\n")
 	c.Section = b.String()
 	return c
+}
+
+// latestReply is the developer's answer to Claude's last question, if it
+// has one: a plan posted since doesn't hide it, a newer question does.
+func latestReply(tw store.Tweak) (store.Entry, bool) {
+	for i := len(tw.Entries) - 1; i >= 0; i-- {
+		switch e := tw.Entries[i]; e.Kind {
+		case store.KindReply:
+			return e, true
+		case store.KindQuestion:
+			return store.Entry{}, false
+		}
+	}
+	return store.Entry{}, false
 }

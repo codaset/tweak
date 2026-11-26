@@ -150,7 +150,8 @@ func withMessage(name, status, what string) func(*context, []string) error {
 }
 
 // queue sets queued on one or more tweaks, one line each. A refused one
-// says why on stderr and the rest still go through; the exit is then 1.
+// doesn't stop the rest: the refusals are returned together, one line each
+// on stderr, and the exit is 1.
 func queue(c *context, args []string) error {
 	const usage = "usage: tweak queue <n>…, for example tweak queue 12 13"
 	if len(args) == 0 {
@@ -168,18 +169,17 @@ func queue(c *context, args []string) error {
 	if err != nil {
 		return err
 	}
-	var failed error
+	var refusals []error
 	for _, n := range numbers {
 		if err := c.setStatus(cl, n, map[string]string{"status": "queued"}); err != nil {
 			var refused *refusal
 			if !errors.As(err, &refused) {
 				return err // the bridge is gone: the rest would fail the same way
 			}
-			fmt.Fprintln(c.Stderr, err)
-			failed = errShown
+			refusals = append(refusals, err)
 		}
 	}
-	return failed
+	return errors.Join(refusals...)
 }
 
 // plan posts Claude's optional plan on a tweak it's working on.

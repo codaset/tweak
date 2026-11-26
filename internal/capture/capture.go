@@ -63,13 +63,10 @@ func isText(data []byte) bool {
 	return bytes.IndexByte(data, 0) < 0
 }
 
-// Canonical is path with its symlinks resolved, as far as it exists.
-func Canonical(path string) string { return config.Canonical(path) }
-
 // Within reports whether path is inside folder, once symlinks are resolved,
 // and its path relative to folder if so.
 func Within(folder, path string) (rel string, inside bool) {
-	r, err := filepath.Rel(Canonical(folder), Canonical(path))
+	r, err := filepath.Rel(config.Canonical(folder), config.Canonical(path))
 	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) || filepath.IsAbs(r) {
 		return "", false
 	}
@@ -154,7 +151,7 @@ func Differs(t Tree, path string, f File) (differs, known bool) {
 		for _, err := os.Stat(dir); err != nil && dir != filepath.Dir(dir); _, err = os.Stat(dir) {
 			dir = filepath.Dir(dir) // the nearest folder that exists
 		}
-		if top, err := gitOut(dir, nil, "rev-parse", "--show-toplevel"); err != nil || Canonical(top) != Canonical(t.Repo) {
+		if top, err := gitOut(dir, nil, "rev-parse", "--show-toplevel"); err != nil || config.Canonical(top) != config.Canonical(t.Repo) {
 			return false, false
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/codaset/tweak/internal/atomicfile"
 	"github.com/codaset/tweak/internal/store"
 )
 
@@ -131,17 +132,5 @@ func writeAtomically(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".upload-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name()) // gone once renamed
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
+	return atomicfile.Write(path, data, 0o600)
 }

@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/codaset/tweak/internal/atomicfile"
 	"github.com/codaset/tweak/internal/capture"
+	"github.com/codaset/tweak/internal/config"
 	"github.com/codaset/tweak/internal/merge"
 	"github.com/codaset/tweak/internal/store"
 )
@@ -159,7 +161,7 @@ func (u *undoWrite) write(p filePlan) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return writeNew(path, p.write, mode)
+	return atomicfile.Write(path, p.write, mode)
 }
 
 // back takes the writes back, newest first, and says which files it
@@ -208,28 +210,6 @@ func backup(path string) (string, error) {
 	return name, nil
 }
 
-// writeNew writes path, which doesn't exist now, through a temporary file
-// beside it.
-func writeNew(path string, data []byte, mode fs.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tweak-undo-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
-}
-
 // redirected says path no longer leads to itself: it, or a folder on the
 // way to it, is now a symlink. Recorded paths are stored resolved, so a
 // link there now was put there since, and writing through it could reach
@@ -238,7 +218,7 @@ func redirected(path string) bool {
 	if info, err := os.Lstat(path); err == nil && info.Mode()&fs.ModeSymlink != 0 {
 		return true
 	}
-	return capture.Canonical(path) != path
+	return config.Canonical(path) != path
 }
 
 // undoChange is the card's Undo of tweak n. With every file clean it writes

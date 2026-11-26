@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/codaset/tweak/internal/config"
 )
 
 func write(t *testing.T, path, contents string) {
@@ -320,7 +322,7 @@ func TestAnInheritedGitEnvironmentIsIgnored(t *testing.T) {
 	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
 	t.Setenv("GIT_WORK_TREE", other)
 	base, err := Snapshot(dir, t.TempDir())
-	if err != nil || Canonical(base.Repo) != Canonical(dir) {
+	if err != nil || config.Canonical(base.Repo) != config.Canonical(dir) {
 		t.Fatalf("got %+v, %v", base, err)
 	}
 }

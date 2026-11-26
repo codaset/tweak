@@ -13,11 +13,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/codaset/tweak/internal/atomicfile"
 	"github.com/codaset/tweak/internal/capture"
 	"github.com/codaset/tweak/internal/config"
 	"github.com/codaset/tweak/internal/store"
@@ -353,12 +353,7 @@ func (b *Bridge) info() Info {
 
 func (b *Bridge) writeBridgeFile() error {
 	raw, _ := json.MarshalIndent(b.info(), "", "  ")
-	path := b.opts.Config.BridgeFile()
-	tmp := path + ".tmp-" + strconv.Itoa(os.Getpid())
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicfile.Write(b.opts.Config.BridgeFile(), append(raw, '\n'), 0o600)
 }
 
 // removeBridgeFile removes bridge.json only if it is still this bridge's.

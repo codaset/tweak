@@ -28,6 +28,15 @@ type helloIn struct {
 	// ReloadedFor is the version the worker last reloaded itself for ("":
 	// none since it last matched). An older extension leaves it out (nil).
 	ReloadedFor *string `json:"reloadedFor"`
+	// Granted is whether the extension has site access, without which
+	// ⌥-click does nothing. An older extension leaves it out (nil).
+	Granted *bool `json:"granted"`
+}
+
+// accessIn is an access message: site access granted or removed since the
+// hello.
+type accessIn struct {
+	Granted bool `json:"granted"`
 }
 
 type snapshotOut struct {
@@ -221,6 +230,11 @@ func (b *Bridge) handle(ctx context.Context, c *websocket.Conn, raw []byte) {
 		return
 	}
 	switch m.Type {
+	case "access":
+		var in accessIn
+		if json.Unmarshal(raw, &in) == nil {
+			b.heardAccess(&in.Granted)
+		}
 	case "create":
 		var in createIn
 		if json.Unmarshal(raw, &in) != nil || in.Ref == "" {

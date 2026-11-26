@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/access.json",
+  "title": "access",
+  "description": "Sent by the extension's service worker when site access is granted or removed after its hello. Without it the content scripts don't inject, so tweak claim warns.",
+  "type": "object",
+  "properties": {
+    "type": { "const": "access" },
+    "granted": { "type": "boolean" }
+  },
+  "required": ["type", "granted"],
+  "additionalProperties": false
+}

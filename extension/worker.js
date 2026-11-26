@@ -477,6 +477,7 @@ function adoptTweaks(next, msg) {
 async function refreshAccess() {
   const granted = await chrome.permissions.contains(ALL_URLS);
   publish({ granted });
+  bridge.tell({ type: "access", granted }); // tweak claim warns without it
   await showBadge();
   return granted;
 }
@@ -618,6 +619,13 @@ const bridge = {
     return ref;
   },
 
+  // tell sends a message that has no answer, once the hello is out; until
+  // then, the hello carries the same news.
+  tell(msg) {
+    const ws = this.ws?.socket;
+    if (ws?.readyState === WebSocket.OPEN && this.ws.greeted) ws.send(JSON.stringify(msg));
+  },
+
   async connect() {
     if (this.ws) return;
     clearTimeout(this.retryTimer);
@@ -634,8 +642,10 @@ const bridge = {
       // The snapshot is compared with the cached tweaks and their senders
       // (questions asked meanwhile pop up), so those are read back first.
       await tweaksRestored;
+      const granted = await chrome.permissions.contains(ALL_URLS);
       if (ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, lastSeq: 0, version: chrome.runtime.getManifest().version, reloadedFor: reloaded }));
+      ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, lastSeq: 0, version: chrome.runtime.getManifest().version, reloadedFor: reloaded, granted }));
+      conn.greeted = true;
       conn.keepalive = setInterval(() => ws.send(JSON.stringify({ type: "keepalive" })), KEEPALIVE_MS);
     };
     ws.onmessage = (e) => {

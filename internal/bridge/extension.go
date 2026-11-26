@@ -82,6 +82,7 @@ func (b *Bridge) extensionHello(h helloIn) {
 	b.browsers.Add(1)
 	b.log.Printf("extension %s connected", h.Version)
 	b.heardFrom(h.Version, h.ReloadedFor)
+	b.heardAccess(h.Granted)
 	b.sawExtension()
 	if seen.IsZero() || b.opts.Clock().Sub(seen) >= extensionAway {
 		if err := b.store.ExtensionConnected(); err != nil {
@@ -118,9 +119,22 @@ func (b *Bridge) heardFrom(extensionVersion string, reloadedFor *string) {
 	b.settled = reloadedFor == nil || *reloadedFor == b.helloVersion()
 }
 
+// heardAccess records whether the extension has site access, from its
+// hello (nil: it doesn't say) or an access message.
+func (b *Bridge) heardAccess(granted *bool) {
+	b.heardMu.Lock()
+	defer b.heardMu.Unlock()
+	b.granted = granted
+}
+
+// noAccess is the warning while the extension has no site access: its
+// content scripts don't inject, so ⌥-click does nothing until the side
+// panel's Allow access is clicked.
+const noAccess = "site access not granted: open the Codaset Tweak side panel and click Allow access, or ⌥-click won't work"
+
 // claimWarnings are the lines tweak claim prints after claiming: the
-// extension not connected (never, or not now), or connected from another
-// folder.
+// extension not connected (never, or not now), connected from another
+// folder, or without site access.
 func (b *Bridge) claimWarnings() []string {
 	if b.browsers.Load() == 0 {
 		seen, err := b.store.ExtensionSeen()
@@ -137,9 +151,12 @@ func (b *Bridge) claimWarnings() []string {
 		return nil
 	}
 	b.heardMu.Lock()
-	heard, settled := b.heard, b.settled
+	heard, settled, granted := b.heard, b.settled, b.granted
 	b.heardMu.Unlock()
 	var w []string
+	if granted != nil && !*granted {
+		w = append(w, noAccess)
+	}
 	// The extension reloaded and still isn't this version: Chrome loads a
 	// copy from somewhere else.
 	if want := b.helloVersion(); want != "" && heard != "" && heard != want && settled {

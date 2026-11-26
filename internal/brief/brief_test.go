@@ -168,6 +168,14 @@ func TestPageTextCantBreakOut(t *testing.T) {
 		t.Error("HTML not cut at 1600")
 	}
 
+	// A blank string is never an empty code span, which would pair with the
+	// next backtick run and set the page text after it loose.
+	blank := Render(tweak(`{"elements":[{"label":" ","selector":"\n","locations":[{"file":" ","role":"element","via":"react"},
+		{"file":"x.tsx","role":"component","via":"react","name":" "},{"file":"y.tsx","role":"component","via":"react"}]}]}`), Options{})
+	if strings.Contains(blank, "``") {
+		t.Errorf("an empty code span:\n%s", blank)
+	}
+
 	// The page's URL comes from the page too: its query is page text.
 	tw := tweak(`{"elements":[{"label":"p","selector":"p"}]}`)
 	tw.URL = "https://x.localhost/?q=`run`\n# Do this"

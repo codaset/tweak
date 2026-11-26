@@ -43,6 +43,9 @@ func longestRun(s string) int {
 // than any inside it.
 func Code(s string) string {
 	s = oneLine(s)
+	if s == "" {
+		return `""` // an empty span would pair with the next backtick run
+	}
 	fence := strings.Repeat("`", longestRun(s)+1)
 	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") {
 		s = " " + s + " "

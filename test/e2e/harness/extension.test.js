@@ -19,6 +19,11 @@ test("the copy talks to the test bridge's port, pre-grants localhost and hears t
   assert.doesNotMatch(read(EXTENSION, "worker.js"), /e2e:handler/, "the real extension is untouched");
 });
 
+test("with access to every site, the copy holds <all_urls>, as after Allow access", () => {
+  const manifest = JSON.parse(read(testCopy({ bridgePort: 50123, allUrls: true }), "manifest.json"));
+  assert.deepEqual(manifest.host_permissions, ["http://localhost/*", "<all_urls>"]);
+});
+
 test("a copy that would still name the live port is refused", () => {
   const source = mkdtempSync(join(tmpdir(), "tweak-ext-src-"));
   cpSync(EXTENSION, source, { recursive: true });

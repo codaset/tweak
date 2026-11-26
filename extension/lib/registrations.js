@@ -9,6 +9,7 @@ export const CONTENT_FILES = [
   "content/port.js",
   "content/toast.js",
   "content/update.js",
+  "content/screenshot.js",
   "content/describe.js",
   "content/clues.js",
   "content/sourcemap.js",

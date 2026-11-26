@@ -288,13 +288,23 @@
     pick({ kind: "elements", elements: [target], anchor });
   }
 
-  function pick(p) {
+  // pick is where every gesture ends. The screenshot is taken here, before
+  // the composer opens (a hover menu may close once it has the focus); a
+  // later pick made while this one captures wins.
+  let picks = 0;
+  async function pick(p) {
     // One element is outlined as you write about it; more, a selection or
     // an area are drawn by the composer's marks. The held element changes
     // first, so clear() doesn't redraw an earlier pick's outline.
     ns.picker.held = p.kind === "elements" && p.elements.length === 1 ? p.elements[0] : null;
     clear();
-    ns.panel.compose(p);
+    if (!ns.panel.canCompose()) return; // a send is on its way
+    const turn = ++picks;
+    ns.busy?.set("capture", true); // so a self-update can't reload in the gap
+    const shot = await ns.screenshot.take().catch(() => null);
+    if (turn !== picks) return ns.screenshot.drop(shot);
+    ns.panel.compose(p, shot);
+    ns.busy?.set("capture", false);
   }
 
   // While an ⌥ press is held, the page's own text selection and drags don't start.

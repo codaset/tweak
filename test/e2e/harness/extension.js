@@ -13,6 +13,8 @@ export const EXTENSION = resolve(import.meta.dirname, "../../../extension");
 const TEST_MESSAGE = `
 // ---- Test copy only (test/e2e/harness/extension.js) ----
 const e2eHandlers = { "side-panel": openSidePanel };
+// How many captures the tabs hold, waiting for Send (design.md § Screenshot).
+globalThis.e2eHeldCaptures = () => [...tabs].reduce((n, port) => n + port.shots.size, 0);
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type !== "e2e:handler") return;
   const fail = (err) => reply({ ok: false, error: String(err?.message ?? err) });
@@ -32,8 +34,9 @@ const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
 // Copies extension/ into a temporary folder:
 // - DEFAULT_PORT is the test bridge's, and no file may still name the live port;
 // - http://localhost/* is a host permission, the pre-grant the prompt can't give headlessly;
+//   with allUrls, so is <all_urls>, as after Allow access (screenshots need it);
 // - the worker hears the test-only message.
-export function testCopy({ bridgePort, source = EXTENSION }) {
+export function testCopy({ bridgePort, source = EXTENSION, allUrls = false }) {
   if (bridgePort === LIVE_PORT) throw new Error(`refusing the live bridge's port ${LIVE_PORT}`);
   const dir = mkdtempSync(join(tmpdir(), "tweak-e2e-extension-"));
   cpSync(source, dir, { recursive: true });
@@ -46,7 +49,7 @@ export function testCopy({ bridgePort, source = EXTENSION }) {
 
   const manifestFile = join(dir, "manifest.json");
   const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
-  manifest.host_permissions = [...new Set([...(manifest.host_permissions ?? []), "http://localhost/*"])];
+  manifest.host_permissions = [...new Set([...(manifest.host_permissions ?? []), "http://localhost/*", ...(allUrls ? ["<all_urls>"] : [])])];
   writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
 
   const workerFile = join(dir, manifest.background.service_worker);
@@ -54,6 +57,7 @@ export function testCopy({ bridgePort, source = EXTENSION }) {
   for (const name of ["openSidePanel"]) {
     if (!new RegExp(`function ${name}\\b`).test(worker)) throw new Error(`worker.js has no ${name}: update the test message in testCopy`);
   }
+  if (!/const tabs = new Set\(\)/.test(worker) || !/port\.shots = /.test(worker)) throw new Error("worker.js has no tabs or port.shots: update the test message in testCopy");
   writeFileSync(workerFile, worker + TEST_MESSAGE);
   return dir;
 }

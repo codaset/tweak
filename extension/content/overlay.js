@@ -387,6 +387,11 @@
     .send.secondary { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
     .send.secondary:hover:not(:disabled, [aria-disabled="true"]) { filter: none; background: var(--surface); }
     .send[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+    /* Withdraw or Resolve, at the card's foot */
+    .actions { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+    .actions .error { flex: 1; min-width: 0; text-wrap: pretty; }
+    .send.quiet { padding: 5px 10px; background: transparent; color: var(--muted); font-weight: 550; transition: color 120ms ease, background-color 120ms ease; }
+    .send.quiet:hover:not(:disabled, [aria-disabled="true"]) { filter: none; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
     .answer { display: grid; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
     .answer textarea { min-height: 52px; }
 

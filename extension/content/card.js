@@ -7,7 +7,10 @@
 // question, the card has a reply box, and the card opens by itself when the
 // question arrives (without taking the focus). When Claude hasn't picked a
 // delivered tweak up after the bridge sent it twice more, the card says so
-// and offers Send again.
+// and offers Send again. At its foot, Withdraw takes back a tweak Claude is
+// still on, and Resolve clears away a finished one; either way the tweak is
+// resolved, its pin leaves the page and the card closes (the side panel
+// lists it, with Undo).
 // The card stays open until esc or ×; clicking around the page, or navigating
 // within it, leaves it open. While the page is dormant (no claim covers it)
 // the card is hidden, and it comes back when a claim covers the page again.
@@ -31,10 +34,12 @@
 
   // mode: null, {kind: "compose", element, targets, anchor, sending, error, ref}
   // or {kind: "card", number, request, label, replying, replyError, replyRef,
-  // resending, resendError, resendRef, undoing, undoError, undoRef} (request
+  // resending, resendError, resendRef, undoing, undoError, undoRef, finishing,
+// finishError, finishRef} (request
   // and label are the local copies while the bridge's tweak hasn't arrived
   // yet; the reply fields are a reply on its way, the resend fields a Send
-  // again, the undo fields an Undo). Both may carry
+  // again, the undo fields an Undo, the finish fields a Withdraw or Resolve
+// on its way, finishing being which). Both may carry
   // returnTo, the element focus goes back to on close.
   let mode = null;
   let panel = null;
@@ -394,7 +399,17 @@
     undoButton.addEventListener("click", submitUndo);
     undoRow.append(undoNote, undoError, undoButton);
 
-    panel.append(status, retry, request, thread, changed, undoRow, answer, heard);
+    // Withdraw while Claude is still on it; Resolve once it's finished.
+    const actions = el("div", "actions");
+    actions.hidden = true;
+    const actionError = el("span", "error");
+    actionError.setAttribute("role", "alert");
+    const actionButton = el("button", "send quiet", "Withdraw");
+    actionButton.type = "button";
+    actionButton.addEventListener("click", submitFinish);
+    actions.append(actionError, actionButton);
+
+    panel.append(status, retry, request, thread, changed, undoRow, answer, actions, heard);
     status.setAttribute("aria-live", "polite");
     // heardUpTo is how many entries have been read out or were there when the
     // card opened; a card opened by Claude's question reads that one out.
@@ -423,6 +438,9 @@
       undoError,
       undoButton,
       undoSaid: "",
+      actions,
+      actionError,
+      actionButton,
     };
     updateCard(tweak);
   }
@@ -492,6 +510,48 @@
       parts.retry.hidden = !offer;
     }
     refreshResend();
+    refreshFinish(tweak);
+  }
+
+  // refreshFinish shows Withdraw or Resolve, and keeps it up while its
+  // answer is on the way (aria-disabled, so it keeps the focus) or it failed.
+  function refreshFinish(tweak = ns.page.tweak(mode.number)) {
+    const { actions, actionButton, actionError } = parts;
+    const offer = ns.describe.finish(tweak);
+    const kind = mode.finishing ?? (mode.finishError ? mode.finishKind : offer?.kind);
+    if (actions.hidden === Boolean(kind)) {
+      if (!kind && ns.overlay.root?.activeElement === actionButton) panel.focus({ preventScroll: true });
+      actions.hidden = !kind;
+    }
+    if (!kind) return;
+    const className = `send ${kind === "resolve" ? "secondary" : "quiet"}`;
+    if (actionButton.className !== className) actionButton.className = className;
+    const connected = ns.worker.connection === "connected";
+    if (actionButton.disabled !== !connected) actionButton.disabled = !connected;
+    const busy = String(Boolean(mode.finishing));
+    if (actionButton.getAttribute("aria-disabled") !== busy) actionButton.setAttribute("aria-disabled", busy);
+    const label = mode.finishing ? { withdraw: "Withdrawing…", resolve: "Resolving…" }[kind] : { withdraw: "Withdraw", resolve: "Resolve" }[kind];
+    if (actionButton.textContent !== label) actionButton.textContent = label;
+    const why = mode.finishError || (connected ? "" : "Not connected to Tweak");
+    if (actionError.textContent !== why) actionError.textContent = why;
+  }
+
+  function submitFinish() {
+    const offer = ns.describe.finish(ns.page.tweak(mode?.number));
+    if (mode?.kind !== "card" || mode.finishing || !offer || parts.actionButton.disabled) return;
+    mode.finishing = mode.finishKind = offer.kind;
+    mode.finishError = "";
+    mode.finishRef = `t${++refs}`;
+    refreshFinish();
+    ns.worker.post({ type: offer.kind, ref: mode.finishRef, number: mode.number });
+  }
+
+  // finishEnded finishes a Withdraw or Resolve: done (the tweak's event,
+  // resolved, closes the card), or refused with why.
+  function finishEnded(why) {
+    mode.finishing = null;
+    mode.finishError = why;
+    refreshFinish();
   }
 
   function refreshResend() {
@@ -859,6 +919,19 @@
       if (mode?.kind !== "card" || msg.ref !== mode.undoRef || !mode.undoing) return;
       undoEnded(msg.number ? "" : msg.message || msg.error || "Couldn't undo it");
     },
+    // finished is the bridge's answer to a Withdraw or Resolve.
+    finished(msg) {
+      if (mode?.kind !== "card" || msg.ref !== mode.finishRef || !mode.finishing) return;
+      finishEnded(msg.number ? "" : msg.error || "Couldn't do that");
+    },
+    // gone closes the card of a tweak just resolved or withdrawn (its pin
+    // has left the page), saying where it went.
+    gone(tweak) {
+      if (this.showing() !== tweak.number) return;
+      const shown = this.open();
+      this.close();
+      if (shown) ns.toast(`Tweak ${tweak.number} ${tweak.status === "withdrawn" ? "withdrawn" : "resolved"}. It's in the side panel.`);
+    },
     // resent is the bridge's answer to a Send again.
     resent(msg) {
       if (mode?.kind !== "card" || msg.ref !== mode.resendRef || !mode.resending) return;
@@ -870,6 +943,7 @@
       if (mode?.kind === "card" && mode.replying) replyEnded(why);
       if (mode?.kind === "card" && mode.resending) resendEnded(why);
       if (mode?.kind === "card" && mode.undoing) undoEnded(why);
+      if (mode?.kind === "card" && mode.finishing) finishEnded(why);
       if (mode?.kind !== "compose" || !mode.sending) return;
       mode.sending = false;
       mode.error = why;

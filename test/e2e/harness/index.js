@@ -36,6 +36,10 @@ export const CARD_FILES = ".panel .change > .files .path";
 // where an undo with Claude stands, or Undone.
 export const CARD_UNDO = ".panel .undo .send";
 export const CARD_UNDO_NOTE = ".panel .undo .undo-note";
+// The card's foot: Withdraw while Claude is on it, Resolve once it's finished.
+export const CARD_ACTION = ".panel .actions .send";
+// The side panel's resolved tweaks: one row per tweak, by number.
+export const RESOLVED_ROW = (n) => `#resolved-list li[data-number="${n}"]`;
 const text = (selector) => `root.querySelector(${JSON.stringify(selector)})?.textContent`;
 const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 
@@ -55,7 +59,8 @@ const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 //   for the activeTab path, stopped with the rest.
 // Options go to devBridge: againAfter shortens the bridge's 3-minute wait
 // before an again: line, lapseAfter its 10-minute claim lapse, and
-// unwatchedAfter its minute before "no watcher running". Give such a setup
+// unwatchedAfter its minute before "no watcher running", keepResolved its 7
+// days before a resolved tweak is deleted. Give such a setup
 // its own describe, so what they make happen reaches no other test. allUrls
 // gives the test copy <all_urls>, as after Allow access, which screenshots
 // need; deviceScaleFactor sets the page's.
@@ -267,6 +272,29 @@ export async function undoFromCard(env, { label = "Undo", note = "Undone" } = {}
   await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).focus()`);
   await env.page.keyboard.press("Enter");
   await env.tab.until(text(CARD_UNDO_NOTE), { is: (s) => (note instanceof RegExp ? note.test(s ?? "") : s === note), what: `the card to say ${note}` });
+}
+
+// Clicks the open card's Withdraw or Resolve the way the developer would,
+// and resolves once the tweak has left the page: its card has closed and
+// its pin has gone.
+export async function finishFromCard(env, n, label) {
+  await env.tab.until(text(CARD_ACTION), { is: (s) => s === label, what: `the card's ${label} button` });
+  await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_ACTION)}).focus()`);
+  await env.page.keyboard.press("Enter");
+  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)}) && ![...root.querySelectorAll(".pin")].some((p) => p.textContent === "${n}")`, {
+    what: `tweak ${n}'s card and pin to leave the page`,
+  });
+}
+
+// The side panel, opened as the developer would (the toolbar's context
+// menu, through the test copy's handler), as a page tests can drive. It
+// follows the tab in front: env.page.
+export async function sidePanel(env) {
+  await env.tab.handler("side-panel");
+  const target = await until(() => env.browser.targets().find((t) => t.url().endsWith("/panel/panel.html")), { what: "the side panel" });
+  const panel = await target.asPage();
+  await panel.waitForFunction(() => document.getElementById("status").dataset.connection === "connected");
+  return panel;
 }
 
 // A golden case through the tracer: pick it, send a tweak, let the stand-in

@@ -119,12 +119,12 @@
   }
   function described(tweak) {
     const c = tweak?.change;
-    if (!c || (tweak.status !== "done" && tweak.status !== "declined")) return null;
+    if (!c || !FINISHED.has(tweak.status)) return null;
     const files = c.files ?? [];
     const unrecorded = c.unrecorded ?? [];
     if (files.length) return { kind: "recorded", title: "Files changed", files, unrecorded };
     if (unrecorded.length || !c.checked) return { kind: "nothing-recorded", title: "No edits recorded", files, unrecorded };
-    if (tweak.status === "declined") return null; // declined before changing anything: nothing to say
+    if (tweak.status !== "done") return null; // declined or withdrawn before changing anything: nothing to say
     return { kind: "unchanged", title: "No files changed", files, unrecorded };
   }
   // undo is what the card offers to undo a finished change, or where its
@@ -151,8 +151,31 @@
     if (c.kind === "nothing-recorded") return { kind: "offer", label: "Ask Claude to undo", note: "" };
     return null;
   }
+  // finish is how the card lets the developer finish with a tweak, or null:
+  // Withdraw while it's open (before Claude finishes), Resolve once Claude
+  // is done or has declined; neither once it's resolved.
+  function finish(tweak) {
+    if (!tweak || tweak.resolvedAt) return null;
+    if (OPEN.has(tweak.status)) return { kind: "withdraw", label: "Withdraw" };
+    if (tweak.status === "done" || tweak.status === "declined") return { kind: "resolve", label: "Resolve" };
+    return null;
+  }
+  // kept is how long a resolved tweak, and its Undo, stays: "Kept for 6
+  // days", or "" once it's due to go.
+  function kept(tweak, now = Date.now()) {
+    const left = Date.parse(tweak?.deleteAt) - now;
+    if (!(left > 0)) return "";
+    const day = 86_400_000;
+    const hour = 3_600_000;
+    const [n, unit] =
+      left >= day ? [Math.round(left / day), "day"] : left >= hour ? [Math.round(left / hour), "hour"] : [Math.max(1, Math.round(left / 60_000)), "minute"];
+    return `Kept for ${n} ${unit}${n === 1 ? "" : "s"}`;
+  }
   // origin is a page URL's scheme, host and port: what /tweak claims.
   const origin = (url = "") => url.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+/i)?.[0] ?? url;
+  // The statuses Claude is still on, and those whose change is final.
+  const OPEN = new Set(["sent", "delivered", "queued", "working", "question"]);
+  const FINISHED = new Set(["done", "declined", "withdrawn"]);
   const UNRECORDED = "Also changed while Claude worked, not recorded:";
   const OUTSIDE = "outside this project";
 
@@ -215,5 +238,5 @@
     return els[0]?.label ?? "";
   }
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element, pointedAt };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, origin, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element, pointedAt };
 })();

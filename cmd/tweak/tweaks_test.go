@@ -98,7 +98,7 @@ func (s *sandbox) watch(session, folder string) *watcher {
 	out, _ := cmd.StdoutPipe()
 	w := &watcher{t: s.t, cmd: cmd, lines: make(chan string, 10), done: make(chan error, 1), err: &bytes.Buffer{}}
 	cmd.Stderr = w.err
-	if err := cmd.Start(); err != nil {
+	if err := start(cmd); err != nil {
 		s.t.Fatal(err)
 	}
 	go func() {
@@ -326,7 +326,9 @@ func (s *sandbox) tweakIn(stdin io.Reader, session, folder string, args ...strin
 	cmd.Stdin = stdin
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
-	cmd.Run()
+	if start(cmd) == nil {
+		cmd.Wait()
+	}
 	return result{cmd.ProcessState.ExitCode(), out.String(), errOut.String()}
 }
 

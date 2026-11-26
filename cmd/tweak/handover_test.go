@@ -80,7 +80,10 @@ func (s *sandbox) install(name string) string {
 	}
 	dest := filepath.Join(s.state, "bin", v, "tweak")
 	os.MkdirAll(filepath.Dir(dest), 0o700)
-	if err := os.WriteFile(dest, raw, 0o700); err != nil {
+	forks.Lock() // no process starts meanwhile: see forks
+	err = os.WriteFile(dest, raw, 0o700)
+	forks.Unlock()
+	if err != nil {
 		s.t.Fatal(err)
 	}
 	return dest

@@ -49,7 +49,9 @@ func TestReleaseVersionIsSetWithLdflags(t *testing.T) {
 	}
 	cmd := exec.Command(bin, "version")
 	cmd.Env = newSandbox(t).env() // never the live bridge
+	forks.RLock()
 	out, err := cmd.Output()
+	forks.RUnlock()
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

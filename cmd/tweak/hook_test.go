@@ -196,7 +196,9 @@ func TestTheEditHookNeverHangs(t *testing.T) {
 	defer stdin.Close()
 	stdin.Write([]byte(`{"session_id": "s1", "tool_input": {`))
 	began := time.Now()
+	forks.RLock()
 	out, err := cmd.Output()
+	forks.RUnlock()
 	if err != nil || len(out) != 0 || time.Since(began) > 2*time.Second {
 		t.Fatalf("exit %v, stdout %q, after %s", err, out, time.Since(began))
 	}

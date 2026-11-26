@@ -124,6 +124,20 @@ type result struct {
 	stdout, stderr string
 }
 
+// forks keeps a process from starting while install (handover_test.go)
+// writes a binary. Tests run in parallel, and a fork in one inherits the
+// other's open write handle until it execs: Linux then refuses to run the
+// binary just written ("text file busy"). Every process a test starts takes
+// the read side; install takes the write side.
+var forks sync.RWMutex
+
+// start is cmd.Start, never while a binary is being written.
+func start(cmd *exec.Cmd) error {
+	forks.RLock()
+	defer forks.RUnlock()
+	return cmd.Start()
+}
+
 // tweak runs the binary as a session (or none, with "") in folder.
 func (s *sandbox) tweak(session, folder string, args ...string) result {
 	s.t.Helper()
@@ -136,7 +150,7 @@ func (s *sandbox) tweak(session, folder string, args ...string) result {
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	done := make(chan error, 1)
-	if err := cmd.Start(); err != nil {
+	if err := start(cmd); err != nil {
 		s.t.Fatal(err)
 	}
 	go func() { done <- cmd.Wait() }()
@@ -426,7 +440,9 @@ func TestDevelopmentBuildRefusesTheLiveStateFolder(t *testing.T) {
 	cmd := exec.Command(tweakBin, "claims")
 	// Our own port, but the default state folder (under a fake HOME).
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + s.home, "TWEAK_BIN=" + tweakBin, fmt.Sprintf("TWEAK_PORT=%d", s.port)}
+	forks.RLock()
 	out, err := cmd.CombinedOutput()
+	forks.RUnlock()
 	if err == nil || !strings.Contains(string(out), "TWEAK_BIN is set") || !strings.Contains(string(out), "TWEAK_STATE_DIR") {
 		t.Fatalf("err %v, output %q", err, out)
 	}

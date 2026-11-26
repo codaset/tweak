@@ -112,7 +112,8 @@
 
   // forText is the map a served file's text names, given the file's URL.
   // Without fetch, only an inline map or one already loaded is given.
-  async function forText(text, fileURL, { fetch: fetching = true } = {}) {
+  // With reload, an external map is fetched again (its file was read again).
+  async function forText(text, fileURL, { fetch: fetching = true, reload = false } = {}) {
     const named = mapURL(text);
     if (!named) return null;
     if (named.startsWith("data:")) {
@@ -128,6 +129,7 @@
     } catch {
       return null;
     }
+    if (reload) cache.delete(url);
     let entry = cache.get(url);
     if (!fetching) return entry?.map ?? null;
     if (!entry) {

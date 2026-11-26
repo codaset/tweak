@@ -9,9 +9,16 @@ import { runInNewContext } from "node:vm";
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
-function load() {
-  const ns = { ready: false, teardowns: [] };
-  const context = { codasetTweak: ns, globalThis: { codasetTweak: ns }, setTimeout, clearTimeout, URL, Promise };
+// load gives a fresh copy of the mappers (and the source maps they use),
+// with fetch and the gathered rules stubbed. The page's DOM isn't there,
+// so the Rails and Proscenium mappers find nothing.
+function load({ fetch = () => Promise.reject(new Error("no fetch")), rules = () => [] } = {}) {
+  const ns = { ready: false, teardowns: [], context: { rules } };
+  const context = {
+    codasetTweak: ns, globalThis: { codasetTweak: ns }, setTimeout, clearTimeout, URL, Promise, atob, TextDecoder, fetch,
+    location: { href: "http://localhost:3000/" },
+  };
+  runInNewContext(read("../../extension/content/sourcemap.js"), context);
   runInNewContext(read("../../extension/content/mappers.js"), context);
   return ns.mappers;
 }
@@ -109,4 +116,31 @@ test("the hover label names the strongest place's file, its line only when there
   ]), "pages/_signup.html.erb");
   assert.equal(label([{ file: "http://localhost:3000/src/theme.css?v=2", line: 10, column: 3, role: "style", via: "css" }]), "src/theme.css:10");
   assert.equal(label([{ file: "/Users/joel/app/components/Card.tsx", line: 4, role: "element", via: "react" }]), "components/Card.tsx:4");
+});
+
+// rule is a gathered CSS rule as context.js gives it: its source unlisted.
+const rule = (selector, file, sheet) => Object.defineProperty({ selector, file }, "source", { value: { sheet, selector } });
+const served = (text) => ({ ok: true, text: async () => text });
+
+test("the hover label falls back to the stylesheet of the latest rule when nothing maps without fetching", async () => {
+  const sheet = { href: "http://localhost:3000/styles.css" };
+  const m = load({ rules: () => [rule(".btn", "http://localhost:3000/styles.css", sheet), rule(".btn-primary", "http://localhost:3000/theme.css", sheet)] });
+  assert.equal(await m.hover({}), "theme.css");
+  assert.equal(await load().hover({}), "");
+});
+
+test("a stylesheet replaced at the same URL is read again, and so is its map", async () => {
+  const map = JSON.parse(read("./fixtures/css/theme.css.map"));
+  const moved = JSON.stringify({ ...map, sources: ["../src/moved.css"] });
+  const answers = { "http://localhost:3000/theme.css": [read("./fixtures/css/theme.css")], "http://localhost:3000/theme.css.map": [JSON.stringify(map), moved] };
+  const m = load({ fetch: async (url) => served(answers[url].length > 1 ? answers[url].shift() : answers[url][0]) });
+  const lineOf = async (sheet) => {
+    const rules = [rule(".badge", "http://localhost:3000/theme.css", sheet)];
+    await m.run({}, { rules });
+    return `${rules[0].file}:${rules[0].line}`;
+  };
+  const first = { href: "http://localhost:3000/theme.css" };
+  assert.equal(await lineOf(first), "http://localhost:3000/src/theme.css:16");
+  assert.equal(await lineOf(first), "http://localhost:3000/src/theme.css:16", "the same sheet is read once");
+  assert.equal(await lineOf({ href: "http://localhost:3000/theme.css" }), "http://localhost:3000/src/moved.css:16", "a new sheet at the URL is read again");
 });

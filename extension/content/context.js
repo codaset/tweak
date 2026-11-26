@@ -234,20 +234,23 @@
     const visit = (list, from, parent = null, when = [], root = undefined) => {
       for (const rule of list) {
         if (rule.selectorText !== undefined) {
-          const absolute = nest(rule.selectorText, parent?.absolute);
-          const shown = parent ? `${parent.shown} { ${oneLine(rule.selectorText)} }` : oneLine(rule.selectorText);
+          const text = rule.selectorText;
+          const absolute = parent ? nest(text, parent.absolute) : text;
+          // How the brief names it: made only for a rule that matches or nests others.
+          const shown = () => (parent ? `${parent.shown} { ${oneLine(text)} }` : oneLine(text));
           let hit = false;
           try {
             hit = matches(el, absolute, root);
           } catch {}
           if (hit) {
-            const selector = when.reduceRight((s, condition) => `${condition} { ${s} }`, shown);
+            const selector = when.reduceRight((s, condition) => `${condition} { ${s} }`, shown());
             const file = sheetFile(from);
             const found = { selector: cut(selector, SELECTOR_CAP), ...(file && { file }) };
-            Object.defineProperty(found, "source", { value: { sheet: from, selector: rule.selectorText } });
+            Object.defineProperty(found, "source", { value: { sheet: from, selector: text } });
             out.push(found);
           }
-          if (rule.cssRules?.length) visit(rule.cssRules, from, { absolute, shown }, when, root);
+          const nested = rule.cssRules;
+          if (nested?.length) visit(nested, from, { absolute, shown: shown() }, when, root);
         } else if (rule.styleSheet) {
           sheet(rule.styleSheet); // @import
         } else if (rule.cssRules) {

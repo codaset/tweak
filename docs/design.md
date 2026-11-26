@@ -287,7 +287,9 @@ over and is never replaced. A command tries the handover once, so a watcher kept
 after a failed one doesn't try again on every poll.
 
 1. The CLI sends `POST /shutdown`. The bridge closes WebSockets with a "restarting" close code,
-   finishes requests in flight, closes SQLite, removes `bridge.json` and exits.
+   finishes requests in flight, closes SQLite, removes `bridge.json` and exits. A SIGTERM to a
+   bridge already shutting down ends it at once (committed writes are safe; the next bridge replaces
+   `bridge.json`).
 2. The CLI waits up to 5 seconds for the port to free, sends SIGTERM to the recorded PID if it hasn't,
    then starts the new bridge. If that bridge fails to start or doesn't answer within 5 seconds, the
    CLI starts the previous version again (see
@@ -1273,8 +1275,8 @@ why the hook records and git only checks is in
   reads `session_id` from its input. With no marker it exits at once, without contacting the bridge.
   With one, it posts the file's path to `POST /edits/before`, and the bridge saves the file's
   current contents as the **before copy**, the first time each file is touched in this tweak only (a
-  file that doesn't exist yet is recorded as absent). The hook always exits 0 with no output, has a
-  2-second timeout, and never blocks or slows an edit; if the bridge is down, the edit just goes
+  file that doesn't exist yet is recorded as absent). The hook always exits 0 with no output, gives up
+  within 2 seconds (up to 5 mid-handover, which `hooks.json` allows), and never blocks an edit; if the bridge is down, the edit just goes
   unrecorded. It never starts a bridge, and before the launcher's first download it exits at once.
   The file is `tool_input.file_path` (Edit, Write) or `tool_input.notebook_path` (NotebookEdit: the
   tool's own input names it so, but the hooks reference documents no NotebookEdit fields, so it's

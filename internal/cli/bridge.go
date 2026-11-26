@@ -65,8 +65,15 @@ func runBridge(c *context, args []string) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-signals
-		b.Shutdown()
+		for range signals {
+			if b.Stopping() {
+				// Already shutting down, and taking too long (a handover's
+				// SIGTERM): go now. SQLite keeps every committed write, and
+				// the next bridge replaces bridge.json.
+				os.Exit(1)
+			}
+			b.Shutdown()
+		}
 	}()
 	return b.Serve()
 }

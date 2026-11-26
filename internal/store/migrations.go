@@ -163,4 +163,11 @@ ALTER TABLE tweaks ADD COLUMN left_capturing INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tweaks ADD COLUMN line TEXT NOT NULL DEFAULT 'new';
 UPDATE tweaks SET line = 'reply' WHERE EXISTS (SELECT 1 FROM entries e WHERE e.tweak = tweaks.number AND e.kind = 'reply');
 `,
+	// 7: timing the first edit (docs/design.md, "Open measurements").
+	// delivered_at is when a line for the tweak was first acknowledged;
+	// first_edit_at when its change's first before copy was recorded.
+	`
+ALTER TABLE tweaks ADD COLUMN delivered_at INTEGER;
+ALTER TABLE tweaks ADD COLUMN first_edit_at INTEGER;
+`,
 }

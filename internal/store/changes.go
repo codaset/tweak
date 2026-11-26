@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 // A change's states (docs/design.md, "Undo").
@@ -232,23 +233,37 @@ func capturingIn(tx *eventTx, sessionID string) (Capture, int64, error) {
 	return c, id, rows.Err()
 }
 
+// Recorded is what RecordBefore did.
+type Recorded struct {
+	Saved bool       // a before copy was saved: the file's first touch
+	First *FirstEdit // the tweak's first edit, or nil
+}
+
+// FirstEdit is a tweak's first before copy, timed from its delivery: the
+// open measurement in docs/design.md.
+type FirstEdit struct {
+	Tweak     int64
+	Delivered bool          // whether its delivery was recorded
+	After     time.Duration // since its delivery, when it was
+}
+
 // RecordBefore saves a file's before copy in the session's capturing change,
-// the first time the file is touched only. It reports whether it saved one,
-// and is ErrNotCapturing when the session isn't capturing.
-func (s *Store) RecordBefore(sessionID string, b Before) (bool, error) {
+// the first time the file is touched only, and stamps the tweak's first
+// edit. It is ErrNotCapturing when the session isn't capturing.
+func (s *Store) RecordBefore(sessionID string, b Before) (Recorded, error) {
 	tx, err := s.begin()
 	if err != nil {
-		return false, err
+		return Recorded{}, err
 	}
 	defer tx.Rollback()
-	var change int64
+	var change, tweak int64
 	var base string
-	err = tx.QueryRow(`SELECT id, base_tree FROM changes WHERE capturing = ?`, sessionID).Scan(&change, &base)
+	err = tx.QueryRow(`SELECT id, tweak, base_tree FROM changes WHERE capturing = ?`, sessionID).Scan(&change, &tweak, &base)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, ErrNotCapturing
+		return Recorded{}, ErrNotCapturing
 	}
 	if err != nil {
-		return false, err
+		return Recorded{}, err
 	}
 	before := any(nil) // absent, or unrecordable
 	if b.Text && !b.Absent {
@@ -257,10 +272,25 @@ func (s *Store) RecordBefore(sessionID string, b Before) (bool, error) {
 	r, err := tx.Exec(`INSERT INTO change_files (change, path, shown, outside, recordable, before, base_tree) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (change, path) DO NOTHING`, change, b.Path, b.Shown, b.Outside, b.Text || b.Absent, before, base)
 	if err != nil {
-		return false, err
+		return Recorded{}, err
 	}
-	n, _ := r.RowsAffected()
-	return n == 1, tx.commit()
+	var out Recorded
+	if n, _ := r.RowsAffected(); n == 1 {
+		out.Saved = true
+		at := s.now()
+		var delivered sql.NullInt64
+		err := tx.QueryRow(`UPDATE tweaks SET first_edit_at = ? WHERE number = ? AND first_edit_at IS NULL RETURNING delivered_at`, at, tweak).Scan(&delivered)
+		switch {
+		case err == nil:
+			out.First = &FirstEdit{Tweak: tweak, Delivered: delivered.Valid}
+			if delivered.Valid {
+				out.First.After = time.Duration(at-delivered.Int64) * time.Millisecond
+			}
+		case !errors.Is(err, sql.ErrNoRows):
+			return Recorded{}, err
+		}
+	}
+	return out, tx.commit()
 }
 
 // orNone keeps an empty file's contents as an empty blob, not NULL (absent).

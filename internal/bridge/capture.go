@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/codaset/tweak/internal/capture"
 	"github.com/codaset/tweak/internal/config"
@@ -343,11 +344,25 @@ func (b *Bridge) editBefore(w http.ResponseWriter, r *http.Request) {
 	}
 	f := fileIn(c.Folder, filepath.Clean(body.Path))
 	read := capture.Read(f.Path)
-	if _, err := b.store.RecordBefore(session, store.Before{ChangeFile: f, Absent: read.Absent, Text: read.Text, Data: read.Data}); err != nil {
+	rec, err := b.store.RecordBefore(session, store.Before{ChangeFile: f, Absent: read.Absent, Text: read.Text, Data: read.Data})
+	if err != nil {
 		b.internal(w, err)
 		return
 	}
+	if rec.First != nil {
+		b.log.Print(firstEditLine(*rec.First))
+	}
 	w.WriteHeader(204)
+}
+
+// firstEditLine is bridge.log's one line per tweak for the open
+// measurement (docs/design.md, "Open measurements"): how long Claude took
+// from delivery to its first edit.
+func firstEditLine(f store.FirstEdit) string {
+	if !f.Delivered {
+		return fmt.Sprintf("tweak %d: first edit, delivery not recorded", f.Tweak)
+	}
+	return fmt.Sprintf("tweak %d: first edit %ds after delivery", f.Tweak, int64(f.After/time.Second))
 }
 
 // mark writes the session's marker file; unmark removes it.

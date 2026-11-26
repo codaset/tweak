@@ -114,6 +114,13 @@ func (t *eventTx) deliver(sessionID string, acked, upto int64) error {
 	if err != nil {
 		return err
 	}
+	// The first line acknowledged for a tweak is its delivery, which its
+	// first edit is timed from, whatever its status is by now.
+	for _, n := range sent {
+		if _, err := t.Exec(`UPDATE tweaks SET delivered_at = ? WHERE number = ? AND delivered_at IS NULL`, at, n); err != nil {
+			return err
+		}
+	}
 	again, err := t.acknowledged(`'tweak-again'`, sessionID, acked, upto)
 	if err != nil {
 		return err

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,9 +48,9 @@ func writeFile(t *testing.T, path, body string) {
 }
 
 // capturing starts a bridge with s1 working on tweak 1 in folder.
-func capturing(t *testing.T, folder string) (*harness, *socket) {
+func capturing(t *testing.T, folder string, opts ...func(*Options)) (*harness, *socket) {
 	t.Helper()
-	h := start(t)
+	h := start(t, opts...)
 	h.register("s1", folder)
 	h.claim("s1", "https://ernie.localhost/*")
 	s := h.connect()
@@ -445,4 +446,44 @@ func TestTheHookNeverWaitsOnGit(t *testing.T) {
 	quick("the snapshot")
 	release <- struct{}{}
 	<-worked
+}
+
+// lockedBuffer is a log the bridge writes while the test reads it.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// A tweak's first edit is logged once to bridge.log, for the open
+// measurement; the store times it (store.FirstEdit).
+func TestATweaksFirstEditIsLoggedOnce(t *testing.T) {
+	dir := project(t, map[string]string{"app.css": ".a { color: red }\n", "b.css": ""})
+	var logged lockedBuffer
+	h, _ := capturing(t, dir, func(o *Options) { o.Log = &logged })
+	h.before("s1", filepath.Join(dir, "app.css"))
+	h.before("s1", filepath.Join(dir, "b.css"))
+	if n := strings.Count(logged.String(), "tweak 1: first edit"); n != 1 {
+		t.Fatalf("logged %d times:\n%s", n, logged.String())
+	}
+}
+
+func TestTheFirstEditLine(t *testing.T) {
+	if got := firstEditLine(store.FirstEdit{Tweak: 12, Delivered: true, After: 34*time.Second + 600*time.Millisecond}); got != "tweak 12: first edit 34s after delivery" {
+		t.Errorf("got %q", got)
+	}
+	if got := firstEditLine(store.FirstEdit{Tweak: 12}); got != "tweak 12: first edit, delivery not recorded" {
+		t.Errorf("got %q", got)
+	}
 }

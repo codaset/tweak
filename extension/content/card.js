@@ -1,15 +1,19 @@
 // The composer and the live card share one floating panel. The composer opens
 // at once on a pick; Send turns it into the card, which shows the status live
-// (with the time spent while working), the request and Claude's summary. The
-// card stays open until esc or ×; clicking around the page, or navigating
+// (with the time spent while working), the request and the conversation after
+// it: Claude's plan, its question, your reply, its summary or its reason for
+// declining. While Claude has a question, the card has a reply box, and the
+// card opens by itself when the question arrives (without taking the focus).
+// The card stays open until esc or ×; clicking around the page, or navigating
 // within it, leaves it open. While the page is dormant (no claim covers it)
 // the card is hidden, and it comes back when a claim covers the page again.
 //
 // The panel is a non-modal dialog (aria-modal="false"): the page stays live
 // around it, so Tab isn't trapped. Opening it from a pin or a Send moves focus
 // into it; closing it gives focus back to the pin, or to the page element a
-// just-sent tweak points at. While the composer is open or holds a draft, the
-// tab is busy, which holds a pending self-update reload back.
+// just-sent tweak points at. While the composer is open or holds a draft, or
+// the reply box holds one, the tab is busy, which holds a pending self-update
+// reload back.
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
@@ -18,8 +22,9 @@
   const EDGE = 8; // from the viewport's edges
 
   // mode: null, {kind: "compose", element, anchor, sending, error, ref}
-  // or {kind: "card", number, request, label} (request and label are the
-  // local copies while the bridge's tweak hasn't arrived yet). Both may carry
+  // or {kind: "card", number, request, label, replying, replyError, replyRef}
+  // (request and label are the local copies while the bridge's tweak hasn't
+  // arrived yet; the reply fields are a reply on its way). Both may carry
   // returnTo, the element focus goes back to on close.
   let mode = null;
   let panel = null;
@@ -130,28 +135,116 @@
     const statusText = el("span");
     status.append(dot, statusText);
     const request = el("p", "request");
-    const summary = el("div");
-    summary.append(el("div", "summary-label", "Claude"), el("p", "summary"));
-    summary.hidden = true;
-    panel.append(status, request, summary);
+    const thread = el("div", "thread");
+
+    // The reply box, shown while Claude has a question. It's built once and
+    // shown or hidden, so what you type survives every redraw.
+    const answer = el("div", "answer");
+    const box = el("textarea");
+    box.placeholder = "Your answer…";
+    box.rows = 2;
+    box.setAttribute("aria-label", "Your reply to Claude");
+    const error = el("div", "error");
+    error.hidden = true;
+    error.setAttribute("role", "alert");
+    const foot = el("div", "foot");
+    const hint = el("span", "hint");
+    hint.append(el("kbd", "", "↵"), " reply  ", el("kbd", "", "⇧↵"), " new line");
+    const send = el("button", "send", "Reply");
+    send.type = "button";
+    foot.append(hint, send);
+    answer.append(box, error, foot);
+    answer.hidden = true;
+    box.addEventListener("input", () => {
+      mode.replyError = "";
+      ns.busy?.set("draft", box.value.trim() !== "");
+      refreshReply();
+    });
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        submitReply();
+      }
+    });
+    send.addEventListener("click", submitReply);
+
+    panel.append(status, request, thread, answer);
     status.setAttribute("aria-live", "polite");
-    parts = { chip: panel.querySelector(".chip"), status, statusText, request, summary };
+    parts = { chip: panel.querySelector(".chip"), status, statusText, request, thread, said: "", answer, box, send, error };
     updateCard(tweak);
   }
 
   function updateCard(tweak = ns.page.tweak(mode.number)) {
-    const { chip, status, statusText, request, summary } = parts;
+    const { chip, status, statusText, request, thread, answer, box } = parts;
     const label = tweak?.targets?.elements?.[0]?.label ?? mode.label ?? "";
     if (chip.textContent !== label) chip.textContent = label;
     chip.hidden = !label;
     const s = ns.describe.status(tweak);
-    status.className = `status ${ns.describe.classes(tweak)}`;
+    const statusClass = `status ${ns.describe.classes(tweak)}`;
+    if (status.className !== statusClass) status.className = statusClass;
     if (statusText.textContent !== s.text) statusText.textContent = s.text;
     const words = tweak?.entries?.find((e) => e.kind === "request")?.text ?? mode.request ?? "";
     if (request.textContent !== words) request.textContent = words;
-    const said = tweak?.entries?.findLast((e) => e.kind === "summary")?.text ?? "";
-    summary.hidden = !said;
-    if (summary.lastChild.textContent !== said) summary.lastChild.textContent = said;
+
+    // The conversation is redrawn only when it changes.
+    const entries = ns.describe.thread(tweak);
+    const said = JSON.stringify(entries);
+    if (said !== parts.said) {
+      parts.said = said;
+      thread.replaceChildren(
+        ...entries.map((e) => {
+          const item = el("div", `entry kind-${e.kind}`);
+          item.append(el("div", "entry-label", e.label), el("p", e.kind === "summary" ? "entry-text summary" : "entry-text", e.text));
+          return item;
+        }),
+      );
+      thread.hidden = entries.length === 0;
+    }
+
+    const asking = tweak?.status === "question";
+    if (answer.hidden === asking) {
+      answer.hidden = !asking;
+      if (!asking) {
+        // The question is answered or over: the box goes, with any draft.
+        if (ns.overlay.root?.activeElement === box) panel.focus({ preventScroll: true });
+        box.value = "";
+        mode.replyError = "";
+        ns.busy?.set("draft", false);
+      }
+    }
+    refreshReply();
+  }
+
+  function refreshReply() {
+    const { box, send, error } = parts;
+    const connected = ns.worker.connection === "connected";
+    send.disabled = Boolean(mode.replying) || !box.value.trim() || !connected;
+    send.textContent = mode.replying ? "Sending…" : "Reply";
+    box.readOnly = Boolean(mode.replying);
+    const why = mode.replyError || (connected ? "" : "Not connected to Tweak");
+    if (error.textContent !== why) error.textContent = why;
+    error.hidden = !why;
+  }
+
+  function submitReply() {
+    if (mode?.kind !== "card" || parts.send.disabled) return;
+    mode.replying = true;
+    mode.replyError = "";
+    mode.replyRef = `t${++refs}`;
+    refreshReply();
+    ns.worker.post({ type: "reply", ref: mode.replyRef, number: mode.number, text: parts.box.value.trim() });
+  }
+
+  // replyEnded finishes a reply on its way: sent (the box empties; the
+  // tweak's next event hides it), or refused with why, keeping the text.
+  function replyEnded(why) {
+    mode.replying = false;
+    mode.replyError = why;
+    if (!why) {
+      parts.box.value = "";
+      ns.busy?.set("draft", false);
+    }
+    refreshReply();
   }
 
   // anchor is the point the panel hangs from.
@@ -187,7 +280,13 @@
     if (!on) ns.busy?.set("draft", false);
   }
 
-  const focusIn = () => requestAnimationFrame(() => panel?.focus({ preventScroll: true }));
+  // focusIn moves the focus into the panel: to the reply box while Claude
+  // has a question, otherwise to the panel itself.
+  const focusIn = () =>
+    requestAnimationFrame(() => {
+      const target = parts.answer && !parts.answer.hidden ? parts.box : panel;
+      target?.focus({ preventScroll: true });
+    });
 
   ns.panel = {
     compose(element, at) {
@@ -210,6 +309,14 @@
       if (focus) focusIn();
       ns.page.cardChanged(number);
       ns.page.redraw();
+    },
+    // asked opens the card of a tweak Claude has just asked about, without
+    // taking the focus. It leaves a composer, and a reply being written on
+    // another card, alone.
+    asked(number) {
+      if (mode?.kind === "compose") return;
+      if (mode?.kind === "card" && (mode.number === number || parts.box?.value.trim())) return;
+      this.show(number);
     },
     toggle(number, pin) {
       if (this.showing() === number) this.close();
@@ -259,9 +366,15 @@
       parts.text.readOnly = false;
       parts.refresh();
     },
+    // replied is the bridge's answer to a reply.
+    replied(msg) {
+      if (mode?.kind !== "card" || msg.ref !== mode.replyRef || !mode.replying) return;
+      replyEnded(msg.number ? "" : msg.error || "Couldn't send the reply");
+    },
     // unsent ends a send whose answer can't come (the worker's port went):
-    // the composer keeps the text and says why.
+    // the composer or reply box keeps the text and says why.
     unsent(why) {
+      if (mode?.kind === "card" && mode.replying) replyEnded(why);
       if (mode?.kind !== "compose" || !mode.sending) return;
       mode.sending = false;
       mode.error = why;

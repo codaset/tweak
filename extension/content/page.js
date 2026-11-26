@@ -79,15 +79,23 @@
         // The card open before a reload; on a dormant page it opens hidden.
         if (msg.card && tweaks.has(msg.card) && !ns.panel.open() && ns.panel.showing() === null) ns.panel.show(msg.card);
         break;
-      case "tweak":
+      case "tweak": {
+        const was = tweaks.get(msg.tweak.number);
         tweaks.set(msg.tweak.number, msg.tweak);
         ns.page.redraw();
+        // Claude's question pops up on the page it's about.
+        const asks = msg.tweak.status === "question" && was?.status !== "question";
+        if (asks && claimed && msg.tweak.page === shownPage) ns.panel.asked(msg.tweak.number);
         break;
+      }
       case "claimed":
         setClaimed(msg.claimed);
         break;
       case "created":
         ns.panel.created(msg);
+        break;
+      case "replied":
+        ns.panel.replied(msg);
         break;
     }
   });

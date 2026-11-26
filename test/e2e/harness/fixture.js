@@ -6,6 +6,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } fr
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, resolve } from "node:path";
+import { alive, sleep } from "./util.js";
 
 export const FIXTURES = resolve(import.meta.dirname, "../../../fixtures");
 export const LIVE_PORT = 47391; // the developer's own bridge: never used here
@@ -47,8 +48,9 @@ export function skipReason(fixture, { ci = Boolean(process.env.CI), path } = {})
   return `${message}: skipped`;
 }
 
-// Starts the fixture and resolves once its ready path answers 200. The
-// returned app has url(path), output() and stop().
+// Starts the fixture and resolves once its ready path answers 200 on
+// `host`, the host the app is opened on. The returned app has folder, port,
+// host, bootMs, url(path), output() and stop().
 export async function startFixture(fixture, { readyTimeout = 60_000, host = "localhost" } = {}) {
   const folder = mkdtempSync(join(tmpdir(), `tweak-e2e-${fixture.name}-`));
   // Round trips edit files, so the app runs from a copy. node_modules is
@@ -72,15 +74,21 @@ export async function startFixture(fixture, { readyTimeout = 60_000, host = "loc
   const app = {
     folder,
     port,
+    host,
     url: (path = "/") => `http://${host}:${port}${path}`,
     output: (n = 50) => lines.slice(-n).join("\n"),
     // The whole group: a start command's own children go too. Any member
     // still there after the grace period, the leader gone or not, is killed.
     async stop({ grace = 5000 } = {}) {
-      signalGroup(proc.pid, "SIGTERM");
+      const signal = (sig) => {
+        try {
+          process.kill(-proc.pid, sig);
+        } catch {}
+      };
+      signal("SIGTERM");
       const end = Date.now() + grace;
-      while (signalGroup(proc.pid, 0) && Date.now() < end) await sleep(50);
-      signalGroup(proc.pid, "SIGKILL");
+      while (alive(-proc.pid) && Date.now() < end) await sleep(50);
+      signal("SIGKILL");
       rmSync(folder, { recursive: true, force: true });
     },
   };
@@ -93,8 +101,7 @@ export async function startFixture(fixture, { readyTimeout = 60_000, host = "loc
       await app.stop();
       throw new Error(`${fixture.name} exited (${quit}) before it was ready. Its last 50 lines:\n${app.output()}`);
     }
-    const status = await fetch(`http://127.0.0.1:${port}${fixture.ready}`, { signal: AbortSignal.timeout(2000) }).then((r) => r.status, () => 0);
-    if (status === 200) break;
+    if (await ready(host, port, fixture.ready)) break;
     if (Date.now() > deadline) {
       const output = app.output();
       await app.stop();
@@ -106,14 +113,13 @@ export async function startFixture(fixture, { readyTimeout = 60_000, host = "loc
   return app;
 }
 
-// Signals a process group; false once no member is left.
-function signalGroup(pgid, signal) {
-  try {
-    process.kill(-pgid, signal);
-    return true;
-  } catch {
-    return false;
-  }
+// Polled on the host the app is opened on. localhost counts as ready on
+// either loopback address, as Chrome tries both, so a server bound to only
+// 127.0.0.1 or only ::1 (Vite's localhost can be either) is ready.
+async function ready(host, port, path) {
+  const addresses = host === "localhost" ? ["127.0.0.1", "[::1]"] : [host];
+  const answers = await Promise.all(
+    addresses.map((a) => fetch(`http://${a}:${port}${path}`, { signal: AbortSignal.timeout(2000) }).then((r) => r.status === 200, () => false)),
+  );
+  return answers.includes(true);
 }
-
-export const sleep =(ms) => new Promise((r) => setTimeout(r, ms));

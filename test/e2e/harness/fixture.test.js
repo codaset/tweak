@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadFixture, skipReason, startFixture, sleep } from "./fixture.js";
+import { loadFixture, skipReason, startFixture } from "./fixture.js";
+import { alive, sleep } from "./util.js";
 
 // A throwaway fixture whose start command is a node script.
 function fakeFixture(script, extra = {}) {
@@ -24,15 +25,6 @@ const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { s
 writeFileSync("pids", JSON.stringify([process.pid, child.pid]));
 http.createServer((req, res) => res.end(req.url)).listen(Number(process.argv[2]), "127.0.0.1");
 `;
-
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 test("a fixture runs from a copy on a free port, and stopping it ends its whole process group", async () => {
   const fixture = fakeFixture(SERVER);
@@ -63,6 +55,21 @@ http.createServer((req, res) => res.end("ok")).listen(Number(process.argv[2]), "
   for (let i = 0; i < 50 && pids.some(alive); i++) await sleep(50);
   assert.deepEqual(pids.map(alive), [false, false]);
 });
+
+for (const [bound, family] of [["127.0.0.1", "IPv4"], ["::1", "IPv6"]]) {
+  test(`a server bound to ${family} loopback only is ready on localhost`, async () => {
+    const fixture = fakeFixture(`
+import http from "node:http";
+http.createServer((req, res) => res.end("ok")).listen(Number(process.argv[2]), ${JSON.stringify(bound)});
+`);
+    const app = await startFixture(fixture, { readyTimeout: 5000 });
+    try {
+      assert.equal(app.url("/"), `http://localhost:${app.port}/`);
+    } finally {
+      await app.stop();
+    }
+  });
+}
 
 test("node_modules is linked into the copy, not copied", async () => {
   const fixture = fakeFixture(SERVER);

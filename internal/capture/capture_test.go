@@ -210,6 +210,7 @@ func TestABeforeCopyIsComparedAsGitSeesIt(t *testing.T) {
 		{"created before the hook", at("web/new.js"), text("x\n"), true, true},
 		{"deleted before the hook", at("app.css"), File{Absent: true}, true, true},
 		{"outside the repo", filepath.Join(t.TempDir(), "x.css"), text("x"), false, false},
+		{"ignored: never in a snapshot, so unknown", at("log/dev.log"), text("line\n"), false, false},
 	}
 	for _, c := range cases {
 		differs, known := Differs(base, c.path, c.copy)

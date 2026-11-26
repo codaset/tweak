@@ -3,7 +3,9 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { contentScript } from "./harness/browser.js";
-import { CARD, CARD_RESEND, CARD_STATUS, COMPOSER_INPUT, conversation, loadFixture, open, pick, setup, skipReason, tracer, until } from "./harness/index.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { CARD, CARD_RESEND, CARD_STATUS, COMPOSER_INPUT, conversation, loadFixture, open, pick, setup, skipReason, tracer, undoFromCard, until } from "./harness/index.js";
 
 const fixture = loadFixture("static");
 
@@ -14,6 +16,31 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     test(`${c.name}: the tracer reaches Done, checked against the brief`, () => tracer(env, c));
     test(`${c.name}: Claude asks, the developer replies from the card, then Done`, () => conversation(env, c));
   }
+
+  // An Undo around a later edit on the same line conflicts: nothing is
+  // written, and the session reverses it by hand.
+  test("an Undo that conflicts goes to Claude, which reverses it by hand with tweak undo and tweak undone", async () => {
+    const c = fixture.cases.find((x) => x.edit);
+    const path = join(env.app.folder, c.edit.file);
+    const original = readFileSync(path);
+    const n = await tracer(env, c, { undo: false });
+    const later = readFileSync(path, "utf8").replace(c.edit.replace, c.edit.replace.replace("<", " now<"));
+    writeFileSync(path, later); // the developer edits the changed line again
+
+    await open(env, c.path ?? "/");
+    await env.tab.evaluate(`ns.panel.show(${n}, { focus: true })`);
+    const from = env.watcher.lines.length;
+    await undoFromCard(env, { note: "Undo needs Claude: 1 of 1 files changed since" });
+    assert.equal(readFileSync(path, "utf8"), later, "nothing was written");
+    await env.watcher.line(new RegExp(`^tweak ${n} undo-conflict: 1 of 1 files need resolving$`), { from });
+
+    const change = await env.claude.tweak("undo", String(n));
+    assert.ok(change.includes(`## \`${c.edit.file}\`: conflicts`), `tweak undo marks the conflict:\n${change}`);
+    writeFileSync(path, original); // reversed by hand
+    assert.equal(await env.claude.tweak("undone", String(n), "put the label back"), `tweak ${n}: undone\n`);
+    await env.tab.until(`root.querySelector(".panel .undo .undo-note")?.textContent`, { is: (s) => s === "Undone", what: "the card to say Undone" });
+    await env.page.keyboard.press("Escape");
+  });
 
   // The harness itself, once, here.
   test("the test copy's message calls a worker handler: the side panel opens", async () => {

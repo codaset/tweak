@@ -16,6 +16,11 @@
       "description": "The extension's version (X.Y.Z), recorded by the bridge for tweak claim's warnings.",
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "reloadedFor": {
+      "description": "The version the worker last reloaded itself for, while its own still differs; empty when it hasn't. Until it equals the bridge's version, the extension is still updating, not loaded from another folder. An older extension leaves it out.",
+      "type": "string",
+      "pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+)?$"
     }
   },
   "required": ["type", "protocol", "lastSeq", "version"],

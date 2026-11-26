@@ -8,7 +8,7 @@ import { apply, coverOf, heldBy, registered } from "./lib/claims.js";
 import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
-import { createSelfUpdate } from "./self-update.js";
+import { createSelfUpdate, reloadedFor } from "./self-update.js";
 import { applyTweaks, askedIn, askedSince, forTab, pageOf, prune, reachesTab, resolvedList } from "./lib/tweaks.js";
 import { requests } from "./lib/requests.js";
 import { draw, frame, paced } from "./lib/screenshot.js";
@@ -507,7 +507,7 @@ const bridge = {
     // Claim the slot before the first await, so two callers can't both connect.
     const conn = { refused: false, keepalive: 0 };
     this.ws = conn;
-    const port = await bridgePort();
+    const [port, reloaded] = await Promise.all([bridgePort(), reloadedFor()]);
     if (this.ws !== conn) return; // closed or replaced meanwhile
     setStatus({ type: "connecting" }, { port });
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
@@ -518,7 +518,7 @@ const bridge = {
       // (questions asked meanwhile pop up), so those are read back first.
       await tweaksRestored;
       if (ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, lastSeq: 0, version: chrome.runtime.getManifest().version }));
+      ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, lastSeq: 0, version: chrome.runtime.getManifest().version, reloadedFor: reloaded }));
       conn.keepalive = setInterval(() => ws.send(JSON.stringify({ type: "keepalive" })), KEEPALIVE_MS);
     };
     ws.onmessage = (e) => {

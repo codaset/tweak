@@ -26,8 +26,13 @@ const ackTimeout = 5 * time.Second
 const linePace = 250 * time.Millisecond
 
 // watchBackoff is how long watch waits before asking again after the bridge
-// didn't answer: 1, 2, 5 seconds, then every 10.
+// didn't answer, or failed: 1, 2, 5 seconds, then every 10.
 var watchBackoff = []time.Duration{time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second}
+
+// watchStartAfter is how long watch goes without an answer before it starts
+// the bridge itself: longer than a handover takes, so it doesn't race the
+// newer bridge for the port.
+const watchStartAfter = 10 * time.Second
 
 var errWatchNoClaims = errors.New("this session has no claims: run tweak claim <url> first, then tweak watch")
 
@@ -35,9 +40,13 @@ var errWatchNoClaims = errors.New("this session has no claims: run tweak claim <
 // most one every linePace, acknowledging each as soon as it is printed
 // (asking for what comes after it), so the bridge hands out again only what
 // wasn't printed. It exits at once for a session with no claims, and after
-// "claim released" once none are left. A bridge that stops answering is asked again with
-// backoff (the next connect starts one if none is running); a bridge that
-// refuses, or can't be started, ends it.
+// "claim released" once none are left.
+//
+// A bridge that doesn't answer, or fails, is asked again with backoff; after
+// watchStartAfter without an answer, watch starts one itself, saying nothing
+// about it (docs/design.md, "When the bridge or extension is down"). Only a
+// refusal (such as another protocol) or a bridge that can't be started ends
+// it otherwise.
 func watch(c *context, args []string) error {
 	if len(args) != 0 {
 		return usageError("usage: tweak watch")
@@ -48,10 +57,33 @@ func watch(c *context, args []string) error {
 	after := int64(-1) // where the last watcher left off
 	first, attempt := true, 0
 	var printed time.Time // when the last line went out
+	var down time.Time    // since when no bridge has answered; zero while one does
+	retry := func() {
+		d := watchBackoff[min(attempt, len(watchBackoff)-1)]
+		attempt++
+		// Try again just as the wait for a start runs out, not after it.
+		if !down.IsZero() {
+			if left := down.Add(watchStartAfter).Sub(c.clock()); left > 0 && left < d {
+				d = left
+			}
+		}
+		c.wait(d)
+	}
 	for {
-		cl, err := c.connect()
-		if err != nil {
-			return err
+		cl, ok := c.find()
+		if !ok {
+			if down.IsZero() {
+				down = c.clock()
+			}
+			if c.clock().Sub(down) < watchStartAfter {
+				retry()
+				continue
+			}
+			var err error
+			if cl, err = c.started(); err != nil {
+				return err
+			}
+			down = time.Time{}
 		}
 		path := "/inbox"
 		if after >= 0 {
@@ -65,17 +97,23 @@ func watch(c *context, args []string) error {
 				Text string
 			}
 		}
-		err = cl.callWithin(inboxTimeout, "GET", path, nil, &in)
+		err := cl.callWithin(inboxTimeout, "GET", path, nil, &in)
 		var refused *refusal
 		switch {
-		case errors.As(err, &refused):
+		case errors.As(err, &refused) && refused.status < 500:
 			return err
+		case errors.As(err, &refused):
+			// It answered, so it's running: no start, only a wait.
+			retry()
+			continue
 		case err != nil:
-			time.Sleep(watchBackoff[min(attempt, len(watchBackoff)-1)])
-			attempt++
+			if down.IsZero() {
+				down = c.clock()
+			}
+			retry()
 			continue
 		}
-		attempt = 0
+		attempt, down = 0, time.Time{}
 		// A fresh read holds no old releases, so lines here are this watcher's.
 		if first && in.Claims == 0 && len(in.Lines) == 0 {
 			return errWatchNoClaims

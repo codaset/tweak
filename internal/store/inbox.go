@@ -19,13 +19,13 @@ type Inbox struct {
 
 // inboxWhere picks the events a session's watcher hears about: its new
 // tweaks and those handed to it, the replies to its questions, the tweaks
-// sent again, undo conflicts, the tweaks withdrawn from it, and its claims
-// released, restored or lost. A tweak's lines are only for the session it is
-// for now: one that passed to another session is no longer this one's. A
-// withdrawn tweak's new, reply and again: lines still waiting are left out:
-// its withdrawn line (or nothing, for one that never reached Claude)
-// replaces them.
-const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-handed', 'tweak-replied', 'tweak-again', 'tweak-undo-conflict', 'tweak-withdrawn', 'claim-released', 'claim-restored', 'claim-lost')
+// sent again, undo conflicts, the tweaks withdrawn from it, its claims
+// released, restored or lost, and the extension connecting. A tweak's lines
+// are only for the session it is for now: one that passed to another session
+// is no longer this one's. A withdrawn tweak's new, reply and again: lines
+// still waiting are left out: its withdrawn line (or nothing, for one that
+// never reached Claude) replaces them.
+const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-handed', 'tweak-replied', 'tweak-again', 'tweak-undo-conflict', 'tweak-withdrawn', 'claim-released', 'claim-restored', 'claim-lost', 'extension-connected')
 	AND (tweak IS NULL OR tweak IN (SELECT number FROM tweaks WHERE session = ?))
 	AND NOT (type IN ('tweak-created', 'tweak-handed', 'tweak-replied', 'tweak-again') AND tweak IN (SELECT number FROM tweaks WHERE status = 'withdrawn'))`
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	tweak "github.com/codaset/tweak"
 	"github.com/codaset/tweak/internal/extfolder"
@@ -62,29 +63,114 @@ func (b *Bridge) helloFolder() string {
 	return tilde(b.opts.Config.ExtensionDir())
 }
 
-// heardFrom records the version of the extension that said hello. Only an
-// X.Y.Z version is kept: tweak claim prints it to the agent's session.
-func (b *Bridge) heardFrom(extensionVersion string) {
+// extensionAway is how long the extension must have been gone for its
+// absence to be news: a worker restarting, a self-update reloading or a
+// handover is back within seconds, and says nothing either way.
+const extensionAway = 30 * time.Second
+
+// extensionHello is an extension saying hello: it counts as a browser, is
+// seen now, and, back after a while away (or for the first time), each
+// session with claims hears it connected. While another is connected, it
+// was seen a moment ago: at its hello, and at every sweep since.
+func (b *Bridge) extensionHello(h helloIn) {
+	b.browsers.Add(1)
+	b.log.Printf("extension %s connected", h.Version)
+	b.heardFrom(h.Version, h.ReloadedFor)
+	seen, err := b.store.ExtensionSeen()
+	if err != nil {
+		b.log.Print(err)
+	}
+	b.sawExtension()
+	if seen.IsZero() || b.opts.Clock().Sub(seen) >= extensionAway {
+		if err := b.store.ExtensionConnected(); err != nil {
+			b.log.Print(err)
+		}
+	}
+}
+
+// extensionGone is its socket closing.
+func (b *Bridge) extensionGone() {
+	b.sawExtension()
+	b.browsers.Add(-1)
+	b.log.Printf("extension disconnected")
+}
+
+func (b *Bridge) sawExtension() {
+	if err := b.store.SawExtension(); err != nil {
+		b.log.Print(err)
+	}
+}
+
+// heardFrom records the version of the extension that said hello, and
+// whether it has settled: it has reloaded itself for this bridge's version
+// already, or is older code that doesn't say. One still to reload (a busy
+// tab holds it back), or mid-reload, isn't loaded from another folder yet.
+// Only an X.Y.Z version is kept: tweak claim prints it to the agent's session.
+func (b *Bridge) heardFrom(extensionVersion string, reloadedFor *string) {
 	if !xyz.MatchString(extensionVersion) {
 		extensionVersion = ""
 	}
 	b.heardMu.Lock()
 	defer b.heardMu.Unlock()
 	b.heard = extensionVersion
+	b.settled = reloadedFor == nil || *reloadedFor == b.helloVersion()
 }
 
-// claimWarnings are the lines tweak claim prints after claiming.
+// claimWarnings are the lines tweak claim prints after claiming: the
+// extension not connected (never, or not now), or connected from another
+// folder.
 func (b *Bridge) claimWarnings() []string {
+	if b.browsers.Load() == 0 {
+		seen, err := b.store.ExtensionSeen()
+		switch {
+		case err != nil:
+			b.log.Print(err)
+		case seen.IsZero():
+			return []string{notInstalled(tilde(b.opts.Config.ExtensionDir()))}
+		default:
+			if away := b.opts.Clock().Sub(seen); away >= extensionAway {
+				return []string{fmt.Sprintf("Chrome extension not connected (last seen %s ago): is Chrome open with Codaset Tweak enabled?", ago(away))}
+			}
+		}
+		return nil
+	}
 	b.heardMu.Lock()
-	heard := b.heard
+	heard, settled := b.heard, b.settled
 	b.heardMu.Unlock()
 	var w []string
 	// The extension reloaded and still isn't this version: Chrome loads a
-	// copy from somewhere else. (Briefly true mid-update, too.)
-	if want := b.helloVersion(); want != "" && heard != "" && heard != want {
+	// copy from somewhere else.
+	if want := b.helloVersion(); want != "" && heard != "" && heard != want && settled {
 		w = append(w, fmt.Sprintf("Chrome has Codaset Tweak %s loaded from another folder: remove it in chrome://extensions and load %s", heard, tilde(b.opts.Config.ExtensionDir())))
 	}
 	return w
+}
+
+// notInstalled is the first-install warning, with the steps. On macOS the
+// folder picker hides dot-folders such as ~/.local.
+func notInstalled(folder string) string {
+	line := "extension not connected: to install it, open chrome://extensions, turn on Developer mode, click Load unpacked and choose " + folder
+	parts := strings.Split(filepath.ToSlash(folder), "/")
+	for i, p := range parts {
+		if strings.HasPrefix(p, ".") && p != "." && p != ".." {
+			line += fmt.Sprintf(" (on macOS the file picker hides %s: press ⌘⇧G and paste the path)", strings.Join(parts[:i+1], "/"))
+			break
+		}
+	}
+	return line
+}
+
+// ago is a time gone by, roughly: 45 s, 3 min, 2 h, 3 days.
+func ago(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d s", int(d/time.Second))
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d/time.Minute))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h", int(d/time.Hour))
+	}
+	return fmt.Sprintf("%d days", int(d/(24*time.Hour)))
 }
 
 // tilde writes a path under the home folder as ~/...

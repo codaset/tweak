@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/codaset/tweak/internal/config"
 	"github.com/codaset/tweak/internal/version"
@@ -92,6 +93,27 @@ type context struct {
 	cfg     config.Config
 	session string
 	warned  map[string]bool
+
+	// Test seams for tweak watch's backoff: nil is the real clock and
+	// startBridge.
+	sleep func(time.Duration)
+	now   func() time.Time
+	start func() (int, error)
+}
+
+func (c *context) wait(d time.Duration) {
+	if c.sleep != nil {
+		c.sleep(d)
+		return
+	}
+	time.Sleep(d)
+}
+
+func (c *context) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 // warn prints one of the bridge's warnings (no watcher running, a claim
@@ -136,7 +158,7 @@ commands:
   claim <url>        claim the pages matching a URL pattern for this session
   claims             list every claim and its session
   release [pattern]  release one claim, or all of this session's
-  watch              print one line per new tweak, reply, tweak sent again, undo conflict or released claim (the Monitor command)
+  watch              print one line per new tweak, reply, tweak sent again, undo conflict, claim released, restored or lost, or the extension connecting (the Monitor command)
   work <n>           print tweak n's brief and mark it as being worked on
   plan <n> <msg>     post a short plan for tweak n, naming the file
   ask <n> <msg>      ask the developer a question about tweak n

@@ -99,3 +99,20 @@ test("the tab coming free reloads, with storage.session stashed", async () => {
   assert.deepEqual(chrome.storage.local.data, { updateStash: { draft: "half" }, updateExpected: "1.2.0" });
 });
 
+// The hello carries it, so the bridge tells an update on its way from a copy
+// loaded from another folder (docs/design.md, "The extension updates itself").
+test("the version the worker last reloaded for, for hello: none until it reloads", async () => {
+  const { u } = await setup("1.1.0");
+  const { reloadedFor } = await import("../../extension/self-update.js");
+  assert.equal(await reloadedFor(), "");
+  const tab = fakePort();
+  u.watchTab(tab);
+  tab.say({ type: "busy", busy: true });
+  u.bridgeVersion("1.2.0");
+  await settle();
+  assert.equal(await reloadedFor(), "", "waiting on a busy tab is not reloaded yet");
+  tab.say({ type: "busy", busy: false });
+  await settle();
+  assert.equal(await reloadedFor(), "1.2.0");
+});
+

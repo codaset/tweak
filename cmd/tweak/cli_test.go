@@ -169,7 +169,7 @@ func TestClaimWarnsWhenTheAllowRuleIsMissing(t *testing.T) {
 	s.extra = append(s.extra, "CLAUDE_CONFIG_DIR="+config)
 	ernie := s.folder("ernie")
 	r := s.tweak("s1", ernie, "claim", "https://ernie.localhost")
-	want := "claimed https://ernie.localhost/*\n" + allowRuleMissing("~/claude-config/settings.json") + "\nnow run tweak watch\n"
+	want := "claimed https://ernie.localhost/*\n" + notInstalled(s) + "\n" + allowRuleMissing("~/claude-config/settings.json") + "\nnow run tweak watch\n"
 	if r.code != 0 || r.stdout != want {
 		t.Fatalf("exit %d, stdout %q, want %q", r.code, r.stdout, want)
 	}
@@ -180,6 +180,11 @@ func TestClaimWarnsWhenTheAllowRuleIsMissing(t *testing.T) {
 	if r.code != 0 || strings.Contains(r.stdout, "allow rule missing") {
 		t.Fatalf("exit %d, stdout %q", r.code, r.stdout)
 	}
+}
+
+// notInstalled is the claim's warning while no extension has ever connected.
+func notInstalled(s *sandbox) string {
+	return "extension not connected: to install it, open chrome://extensions, turn on Developer mode, click Load unpacked and choose " + filepath.Join(s.state, "extension")
 }
 
 // The warning names the user settings file to add the rule to: the skill
@@ -205,8 +210,9 @@ func TestClaimStartsTheBridgeAndClaims(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("exit %d: %s", r.code, r.stderr)
 	}
-	if r.stdout != "claimed https://ernie.localhost/*\nnow run tweak watch\n" {
-		t.Fatalf("stdout %q", r.stdout)
+	// No extension has ever said hello: the claim says how to install it.
+	if want := "claimed https://ernie.localhost/*\n" + notInstalled(s) + "\nnow run tweak watch\n"; r.stdout != want {
+		t.Fatalf("stdout %q, want %q", r.stdout, want)
 	}
 	f, ok := s.bridgeFile()
 	if !ok || f.Port != s.port || f.Version != "dev" || f.PID == 0 {

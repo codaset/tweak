@@ -14,6 +14,15 @@ const EXPECTED = "updateExpected"; // storage.local: the version the last reload
 const UPDATED = "updatedTo"; // storage.session: shown in the side panel
 const TOAST_MS = 20_000; // tabs (re)injected this soon after the update get the toast
 
+// reloadedFor is the version the worker last reloaded itself for, kept while
+// its own still differs, or "": the hello carries it, so the bridge warns of
+// a copy loaded from another folder only once a reload has failed to update
+// it, not while a busy tab holds the reload back or it is under way.
+export async function reloadedFor() {
+  const { [EXPECTED]: expected } = await chrome.storage.local.get(EXPECTED);
+  return expected ?? "";
+}
+
 // createSelfUpdate returns the hooks the worker calls. publish(changes)
 // updates the side panel's view; the view's `update` is
 // {state: "updated" | "waiting" | "stuck", version, folder?} or null.

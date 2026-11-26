@@ -147,5 +147,27 @@
   // cached is the decoded map at a URL, once it has loaded.
   const cached = (url) => cache.get(url)?.map ?? null;
 
-  ns.sourcemap = { vlq, decode, parse, lookup, mapURL, forText, cached };
+  // Served modules' maps (React 19's frames), by module URL: {loading, map}.
+  // Vite's maps are inline, so they are cached here, decoded once per URL.
+  const modules = new Map();
+
+  // forModule is the map of the served JavaScript module at url, fetched
+  // (same origin) and decoded once. Without fetch, only a map already
+  // loaded is given. A module or map that wouldn't load is tried again.
+  async function forModule(url, { fetch: fetching = true } = {}) {
+    let entry = modules.get(url);
+    if (!fetching) return entry?.map ?? null;
+    if (!entry) {
+      entry = { map: null };
+      entry.loading = fetch(url, { credentials: "same-origin" })
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
+        .then((text) => forText(text, url))
+        .then((map) => (map ? (entry.map = map) : Promise.reject(new Error("no source map"))))
+        .catch(() => (modules.delete(url), null));
+      modules.set(url, entry);
+    }
+    return entry.loading;
+  }
+
+  ns.sourcemap = { vlq, decode, parse, lookup, mapURL, forText, forModule, cached };
 })();

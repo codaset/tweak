@@ -297,7 +297,7 @@
   // ---- Running them ----
 
   // MAPPERS in priority order; the framework mappers go first.
-  const MAPPERS = [rails, proscenium, css];
+  const MAPPERS = [...(ns.frameworks?.mappers ?? []), rails, proscenium, css];
 
   const valid = (l) => l && typeof l.file === "string" && l.file.trim() !== "" && ROLES.has(l.role) && typeof l.via === "string";
 

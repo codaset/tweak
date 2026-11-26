@@ -1,0 +1,36 @@
+{
+  "__reactFiber$nwa3xlrm3r": {
+    "tag": 5,
+    "type": "button",
+    "_debugStack": {
+      "stack": "Error: react-stack-top-frame\n    at exports.jsxDEV (http://localhost:57099/vendor.js:28982:13)\n    at Button (http://localhost:57099/main.js:75:84)\n    at Object.react_stack_bottom_frame (http://localhost:57099/vendor.js:25912:20)\n    at renderWithHooks (http://localhost:57099/vendor.js:7670:22)\n    at updateFunctionComponent (http://localhost:57099/vendor.js:10174:19)\n    at beginWork (http://localhost:57099/vendor.js:11786:18)\n    at runWithFiberInDEV (http://localhost:57099/vendor.js:880:30)\n    at performUnitOfWork (http://localhost:57099/vendor.js:17649:22)\n    at workLoopSync (http://localhost:57099/vendor.js:17477:41)\n    at renderRootSync (http://localhost:57099/vendor.js:17458:11)"
+    },
+    "_debugOwner": {
+      "tag": 0,
+      "type": {
+        "name": "Button"
+      },
+      "_debugStack": {
+        "stack": "Error: react-stack-top-frame\n    at exports.jsxDEV (http://localhost:57099/vendor.js:28982:13)\n    at Toolbar (http://localhost:57099/main.js:143:89)\n    at Object.react_stack_bottom_frame (http://localhost:57099/vendor.js:25912:20)\n    at renderWithHooks (http://localhost:57099/vendor.js:7670:22)\n    at updateFunctionComponent (http://localhost:57099/vendor.js:10174:19)\n    at beginWork (http://localhost:57099/vendor.js:11786:18)\n    at runWithFiberInDEV (http://localhost:57099/vendor.js:880:30)\n    at performUnitOfWork (http://localhost:57099/vendor.js:17649:22)\n    at workLoopSync (http://localhost:57099/vendor.js:17477:41)\n    at renderRootSync (http://localhost:57099/vendor.js:17458:11)"
+      },
+      "_debugOwner": {
+        "tag": 0,
+        "type": {
+          "name": "Toolbar"
+        },
+        "_debugStack": {
+          "stack": "Error: react-stack-top-frame\n    at exports.jsxDEV (http://localhost:57099/vendor.js:28982:13)\n    at App (http://localhost:57099/main.js:30:89)\n    at Object.react_stack_bottom_frame (http://localhost:57099/vendor.js:25912:20)\n    at renderWithHooks (http://localhost:57099/vendor.js:7670:22)\n    at updateFunctionComponent (http://localhost:57099/vendor.js:10174:19)\n    at beginWork (http://localhost:57099/vendor.js:11786:18)\n    at runWithFiberInDEV (http://localhost:57099/vendor.js:880:30)\n    at performUnitOfWork (http://localhost:57099/vendor.js:17649:22)\n    at workLoopSync (http://localhost:57099/vendor.js:17477:41)\n    at renderRootSync (http://localhost:57099/vendor.js:17458:11)"
+        },
+        "_debugOwner": {
+          "tag": 0,
+          "type": {
+            "name": "App"
+          },
+          "_debugStack": {
+            "stack": "Error: react-stack-top-frame\n    at exports.jsxDEV (http://localhost:57099/vendor.js:28982:13)\n    at ./src/main.jsx (http://localhost:57099/main.js:173:176)\n    at __webpack_require__ (http://localhost:57099/runtime.js:29:41)\n    at __webpack_exec__ (http://localhost:57099/main.js:183:48)\n    at http://localhost:57099/main.js:184:54\n    at __webpack_require__.O (http://localhost:57099/runtime.js:62:25)\n    at http://localhost:57099/main.js:185:56\n    at webpackJsonpCallback (http://localhost:57099/runtime.js:131:39)\n    at http://localhost:57099/main.js:2:98"
+          }
+        }
+      }
+    }
+  }
+}

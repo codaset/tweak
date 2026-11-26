@@ -1,0 +1,22 @@
+{
+  "__reactFiber$jrkenye9pzk": {
+    "tag": 5,
+    "type": "button",
+    "_debugSource": {
+      "fileName": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-react18-5mdOoB/src/App.jsx",
+      "lineNumber": 10,
+      "columnNumber": 9
+    },
+    "_debugOwner": {
+      "tag": 0,
+      "type": {
+        "name": "App"
+      },
+      "_debugSource": {
+        "fileName": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-react18-5mdOoB/src/main.jsx",
+        "lineNumber": 4,
+        "columnNumber": 52
+      }
+    }
+  }
+}

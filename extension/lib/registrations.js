@@ -12,6 +12,7 @@ export const CONTENT_FILES = [
   "content/describe.js",
   "content/clues.js",
   "content/sourcemap.js",
+  "content/frameworks.js",
   "content/context.js",
   "content/mappers.js",
   "content/hover.js",

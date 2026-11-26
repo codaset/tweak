@@ -1,0 +1,20 @@
+[
+  {
+    "name": "export button, two components deep",
+    "pick": { "selector": ".export-button" },
+    "locations": [{ "file": "src/Button.jsx", "line": 3, "role": "element", "via": "react" }],
+    "clues": ["text Export", "class export-button"]
+  },
+  {
+    "name": "save button, written in App and passed to Panel",
+    "pick": { "selector": "[data-testid=save]" },
+    "locations": [{ "file": "src/App.jsx", "line": 10, "role": "element", "via": "react" }],
+    "clues": ["data-testid=save", "text Save"]
+  },
+  {
+    "name": "panel heading",
+    "pick": { "selector": ".panel-title" },
+    "locations": [{ "file": "src/Panel.jsx", "line": 5, "role": "element", "via": "react" }],
+    "clues": ["text Profile", "class panel-title"]
+  }
+]

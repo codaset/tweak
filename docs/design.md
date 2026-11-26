@@ -1193,8 +1193,10 @@ session. Claude reverses it by hand (`tweak undo`, then `tweak undone` or `tweak
 skill). If no session claims the page, the request waits, and the card says "Needs a session to
 resolve: run `/tweak <origin>`"; it is delivered as soon as a claim covers the page, and goes back to
 waiting if that session releases the page first. Undo work is never captured: the bridge's writes
-don't pass the edit hook, `tweak undo` starts no capture, and it is refused (`still-capturing`)
-while the session is capturing another tweak, whose change would record the reversal.
+don't pass the edit hook, and the card's Undo is refused while a capturing tweak has recorded one
+of its files ("Claude is still working on tweak 13, which changed app.css: undo this once tweak 13 is
+finished"); `tweak undo` starts no capture, and it is refused (`still-capturing`) while the session
+is capturing another tweak. Either way, that tweak's change would record the reversal.
 
 ### On the card
 

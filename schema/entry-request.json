@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/entry-request.json",
+  "title": "entry-request",
+  "description": "POST /tweaks/:n/entries from the CLI: tweak plan, Claude's optional plan while it works. The bridge answers with status.json.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "const": "plan"
+    },
+    "text": {
+      "type": "string",
+      "pattern": "\\S"
+    }
+  },
+  "required": [
+    "kind",
+    "text"
+  ],
+  "additionalProperties": false
+}

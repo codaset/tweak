@@ -39,6 +39,7 @@ func (b *Bridge) routes() http.Handler {
 	api.HandleFunc("GET /inbox", b.inbox)
 	api.HandleFunc("POST /tweaks/{n}/work", b.work)
 	api.HandleFunc("POST /tweaks/{n}/status", b.status)
+	api.HandleFunc("POST /tweaks/{n}/entries", b.entries)
 	api.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		refuse(w, 404, "not-found", fmt.Sprintf("no such endpoint: %s %s", r.Method, r.URL.Path))
 	})

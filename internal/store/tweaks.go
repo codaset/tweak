@@ -12,13 +12,16 @@ import (
 	"github.com/codaset/tweak/internal/pattern"
 )
 
-// Statuses (docs/design.md, "Statuses"). The tracer sets sent, delivered,
-// working and done; the others come with the conversation.
+// Statuses (docs/design.md, "Statuses"). Withdrawn comes with Withdraw.
 const (
 	StatusSent      = "sent"
 	StatusDelivered = "delivered"
+	StatusQueued    = "queued"
 	StatusWorking   = "working"
+	StatusQuestion  = "question"
 	StatusDone      = "done"
+	StatusDeclined  = "declined"
+	StatusWithdrawn = "withdrawn"
 )
 
 // Tweak is a request left on a page, with its conversation and status.
@@ -67,15 +70,22 @@ var (
 	ErrBadTweak = errors.New("a tweak needs a request and an http or https page")
 	ErrNoTweak  = errors.New("no such tweak")
 	ErrNoClaim  = errors.New("no session claims this page")
+	// ErrNotAsked refuses a reply to a tweak Claude asked nothing about.
+	ErrNotAsked   = errors.New("Claude isn't waiting for an answer on this tweak")
+	ErrBlankReply = errors.New("write a reply first")
 )
 
 // allowed is every status change Claude may make, from each status: the one
-// place the rule lives. The conversation ticket adds question, declined and
-// queued, and replies that reopen a tweak.
+// place the rule lives. Claude works on a tweak before asking about it or
+// finishing it, and may queue or decline one it hasn't started. A question
+// waits for the developer: only their reply (Reply) reopens it, as sent.
+// Done and declined are final.
 var allowed = map[string][]string{
-	StatusSent:      {StatusWorking},
-	StatusDelivered: {StatusWorking},
-	StatusWorking:   {StatusWorking, StatusDone},
+	StatusSent:      {StatusWorking, StatusQueued, StatusDeclined},
+	StatusDelivered: {StatusWorking, StatusQueued, StatusDeclined},
+	StatusQueued:    {StatusWorking, StatusQueued, StatusDeclined},
+	StatusWorking:   {StatusWorking, StatusQuestion, StatusDone, StatusDeclined},
+	StatusQuestion:  {StatusDeclined},
 }
 
 // TransitionError refuses a status change the tweak's status doesn't allow,
@@ -89,13 +99,27 @@ func (e *TransitionError) Error() string {
 	switch {
 	case e.From == StatusDone && e.To == StatusDone:
 		return fmt.Sprintf("tweak %d is already done: its summary is saved, so there's nothing more to do", e.Number)
-	case e.From == StatusDone:
+	case e.From == StatusDone && e.To == StatusWorking:
 		return fmt.Sprintf("tweak %d is already done: there's nothing more to work on", e.Number)
-	case e.To == StatusDone:
+	case e.From == StatusDone:
+		return fmt.Sprintf("tweak %d is already done: there's nothing more to do", e.Number)
+	case e.From == StatusDeclined:
+		return fmt.Sprintf("tweak %d was declined: there's nothing more to do", e.Number)
+	case e.From == StatusWithdrawn:
+		return fmt.Sprintf("tweak %d was withdrawn by the developer: drop it", e.Number)
+	case e.From == StatusQuestion:
+		return fmt.Sprintf("tweak %d is waiting for the developer's reply to your question: carry on when its reply event arrives", e.Number)
+	case e.From == StatusWorking && e.To == StatusQueued:
+		return fmt.Sprintf("tweak %d is being worked on: finish it with tweak done, ask or decline", e.Number)
+	case e.To == StatusDone, e.To == StatusQuestion, e.To == toPlan:
 		return fmt.Sprintf("tweak %d isn't being worked on: run tweak work %d first", e.Number, e.Number)
 	}
 	return fmt.Sprintf("tweak %d is %s: it can't become %s", e.Number, e.From, e.To)
 }
+
+// toPlan stands for posting a plan in a TransitionError: a plan isn't a
+// status, but it needs the tweak to be working, as done and ask do.
+const toPlan = "plan"
 
 func canMove(from, to string) bool {
 	for _, s := range allowed[from] {
@@ -189,12 +213,81 @@ func (s *Store) Tweak(number int64) (Tweak, error) { return getTweak(s.db, numbe
 // SetStatus moves a tweak to status for the session it is for, adding entry
 // to its conversation when given. A tweak already at status with no entry
 // is returned unchanged and nothing is logged.
+//
+// Undo capture (docs/design.md, "Capture") hangs off these moves: it starts
+// when a session's tweak becomes working, and ends when the session asks,
+// finishes, declines or queues.
 func (s *Store) SetStatus(sessionID string, number int64, status string, entry *Entry) (Tweak, error) {
 	tx, err := s.begin()
 	if err != nil {
 		return Tweak{}, err
 	}
 	defer tx.Rollback()
+	tw, err := ownTweak(tx, sessionID, number)
+	if err != nil {
+		return Tweak{}, err
+	}
+	if !canMove(tw.Status, status) {
+		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: status}
+	}
+	if tw.Status == status && entry == nil {
+		return tw, nil
+	}
+	if tw, err = tx.change(number, status, entry, EventTweakStatus); err != nil {
+		return Tweak{}, err
+	}
+	return tw, tx.commit()
+}
+
+// Plan adds Claude's plan to a tweak it is working on. The status stays.
+func (s *Store) Plan(sessionID string, number int64, text string) (Tweak, error) {
+	tx, err := s.begin()
+	if err != nil {
+		return Tweak{}, err
+	}
+	defer tx.Rollback()
+	tw, err := ownTweak(tx, sessionID, number)
+	if err != nil {
+		return Tweak{}, err
+	}
+	if tw.Status != StatusWorking {
+		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: toPlan}
+	}
+	if tw, err = tx.change(number, StatusWorking, &Entry{From: "claude", Kind: "plan", Text: text}, EventTweakStatus); err != nil {
+		return Tweak{}, err
+	}
+	return tw, tx.commit()
+}
+
+// Reply is the developer's answer to Claude's question, from the card. It
+// joins the conversation and sends the tweak again (status sent): its
+// tweak-replied event goes to the inbox of the session that asked, which
+// is the session the tweak is for.
+func (s *Store) Reply(number int64, text string) (Tweak, error) {
+	text = strings.TrimSpace(text)
+	tx, err := s.begin()
+	if err != nil {
+		return Tweak{}, err
+	}
+	defer tx.Rollback()
+	tw, err := getTweak(tx, number)
+	if err != nil {
+		return Tweak{}, err
+	}
+	if tw.Status != StatusQuestion {
+		return Tweak{}, ErrNotAsked
+	}
+	if text == "" {
+		return Tweak{}, ErrBlankReply
+	}
+	if tw, err = tx.change(number, StatusSent, &Entry{From: "you", Kind: "reply", Text: text}, EventTweakReplied); err != nil {
+		return Tweak{}, err
+	}
+	return tw, tx.commit()
+}
+
+// ownTweak reads a tweak for the session it is for, refusing another's.
+func ownTweak(tx *eventTx, sessionID string, number int64) (Tweak, error) {
 	tw, err := getTweak(tx, number)
 	if err != nil {
 		return Tweak{}, err
@@ -208,30 +301,28 @@ func (s *Store) SetStatus(sessionID string, number int64, status string, entry *
 		}
 		return Tweak{}, e
 	}
-	if !canMove(tw.Status, status) {
-		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: status}
-	}
-	if tw.Status == status && entry == nil {
-		return tw, nil
-	}
+	return tw, nil
+}
+
+// change sets a tweak's status, adds entry when given, and logs the tweak
+// as it now is. status_at moves only when the status does.
+func (t *eventTx) change(number int64, status string, entry *Entry, event string) (Tweak, error) {
 	at := now()
-	if _, err := tx.Exec(`UPDATE tweaks SET status = ?, status_at = CASE WHEN status = ? THEN status_at ELSE ? END, updated = ? WHERE number = ?`,
+	if _, err := t.Exec(`UPDATE tweaks SET status = ?, status_at = CASE WHEN status = ? THEN status_at ELSE ? END, updated = ? WHERE number = ?`,
 		status, status, at, at, number); err != nil {
 		return Tweak{}, err
 	}
 	if entry != nil {
-		if _, err := tx.Exec(`INSERT INTO entries (tweak, "from", kind, text, at) VALUES (?, ?, ?, ?, ?)`,
+		if _, err := t.Exec(`INSERT INTO entries (tweak, "from", kind, text, at) VALUES (?, ?, ?, ?, ?)`,
 			number, entry.From, entry.Kind, entry.Text, at); err != nil {
 			return Tweak{}, err
 		}
 	}
-	if tw, err = getTweak(tx, number); err != nil {
+	tw, err := getTweak(t, number)
+	if err != nil {
 		return Tweak{}, err
 	}
-	if err := tx.logTweak(EventTweakStatus, tw); err != nil {
-		return Tweak{}, err
-	}
-	return tw, tx.commit()
+	return tw, t.logTweak(event, tw)
 }
 
 type queryRower interface {

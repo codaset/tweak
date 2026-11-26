@@ -18,7 +18,8 @@
         "claim-made",
         "claim-released",
         "tweak-created",
-        "tweak-status"
+        "tweak-status",
+        "tweak-replied"
       ]
     },
     "claim": {
@@ -26,7 +27,7 @@
       "$ref": "#/$defs/claim"
     },
     "tweak": {
-      "description": "With tweak events: the tweak as it was after the event (tweak-status: its status changed or an entry was added).",
+      "description": "With tweak events: the tweak as it was after the event (tweak-status: its status changed or an entry was added; tweak-replied: the developer answered Claude's question, and the tweak is sent again).",
       "$ref": "#/$defs/tweak"
     }
   },
@@ -306,7 +307,8 @@
           "event": {
             "enum": [
               "tweak-created",
-              "tweak-status"
+              "tweak-status",
+              "tweak-replied"
             ]
           }
         }

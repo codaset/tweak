@@ -2,23 +2,64 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/codaset/tweak/schema/status-request.json",
   "title": "status-request",
-  "description": "POST /tweaks/:n/status from the CLI. Only done so far; ask, decline and queue come with the conversation.",
+  "description": "POST /tweaks/:n/status from the CLI: tweak done, ask and decline, with Claude's message, or tweak queue, with none.",
   "type": "object",
   "properties": {
     "status": {
       "enum": [
-        "done"
+        "done",
+        "question",
+        "declined",
+        "queued"
       ]
     },
     "message": {
-      "description": "done: Claude's summary.",
+      "description": "done: Claude's summary. question: its question. declined: its reason.",
       "type": "string",
       "pattern": "\\S"
     }
   },
   "required": [
-    "status",
-    "message"
+    "status"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "done",
+              "question",
+              "declined"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": true
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "queued"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "message": false
+        }
+      }
+    }
   ],
   "additionalProperties": false
 }

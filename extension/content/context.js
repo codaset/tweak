@@ -162,12 +162,16 @@
 
   // rules are the CSS rules matching el, in cascade source order, the
   // latest 10, nested rules included (shown inside their parent's
-  // braces). Cross-origin sheets can't be read and are skipped.
+  // braces). Media and supports conditions are checked; a container
+  // query can't be from script, so a rule inside one keeps its condition
+  // around it (`@container (min-width: 40rem) { .card }`), never shown as
+  // simply matching. Cross-origin sheets can't be read and are skipped.
   function rules(el) {
     const out = [];
     // parent is the enclosing style rule's absolute selector, and shown how
-    // the brief names it.
-    const visit = (list, file, parent = null) => {
+    // the brief names it; when are the container conditions around it,
+    // outermost first.
+    const visit = (list, file, parent = null, when = []) => {
       for (const rule of list) {
         if (rule.selectorText !== undefined) {
           const absolute = nest(rule.selectorText, parent?.absolute);
@@ -176,14 +180,18 @@
           try {
             hit = el.matches(absolute);
           } catch {}
-          if (hit) out.push({ selector: cut(shown, SELECTOR_CAP), ...(file && { file }) });
-          if (rule.cssRules?.length) visit(rule.cssRules, file, { absolute, shown });
+          if (hit) {
+            const selector = when.reduceRight((s, condition) => `${condition} { ${s} }`, shown);
+            out.push({ selector: cut(selector, SELECTOR_CAP), ...(file && { file }) });
+          }
+          if (rule.cssRules?.length) visit(rule.cssRules, file, { absolute, shown }, when);
         } else if (rule.styleSheet) {
           sheet(rule.styleSheet); // @import
         } else if (rule.cssRules) {
           if (rule.media && rule.media.mediaText && !matchMedia(rule.media.mediaText).matches) continue;
           if (rule instanceof CSSSupportsRule && !CSS.supports(rule.conditionText)) continue;
-          visit(rule.cssRules, file, parent);
+          const container = typeof CSSContainerRule !== "undefined" && rule instanceof CSSContainerRule;
+          visit(rule.cssRules, file, parent, container ? [...when, `@container ${oneLine(rule.conditionText)}`] : when);
         }
       }
     };

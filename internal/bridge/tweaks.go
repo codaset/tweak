@@ -269,6 +269,9 @@ func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string
 		return 409, "wrong-status", err.Error()
 	case errors.Is(err, store.ErrNotAsked):
 		return 409, "not-asked", err.Error()
+	case errors.As(err, new(*captureSwitchError)):
+		b.log.Print(err)
+		return 500, "internal", err.Error()
 	case errors.Is(err, store.ErrBlankReply):
 		return 400, "bad-request", err.Error()
 	case errors.Is(err, store.ErrPickedUp):
@@ -286,12 +289,9 @@ func (b *Bridge) work(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	tw, err := b.store.SetStatus(session, n, store.StatusWorking, nil)
+	tw, err := b.startWork(session, n)
 	if !b.refuseChange(w, n, err) {
 		return
-	}
-	if err := b.startCapture(session, n); err != nil {
-		b.log.Printf("tweak %d: undo capture didn't start: %v", n, err)
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(200)

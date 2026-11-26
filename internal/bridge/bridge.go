@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/codaset/tweak/internal/capture"
 	"github.com/codaset/tweak/internal/config"
 	"github.com/codaset/tweak/internal/store"
 	"github.com/codaset/tweak/internal/version"
@@ -70,6 +71,10 @@ type Bridge struct {
 	sockets     sync.WaitGroup
 	loops       sync.WaitGroup // the background loops that use the store
 	captureMu   sync.Mutex     // undo capture: see capture.go
+	// gitSnapshot and gitChanged are the git check (capture.Snapshot and
+	// capture.Changed); tests slow them down.
+	gitSnapshot func(folder, scratch string) (capture.Tree, error)
+	gitChanged  func(base capture.Tree, scratch string) ([]string, error)
 	changeMu    sync.Mutex
 	change      chan struct{} // closed and replaced on each event-log change
 
@@ -118,6 +123,7 @@ func Start(o Options) (*Bridge, error) {
 	}
 	b := &Bridge{opts: o, listener: l, log: log.New(o.Log, "bridge: ", log.LstdFlags), stop: make(chan struct{}), change: make(chan struct{})}
 	b.closing, b.stopSockets = context.WithCancel(context.Background())
+	b.gitSnapshot, b.gitChanged = capture.Snapshot, capture.Changed
 	b.opts.Config.Port = l.Addr().(*net.TCPAddr).Port
 
 	fail := func(err error) (*Bridge, error) {

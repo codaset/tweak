@@ -203,6 +203,10 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
     // The card lists the file the hook recorded. Undo comes with #40.
     await env.tab.until(text(CARD_CHANGE), { is: (s) => s === "Files changed", what: "the card to list the files changed" });
     assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(${JSON.stringify(CARD_FILES)})].map((f) => f.textContent)`), [edit.file]);
+    // It's read out as it arrives, and the list keeps its list semantics.
+    await env.tab.until(text(".panel .sr-only"), { is: (s) => s?.includes("1 file changed"), what: "the change to be read out" });
+    assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change > .files").getAttribute("role")`), "list");
+    assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change").hasAttribute("tabindex")`), false, "a short list is no tab stop");
   }
   await env.page.keyboard.press("Escape");
   await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });

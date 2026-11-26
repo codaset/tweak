@@ -2,8 +2,8 @@
 // always gathered, whatever the mappers find, at most 8 per element, in
 // this order: test IDs, id, aria-label, placeholder, title, alt, the
 // element's own visible text, unusual class names, and a link's href path.
-// Classes unique on the page come first (the other kinds have one value
-// each). Text that is only numbers or dates is skipped; a class on more
+// Within each kind (the four test IDs are one), clues unique on the page
+// come first. Text that is only numbers or dates is skipped; a class on more
 // than 10 elements, one that looks generated, and a Tailwind variant are
 // left out. Each clue is {kind, value}, page text the bridge renders as
 // data.
@@ -14,7 +14,9 @@
   const CLUES = 8;
   const TEXT_CAP = 80;
   const COMMON = 10; // a class on more elements than this says little
-  const ATTRIBUTES = ["data-testid", "data-test", "data-qa", "data-cy", "id", "aria-label", "placeholder", "title", "alt"];
+  const TEST_IDS = ["data-testid", "data-test", "data-qa", "data-cy"];
+  const ORDER = ["id", "aria-label", "placeholder", "title", "alt", "text", "class", "href"]; // after the test IDs
+  const ATTRIBUTES = [...TEST_IDS, ...ORDER.slice(0, 5)];
   // Class names a build generates: CSS-module hashes (css-loader and Next's
   // `Name_local__hash`, Vite's `_local_hash_line`, Proscenium's
   // `local_<8 hex>_path-module`), emotion, styled-components and Svelte.
@@ -29,8 +31,9 @@
     return cps.length > n ? `${cps.slice(0, n - 1).join("")}…` : s;
   }
 
-  // numberOrDate is text with nothing to search for: 42, $19.99, 26 Nov 2026.
-  const numberOrDate = (text) => text.replace(NOT_WORDS, "") === "";
+  // numberOrDate is text with nothing to search for: 42, $19.99, 26 Nov
+  // 2026. A date has a digit in it, so a lone "May" or "Sun" is a word.
+  const numberOrDate = (text) => /\d/.test(text) && text.replace(NOT_WORDS, "") === "";
 
   const unusual = (name, count) => count <= COMMON && !/[:[]/.test(name) && !GENERATED.some((re) => re.test(name));
 
@@ -47,24 +50,46 @@
     }
   }
 
-  // of is el's search clues. classCount tells how many elements on the page
-  // carry a class.
-  function of(el, { classCount = (c) => document.getElementsByClassName(c).length, origin = location.origin } = {}) {
+  // onPage is how many elements on the page carry a clue. The text and a
+  // link's path are the element's own, not counted.
+  function onPage(kind, value) {
+    try {
+      if (kind === "class") return document.getElementsByClassName(value).length;
+      if (kind === "text" || kind === "href") return 1;
+      return document.querySelectorAll(`[${kind}="${CSS.escape(value)}"]`).length;
+    } catch {
+      return 1;
+    }
+  }
+
+  // candidates are el's clues of every kind, in order, before ordering
+  // within a kind and the limit.
+  function candidates(el, origin) {
     const out = [];
     const add = (kind, value) => {
       const v = (value ?? "").replace(/\s+/g, " ").trim();
-      if (v) out.push({ kind, value: cut(v, TEXT_CAP) });
+      if (v) out.push({ kind, value: v });
     };
     for (const a of ATTRIBUTES) add(a, el.getAttribute(a));
     const text = ns.describe.text(el);
     if (text && !numberOrDate(text)) add("text", text);
-    const classes = [...el.classList]
-      .map((name, i) => ({ name, i, count: classCount(name) }))
-      .filter((c) => unusual(c.name, c.count))
-      .sort((a, b) => (a.count !== 1) - (b.count !== 1) || a.i - b.i);
-    for (const c of classes) add("class", c.name);
+    for (const name of el.classList) add("class", name);
     add("href", href(el, origin));
-    return out.slice(0, CLUES);
+    return out;
+  }
+
+  // group is a clue's kind, by its place in the order (the test IDs are one).
+  const group = (kind) => (TEST_IDS.includes(kind) ? 0 : ORDER.indexOf(kind) + 1);
+
+  // of is el's search clues. count tells how many elements on the page
+  // carry a clue.
+  function of(el, { count = onPage, origin = location.origin } = {}) {
+    return candidates(el, origin)
+      .map((c, i) => ({ ...c, i, n: count(c.kind, c.value) }))
+      .filter((c) => c.kind !== "class" || unusual(c.value, c.n))
+      .sort((a, b) => group(a.kind) - group(b.kind) || (a.n !== 1) - (b.n !== 1) || a.i - b.i)
+      .slice(0, CLUES)
+      .map(({ kind, value }) => ({ kind, value: cut(value, TEXT_CAP) }));
   }
 
   ns.clues = { of };

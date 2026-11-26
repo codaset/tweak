@@ -18,8 +18,19 @@ const el = (localName, attrs = {}, { text = "", href } = {}) => ({
   getAttribute: (a) => attrs[a] ?? null,
   classList: (attrs.class ?? "").split(/\s+/).filter(Boolean),
 });
-// on is the page: how many elements carry each class.
-const of = (element, classCounts = {}) => plain(ns.clues.of(element, { classCount: (c) => classCounts[c] ?? 1, origin: "http://localhost:3000" }));
+// of is el's clues on a page where each `kind=value` is on counts[…]
+// elements (1, unique, unless said).
+const of = (element, counts = {}) =>
+  plain(ns.clues.of(element, { count: (kind, value) => counts[`${kind}=${value}`] ?? 1, origin: "http://localhost:3000" }));
+
+test("within each kind, clues unique on the page come first: test IDs too", () => {
+  const row = el("tr", { "data-testid": "row", "data-qa": "invoice-row-7", id: "r7" });
+  assert.deepEqual(of(row, { "data-testid=row": 5 }).map((c) => c.kind), ["data-qa", "data-testid", "id"]);
+});
+
+test("a lone word that could be part of a date is still a clue", () => {
+  for (const text of ["May", "Sat", "Sun", "June", "PM"]) assert.deepEqual(of(el("span", {}, { text })), [{ kind: "text", value: text }], text);
+});
 
 test("clues come in the agreed order: test IDs, id, labels, text, classes, the link's path", () => {
   const link = el("a", {
@@ -50,12 +61,12 @@ test("classes unique on the page come first; common, generated and Tailwind-vari
   const button = el("button", {
     class: "btn btn-save md:px-4 [&>svg]:size-4 css-1x2y3z sc-bdVaJa svelte-xyz123 Button_root__a1B2c title_1a2b3c4d_app-components-card-module _save_k3j2h_12 save-button",
   });
-  const got = of(button, { btn: 40, "btn-save": 3, "save-button": 1 });
+  const got = of(button, { "class=btn": 40, "class=btn-save": 3 });
   assert.deepEqual(got.filter((c) => c.kind === "class").map((c) => c.value), ["save-button", "btn-save"]);
 });
 
 test("a class on exactly 10 elements is still a clue; on 11 it's common", () => {
-  const got = of(el("div", { class: "row card" }), { row: 11, card: 10 });
+  const got = of(el("div", { class: "row card" }), { "class=row": 11, "class=card": 10 });
   assert.deepEqual(got.map((c) => c.value), ["card"]);
 });
 

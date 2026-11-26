@@ -10,7 +10,12 @@ const WORDS = {
   style: ["style", "rule"],
 };
 
-const hasWord = (line, token) => (WORDS[token] ?? [token]).some((w) => new RegExp(`\\b${w}\\b`, "i").test(line));
+// A located CSS rule is listed by its selector, with no role or mapper
+// word: "- `file:line`: `.btn-primary`, elements 1 and 2".
+const RULE = /^\s*[-*]\s+`[^`]+`: `[^`]*`, elements? \d/;
+
+const hasWord = (line, token) =>
+  (RULE.test(line) && (token === "style" || token === "css")) || (WORDS[token] ?? [token]).some((w) => new RegExp(`\\b${w}\\b`, "i").test(line));
 
 // The bullet lines of the brief's "Where to look" section, in order.
 export function whereToLook(brief) {

@@ -1,11 +1,12 @@
 // The context per element (docs/design.md, "Context per element"), as a
 // tweak's targets carry it (schema/create.json): label, selector and text
-// (describe.js), its test IDs as search clues, accessibility role and name,
+// (describe.js), its search clues (clues.js), accessibility role and name,
 // size, key computed styles without defaults, matching CSS rules, nearby
 // text and trimmed HTML; and the viewport once per tweak. Gathered at pick
 // time, so it is what the developer was pointing at. Every string is page
-// text: the bridge renders it as data. The mappers (later tickets) add
-// locations, more clues and rule lines. The pure parts are tested in node.
+// text: the bridge renders it as data. Then the mappers (mappers.js) add
+// the source locations and rule lines, in the background: locate. The
+// pure parts are tested in node.
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
@@ -17,7 +18,6 @@
     "background-color", "padding", "margin", "gap", "border", "border-radius", "box-shadow",
   ];
   const DEFAULTS = new Set(["", "none", "normal", "auto", "0px", "rgba(0, 0, 0, 0)", "transparent"]);
-  const TEST_IDS = ["data-testid", "data-test", "data-qa", "data-cy"];
   const SIDES = ["top", "right", "bottom", "left"];
   const STYLE_CAP = 120;
   const SELECTOR_CAP = 200;
@@ -137,10 +137,6 @@
     const found = parts.map((p) => oneLine(p ?? "")).find(Boolean) ?? "";
     return cut(found, TEXT_CAP);
   }
-
-  // clues are the element's test IDs; the search-clue mapper adds the rest.
-  const clues = (el) =>
-    TEST_IDS.filter((a) => el.getAttribute(a)?.trim()).map((a) => ({ kind: a, value: cut(el.getAttribute(a).trim(), TEXT_CAP) }));
 
   // sheetFile is where a stylesheet comes from: Vite's dev ID, or its URL.
   function sheetFile(sheet) {
@@ -325,7 +321,7 @@
         if (!empty(v)) out[key] = v;
       } catch {}
     };
-    part("clues", () => clues(el));
+    part("clues", () => ns.clues.of(el));
     part("role", () => role(el));
     part("name", () => name(el, out.role ?? ""));
     part("size", () => {
@@ -345,5 +341,17 @@
     elements: els.map(element),
   });
 
-  ns.context = { targets, element, styles, trimHTML, role, nest, cut };
+  // locate runs the mappers for each element of targets (gathered from els
+  // by targets()), and adds what they find: the locations, and lines on the
+  // CSS rules. It resolves when every mapper has answered or timed out.
+  const locate = (gathered, els) =>
+    Promise.all(
+      els.map(async (el, i) => {
+        const e = gathered.elements[i];
+        const locations = await ns.mappers.run(el, { rules: e.rules ?? [] });
+        if (locations.length) e.locations = locations;
+      }),
+    );
+
+  ns.context = { targets, locate, rules, element, styles, trimHTML, role, nest, cut };
 })();

@@ -113,20 +113,27 @@
     requestAnimationFrame(() => text.focus({ preventScroll: true }));
   }
 
-  function submit() {
+  // submit sends the tweak. Send waits for the mappers only if they haven't
+  // finished (each has its timeout); a composer closed meanwhile sends
+  // nothing.
+  async function submit() {
     if (mode?.kind !== "compose" || parts.send.disabled) return;
-    mode.sending = true;
-    mode.error = "";
-    mode.ref = `t${++refs}`;
+    const sending = mode;
+    sending.sending = true;
+    sending.error = "";
+    sending.ref = `t${++refs}`;
     parts.text.readOnly = true;
     parts.refresh();
+    const request = parts.text.value.trim();
+    await sending.located;
+    if (mode !== sending) return;
     ns.worker.post({
       type: "create",
-      ref: mode.ref,
+      ref: sending.ref,
       url: location.href,
-      request: parts.text.value.trim(),
-      targets: mode.targets,
-      anchor: mode.anchor,
+      request,
+      targets: sending.targets,
+      anchor: sending.anchor,
     });
   }
 
@@ -464,9 +471,11 @@
   ns.panel = {
     compose(element, at) {
       if (mode?.kind === "compose" && mode.sending) return; // one send at a time
-      // The context is gathered now, while the page still shows what was picked.
+      // The context is gathered now, while the page still shows what was
+      // picked, and the mappers start on it in the background while you type.
       const targets = ns.context.targets([element]);
-      mode = { kind: "compose", element, targets, anchor: at, sending: false, error: "", returnTo: element };
+      const located = ns.context.locate(targets, [element]).catch(() => {});
+      mode = { kind: "compose", element, targets, located, anchor: at, sending: false, error: "", returnTo: element };
       drawCompose();
       place();
       composing(true);

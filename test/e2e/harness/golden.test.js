@@ -31,6 +31,13 @@ test("a location's line, role and mapper all count", () => {
   assert.match(briefProblems(EXAMPLE, { locations: [element, second, { ...template, role: "element" }] })[0], /location 3 should say element and rails/);
 });
 
+test("a CSS rule's line, its selector after the place, is a style location from the css mapper", () => {
+  const rule = { file: "app/assets/stylesheets/buttons.css", line: 42, role: "style", via: "css" };
+  assert.deepEqual(briefProblems(EXAMPLE, { locations: [element, second, template, rule] }), []);
+  assert.match(briefProblems(EXAMPLE, { locations: [element, second, template, { ...rule, via: "proscenium" }] })[0], /should say style and proscenium/);
+  assert.match(briefProblems(EXAMPLE, { locations: [{ ...element, role: "style", via: "css" }] })[0], /should say style and css/, "a React line isn't a rule");
+});
+
 test("more locations than the brief lists is a problem", () => {
   const five = [element, second, template, template, template];
   assert.match(briefProblems(EXAMPLE, { locations: five }).at(-1), /location 5, .* isn't listed: "Where to look" has 4/);

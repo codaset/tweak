@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Static fixture</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/theme.css" />
   </head>
   <body>
     <header class="toolbar">
@@ -17,6 +18,11 @@
         <label>Name <input id="name" name="name" placeholder="Your name" /></label>
         <button id="save" class="btn btn-primary" type="submit" data-testid="save">Save</button>
       </form>
+      <!-- Styled from theme.css, which has a source map back to src/theme.css. -->
+      <section class="plan">
+        <h2 class="plan-title">Team plan</h2>
+        <span class="badge" data-qa="plan-badge">Current</span>
+      </section>
       <p class="more">
         <button id="open-profile" class="btn" type="button">Edit profile</button>
         <button id="open-help" class="btn" type="button" popovertarget="help">Help</button>

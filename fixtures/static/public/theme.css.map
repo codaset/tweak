@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/theme.css"],
+  "sourcesContent": ["/* The plan card's theme. public/theme.css and its source map are built\n   from this file with esbuild 0.25.0:\n   esbuild src/theme.css --outfile=public/theme.css --sourcemap */\n\n.plan {\n  padding: 16px;\n  border: 1px solid #e5e7eb;\n  border-radius: 8px;\n\n  & .plan-title {\n    margin: 0 0 8px;\n    font-weight: 600;\n  }\n}\n\n.badge {\n  color: #166534;\n}\n\n.note,\n.badge {\n  margin-left: 8px;\n}\n"],
+  "mappings": "AAIA,CAAC;AACC,WAAS;AACT,UAAQ,IAAI,MAAM;AAClB,iBAAe;AAEf,IAAE,CAAC;AACD,YAAQ,EAAE,EAAE;AACZ,iBAAa;AACf;AACF;AAEA,CAAC;AACC,SAAO;AACT;AAEA,CAAC;AACD,CALC;AAMC,eAAa;AACf;",
+  "names": []
+}

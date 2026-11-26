@@ -1,0 +1,38 @@
+<!-- BEGIN app/views/layouts/application.html.erb
+--><!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rails fixture</title>
+    <meta name="csrf-param" content="authenticity_token" />
+<meta name="csrf-token" content="8G2mBMfNjGx67w2S8ADoSdAYdPGtWFP8IunO5FxZTHih94jW05yg6fpicuCixyB6VBcJhmYpZBgyulmE_xhi_w" />
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body>
+    <!-- BEGIN app/views/shared/_header.html.erb
+--><header class="masthead">
+  <a id="home" href="/">Rails fixture</a>
+</header>
+<!-- END app/views/shared/_header.html.erb -->
+    <main>
+      <!-- BEGIN app/views/pages/home.html.erb
+--><h1 class="page-title">Plans</h1>
+<ul class="plans">
+  <!-- BEGIN app/views/pages/_plan.html.erb
+--><li class="plan-row">Starter, $9 a month</li>
+<!-- END app/views/pages/_plan.html.erb --><!-- BEGIN app/views/pages/_plan.html.erb
+--><li class="plan-row">Team, $29 a month</li>
+<!-- END app/views/pages/_plan.html.erb -->
+</ul>
+<!-- BEGIN app/views/pages/_signup.html.erb
+--><form class="signup" action="/" method="get">
+  <label>Email <input id="email" name="email" placeholder="you@example.com"></label>
+  <button class="signup-submit" type="submit" data-testid="signup">Start free trial</button>
+</form>
+<!-- END app/views/pages/_signup.html.erb -->
+<!-- END app/views/pages/home.html.erb -->
+    </main>
+  </body>
+</html>
+<!-- END app/views/layouts/application.html.erb -->

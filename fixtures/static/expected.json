@@ -3,7 +3,7 @@
     "name": "save button",
     "pick": { "selector": "#save" },
     "locations": [],
-    "clues": [],
+    "clues": ["data-testid=save", "id=save", "text Save", "class btn-primary"],
     "edit": { "file": "public/index.html", "find": ">Save<", "replace": ">Save draft<" }
   },
   {
@@ -11,6 +11,21 @@
     "first": { "click": "#open-profile" },
     "pick": { "selector": "#profile-save" },
     "locations": [],
-    "clues": []
+    "clues": ["id=profile-save", "text Save profile"]
+  },
+  {
+    "name": "plan title, a nested rule through the sheet's source map",
+    "pick": { "selector": ".plan-title" },
+    "locations": [{ "file": "src/theme.css", "line": 10, "role": "style", "via": "css" }],
+    "clues": ["text Team plan", "class plan-title"]
+  },
+  {
+    "name": "plan badge, two rules through the source map",
+    "pick": { "selector": ".badge" },
+    "locations": [
+      { "file": "src/theme.css", "line": 16, "role": "style", "via": "css" },
+      { "file": "src/theme.css", "line": 20, "role": "style", "via": "css" }
+    ],
+    "clues": ["data-qa=plan-badge", "text Current", "class badge"]
   }
 ]

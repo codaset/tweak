@@ -159,6 +159,38 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     });
     assert.equal(await env.tab.evaluate(noCard), true, "the toast doesn't open the card");
   });
+
+  // Rule gathering needs the CSSOM, so these run in the page: :scope in an
+  // @scope is the scope root, never the element itself.
+  test("a rule in an @scope matches from its scope root: :scope is the root", async () => {
+    await open(env);
+    const rules = await env.tab.evaluate(`(() => {
+      const style = document.createElement("style");
+      style.textContent = "@scope (.card) { :scope > button { color: red } :scope { color: blue } & > .x { color: green } }";
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = "<button>in</button><p><button>deeper</button></p><span class='x'>x</span>";
+      const outside = document.createElement("button");
+      document.body.append(style, card, outside);
+      const selectors = (el) => (ns.context.element(el).rules ?? []).map((r) => r.selector).filter((s) => s.startsWith("@scope"));
+      const got = {
+        child: selectors(card.querySelector("button")),
+        deeper: selectors(card.querySelector("p button")),
+        root: selectors(card),
+        amp: selectors(card.querySelector(".x")),
+        outside: selectors(outside),
+      };
+      style.remove(), card.remove(), outside.remove();
+      return got;
+    })()`);
+    assert.deepEqual(rules, {
+      child: ["@scope (.card) { :scope > button }"],
+      deeper: [],
+      root: ["@scope (.card) { :scope }"],
+      amp: ["@scope (.card) { & > .x }"],
+      outside: [],
+    });
+  });
 });
 
 // No lost tweaks (design.md): a stand-in that watches but never runs tweak

@@ -38,6 +38,8 @@
       --on-working: #1b1f24;
       --tone-question: #2563d9;
       --on-question: #ffffff;
+      --question-surface: #edf2fd;
+      --question-text: #1f55c0;
       --tone-done: #1d8049;
       --on-done: #ffffff;
       --tone-ended: #6b7280;
@@ -63,6 +65,8 @@
         --on-working: #101318;
         --tone-question: #6a9bff;
         --on-question: #101318;
+        --question-surface: #222a38;
+        --question-text: #8fb3ff;
         --tone-done: #4cc983;
         --on-done: #101318;
         --tone-ended: #8a919b;
@@ -222,17 +226,19 @@
       overflow: auto;
     }
     /* The conversation after the request */
-    .thread { display: grid; gap: 8px; max-height: 280px; overflow: auto; overscroll-behavior: contain; }
+    .thread { display: grid; gap: 8px; max-height: 280px; overflow: auto; overscroll-behavior: contain; border-radius: 6px; }
+    .thread:focus-visible { outline: 2px solid var(--outline); outline-offset: 2px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .entry { display: grid; gap: 2px; }
     .entry-label { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
     .entry-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
     .entry.kind-question {
       padding: 8px 10px;
       border-radius: 8px;
-      background: color-mix(in srgb, var(--tone-question) 10%, var(--bg));
+      background: var(--question-surface);
       box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone-question) 28%, transparent);
     }
-    .entry.kind-question .entry-label { color: var(--tone-question); }
+    .entry.kind-question .entry-label { color: var(--question-text); }
     .entry.kind-reply { padding-left: 10px; border-left: 2px solid var(--line); }
     .entry.kind-reply .entry-text, .entry.kind-plan .entry-text { color: var(--muted); }
     .entry.kind-reason .entry-label { color: var(--tone-ended); }

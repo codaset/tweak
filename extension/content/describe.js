@@ -18,7 +18,10 @@
   };
   // How sent and delivered read once the developer has replied to a question.
   const REPLIED = { sent: "Reply sent", delivered: "Claude has your reply" };
-  // How the card labels each entry of the conversation after the request.
+  // The conversation's vocabulary (schema/event.json's entry kinds and
+  // senders), the one place the card reads it from: how each kind is
+  // labelled, and whether a sender's new entries are read out. A new kind
+  // needs only a line here, and a .kind-<kind> rule if it looks different.
   const ENTRY = {
     request: "You",
     plan: "Claude's plan",
@@ -29,6 +32,7 @@
     undo: "Undo",
     notice: "Tweak",
   };
+  const ANNOUNCED = { you: false, claude: true, bridge: true }; // your own words aren't read back
   // SENDING is a card's tweak that the bridge hasn't sent back yet.
   const SENDING = { text: "Sending…", tone: "sent" };
 
@@ -59,8 +63,20 @@
   // share: the tone, and working (the pulse).
   // thread is the conversation the card shows below the request: every
   // later entry, labelled, oldest first.
+  // Each entry has its label, the classes the card styles it by, and what a
+  // screen reader hears when it arrives ("" for none).
   const thread = (tweak) =>
-    (tweak?.entries ?? []).slice(1).map((e) => ({ kind: e.kind, from: e.from, label: ENTRY[e.kind] ?? e.kind, text: e.text }));
+    (tweak?.entries ?? []).slice(1).map((e) => {
+      const label = ENTRY[e.kind] ?? e.kind;
+      return {
+        kind: e.kind,
+        from: e.from,
+        label,
+        text: e.text,
+        className: `entry kind-${e.kind} from-${e.from}`,
+        announce: ANNOUNCED[e.from] ? `${label}: ${e.text}` : "",
+      };
+    });
 
   const classes = (tweak) => `tone-${status(tweak).tone}${tweak?.status === "working" ? " working" : ""}`;
 

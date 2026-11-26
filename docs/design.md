@@ -1208,7 +1208,7 @@ active tab: everything in it is about the tab in front.
 - the tweaks whose pin has no element on the page, each with **Show**, which opens its card
 - resolved tweaks, newest first, with what each changed, Undo (or where its undo stands, with the
   `/tweak <origin>` command to copy while it waits for a session) and how long it's kept; only the
-  front tab's site's when its URL can be read (with site access), else all of them
+  front tab's site's. Without site access to read its URL it lists none, and says it needs access
 - claim status, with the `/tweak` command to copy: "No session claims this page" with
   `/tweak <origin>` on an unclaimed one, once the panel can read the tab's URL (site access, or the
   toolbar click's `activeTab`)

@@ -1205,6 +1205,19 @@ describe("static, withdrawn and resolved tweaks", { skip: skipReason(fixture) ??
     // A reload brings back no pin for it.
     await open(env, c.path ?? "/");
     assert.equal(await env.tab.evaluate(`[...root.querySelectorAll(".pin")].some((p) => p.textContent === "${n}")`), false);
+
+    // On a tab whose address it can't read (127.0.0.1: this copy has no
+    // access there), the list is about no site, so it lists none, and says why.
+    const app = await env.serve("127.0.0.1");
+    await env.page.goto(app.url("/"));
+    const shown = await until(
+      () => panel.evaluate(() => {
+        const note = document.getElementById("resolved-access");
+        return note.hidden || note.closest("[hidden]") ? null : { note: note.textContent, rows: document.querySelectorAll("#resolved-list li").length };
+      }),
+      { what: "the side panel to say why it lists no resolved tweaks" },
+    );
+    assert.deepEqual(shown, { note: "Tweak needs site access to list this site's resolved tweaks.", rows: 0 });
   });
 });
 

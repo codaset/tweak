@@ -17,9 +17,9 @@ const STATUS = {
   refused: "Tweak refused this extension",
 };
 
-// The panel follows its window's active tab: suggestions are about it, and
-// so are the resolved tweaks, by the tab's site when its URL can be read
-// (with site access granted), else all of them.
+// The panel follows its window's active tab: everything in it is about that
+// tab, the resolved tweaks too, by the tab's site. With no access to read
+// its URL, the panel lists none, and says so.
 let activeTab = null;
 let activeURL = ""; // its URL, which the claim status is about
 let last = null; // the worker's last state, drawn again when the tab changes
@@ -106,10 +106,13 @@ let port = null;
 
 function renderResolved(state) {
   const now = Date.now();
-  const site = /^https?:/.test(activeOrigin ?? "") ? activeOrigin : "";
-  const list = (state.resolved ?? []).filter((t) => (!site || describe.origin(t.url) === site) && (!t.deleteAt || Date.parse(t.deleteAt) > now));
+  const kept = (state.resolved ?? []).filter((t) => !t.deleteAt || Date.parse(t.deleteAt) > now);
+  const list = activeOrigin ? kept.filter((t) => describe.origin(t.url) === activeOrigin) : [];
+  // The tab's URL can't be read without access: its site's might be here.
+  const unread = !activeURL && !state.granted && kept.length > 0;
   for (const t of state.resolved ?? []) if (undos.get(t.number)?.state !== t.change?.state) undos.delete(t.number);
-  $("resolved").hidden = list.length === 0;
+  $("resolved").hidden = list.length === 0 && !unread;
+  $("resolved-access").hidden = !unread;
   // While the bridge is down the list stays, faded, and Undo is refused.
   $("resolved").classList.toggle("offline", state.connection === "disconnected" || state.connection === "refused");
   // Rows are rebuilt only when what they show changes, and the focus is
@@ -308,7 +311,9 @@ chrome.windows.getCurrent().then(async (win) => {
     chrome.tabs.get(info.tabId).then(showTab, () => showTab({ id: info.tabId }));
   });
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
-    if (tabId === activeTab && "url" in change) showTab(tab);
+    // Chrome leaves the URL out where it can't be read: a move to such a
+    // page shows as the URL going.
+    if (tabId === activeTab && (tab.url ?? "") !== activeURL) showTab(tab);
   });
 });
 

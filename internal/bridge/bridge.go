@@ -45,6 +45,9 @@ type Options struct {
 	// "No lost tweaks"); AgainCheck is how often the bridge looks (every
 	// 5 seconds, or a tenth of AgainAfter when that is shorter).
 	AgainAfter, AgainCheck time.Duration
+	// ScreenshotWait is how long after a create that says a screenshot
+	// follows a brief waits for it (5 seconds when zero).
+	ScreenshotWait time.Duration
 	// Clock is the bridge's time, and its store's (time.Now when nil).
 	Clock func() time.Time
 	Log   io.Writer
@@ -82,6 +85,9 @@ type Bridge struct {
 	extensionVersion string     // the embedded extension's version
 	heardMu          sync.Mutex // guards heard
 	heard            string     // the version of the extension that last said hello
+
+	shotsMu sync.Mutex
+	shots   map[int64]chan struct{} // screenshots on their way: closed when stored or given up on
 }
 
 // Info is bridge.json, and the body of GET /bridge.
@@ -114,6 +120,9 @@ func Start(o Options) (*Bridge, error) {
 	}
 	if o.Clock == nil {
 		o.Clock = time.Now
+	}
+	if o.ScreenshotWait == 0 {
+		o.ScreenshotWait = 5 * time.Second
 	}
 	if o.Log == nil {
 		o.Log = os.Stderr

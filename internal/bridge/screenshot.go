@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/codaset/tweak/internal/store"
 )
@@ -79,7 +81,48 @@ func (b *Bridge) putScreenshot(w http.ResponseWriter, r *http.Request) {
 		b.internal(w, err)
 		return
 	}
+	b.screenshotSettled(n)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// expectScreenshot notes that tweak n's screenshot is on its way, so a brief
+// fetched before it lands waits for it (awaitScreenshot), for
+// ScreenshotWait after the create at most. Kept in memory only: a bridge
+// that restarts meanwhile just doesn't wait.
+func (b *Bridge) expectScreenshot(n int64) {
+	b.shotsMu.Lock()
+	defer b.shotsMu.Unlock()
+	if b.shots == nil {
+		b.shots = map[int64]chan struct{}{}
+	}
+	b.shots[n] = make(chan struct{})
+	time.AfterFunc(b.opts.ScreenshotWait, func() { b.screenshotSettled(n) })
+}
+
+// screenshotSettled ends the wait for tweak n's screenshot: stored, or
+// given up on.
+func (b *Bridge) screenshotSettled(n int64) {
+	b.shotsMu.Lock()
+	defer b.shotsMu.Unlock()
+	if ch, ok := b.shots[n]; ok {
+		close(ch)
+		delete(b.shots, n)
+	}
+}
+
+// awaitScreenshot waits while tweak n's screenshot is on its way.
+func (b *Bridge) awaitScreenshot(ctx context.Context, n int64) {
+	b.shotsMu.Lock()
+	ch := b.shots[n]
+	b.shotsMu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case <-ch:
+	case <-ctx.Done():
+	case <-b.closing.Done():
+	}
 }
 
 // writeAtomically writes a file private to the user through a temporary

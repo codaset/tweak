@@ -28,6 +28,10 @@
     },
     "anchor": {
       "$ref": "#/$defs/anchor"
+    },
+    "screenshot": {
+      "description": "The worker holds a capture of the pick, which it uploads with PUT /tweaks/:n/screenshot once the tweak has its number; a brief fetched before it lands waits a few seconds for it.",
+      "type": "boolean"
     }
   },
   "required": [

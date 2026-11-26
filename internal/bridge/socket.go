@@ -64,6 +64,9 @@ type createIn struct {
 	Request string          `json:"request"`
 	Targets json.RawMessage `json:"targets"`
 	Anchor  json.RawMessage `json:"anchor"`
+	// Screenshot says the worker holds a capture it uploads once the tweak
+	// has its number.
+	Screenshot bool `json:"screenshot"`
 }
 
 // resultOut answers a message carrying a ref: the tweak's number, or why not.
@@ -294,6 +297,9 @@ func (b *Bridge) create(in createIn) resultOut {
 		out.Error, out.Message = "internal", "the bridge failed: "+err.Error()
 	default:
 		out.Number = tw.Number
+		if in.Screenshot {
+			b.expectScreenshot(tw.Number)
+		}
 		b.log.Printf("tweak %d created on %s", tw.Number, tw.Page)
 	}
 	return out

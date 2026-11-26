@@ -512,16 +512,17 @@ describe("static, when Claude doesn't pick a tweak up", { skip: skipReason(fixtu
 });
 
 // Screenshots (design.md § Screenshot). A tweak sent from the page, and the
-// PNG the bridge stored for it: its signature and its IHDR size.
+// PNG the bridge stored for it: its signature and its IHDR size. It returns
+// the number, and the brief the stand-in fetched at once.
 async function sendTweak(env, target, request) {
   await pick(env, target);
   await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
   await env.page.keyboard.type(request);
   const from = env.watcher.lines.length;
   await env.page.keyboard.press("Enter");
-  const { number } = await env.claude.nextTweak(env.watcher, { from });
+  const { number, brief } = await env.claude.nextTweak(env.watcher, { from });
   await env.tab.until(`ns.panel.showing()`, { is: (s) => s === number, what: `the card of tweak ${number}` });
-  return number;
+  return { n: number, brief };
 }
 
 async function storedScreenshot(env, n) {
@@ -559,19 +560,19 @@ describe("static, with access to every site", { skip: skipReason(fixture) ?? fal
     await open(env);
     assert.equal(await env.page.evaluate("devicePixelRatio"), 2);
     const crop = await expectedCrop(env, "#save");
-    const n = await sendTweak(env, { selector: "#save" }, "make the save button green");
+    const { n, brief } = await sendTweak(env, { selector: "#save" }, "make the save button green");
     const shot = await storedScreenshot(env, n);
     assert.deepEqual({ width: shot.width, height: shot.height }, crop);
     assert.equal(await held(), 0, "the capture went with the tweak");
     assert.ok(await env.tab.evaluate(`!ns.overlay.host.style.visibility`), "the overlay is shown again");
-    const brief = await env.claude.work(n);
+    // Fetched the moment the tweak arrived: it waited for the upload.
     assert.ok(brief.includes(`Screenshot: ${shot.file}. View it`), "the brief names the screenshot");
     await env.page.keyboard.press("Escape");
   });
 
   test("a big area's screenshot is scaled down to 1600 px on its longest side", async () => {
     await open(env);
-    const n = await sendTweak(env, { area: { x: 10, y: 10, width: 1080, height: 780 } }, "tidy up this whole area");
+    const { n } = await sendTweak(env, { area: { x: 10, y: 10, width: 1080, height: 780 } }, "tidy up this whole area");
     const shot = await storedScreenshot(env, n);
     assert.equal(Math.max(shot.width, shot.height), 1600);
     assert.ok(shot.width > shot.height, `${shot.width}×${shot.height} keeps the viewport's shape`);
@@ -617,7 +618,7 @@ describe("static on 127.0.0.1, through activeTab", { skip: skipReason(fixture) ?
     await env.page.reload();
     await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the content script on 127.0.0.1" });
     const crop = await expectedCrop(env, "#save");
-    const n = await sendTweak(env, { selector: "#save" }, "make the save button green");
+    const { n } = await sendTweak(env, { selector: "#save" }, "make the save button green");
     const shot = await storedScreenshot(env, n);
     assert.deepEqual({ width: shot.width, height: shot.height }, crop);
   });

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tweak "github.com/codaset/tweak"
 	"github.com/codaset/tweak/internal/version"
@@ -151,5 +152,66 @@ func TestAScreenshotStillNeedsXTweak(t *testing.T) {
 	resp, body := h.put("/tweaks/1/screenshot", png, map[string]string{"Origin": extension["Origin"], "x-tweak": "no"})
 	if resp.StatusCode != 403 || !strings.Contains(string(body), "forbidden") {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+}
+
+// A create that says a screenshot follows makes a brief fetched before it
+// lands wait for it, a while at most: Claude can pick a tweak up faster than
+// the worker crops and uploads.
+func TestTheBriefWaitsForAScreenshotThatsOnItsWay(t *testing.T) {
+	h, s := tracer(t)
+	m := createMsg("r1", "https://ernie.localhost/", "make it green")
+	m["screenshot"] = true
+	s.send(m)
+	s.readUntil("result")
+
+	briefs := make(chan string, 1)
+	go func() {
+		_, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+		briefs <- string(body)
+	}()
+	select {
+	case b := <-briefs:
+		t.Fatalf("the brief didn't wait:\n%s", b)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if resp, body := h.put("/tweaks/1/screenshot", png, extension); resp.StatusCode != 204 {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	select {
+	case b := <-briefs:
+		if !strings.Contains(b, "Screenshot: "+filepath.Join(h.cfg.StateDir, "screenshots", "1.png")) {
+			t.Fatalf("brief:\n%s", b)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the brief still waits after the upload")
+	}
+}
+
+func TestAScreenshotThatNeverComesIsWaitedForOnlyAWhile(t *testing.T) {
+	h, s := tracer(t, func(o *Options) { o.ScreenshotWait = 300 * time.Millisecond })
+	m := createMsg("r1", "https://ernie.localhost/", "make it green")
+	m["screenshot"] = true
+	s.send(m)
+	s.readUntil("result")
+	started := time.Now()
+	_, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	if took := time.Since(started); took < 200*time.Millisecond || took > 2*time.Second || !strings.Contains(string(body), "Screenshot: none (capture failed)") {
+		t.Fatalf("after %v:\n%s", took, body)
+	}
+	// Once given up on, it isn't waited for again.
+	started = time.Now()
+	h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	if took := time.Since(started); took > 200*time.Millisecond {
+		t.Fatalf("waited again: %v", took)
+	}
+
+	// Without one on its way, there's nothing to wait for.
+	s.send(createMsg("r2", "https://ernie.localhost/", "and this"))
+	s.readUntil("result")
+	started = time.Now()
+	h.do(as("s1", req{method: "POST", path: "/tweaks/2/work"}))
+	if took := time.Since(started); took > 200*time.Millisecond {
+		t.Fatalf("waited for nothing: %v", took)
 	}
 }

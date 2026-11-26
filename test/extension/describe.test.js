@@ -127,3 +127,29 @@ test("a delivered tweak Claude hasn't picked up after two resends says so, from 
   const replied = { ...waiting, entries: [{ kind: "request" }, { kind: "question" }, { kind: "reply" }] };
   assert.equal(status(replied, at(waiting.againAt, 0)).text, busy);
 });
+
+test("a finished tweak's card says what it changed", () => {
+  const { change } = ns.describe;
+  const file = (path, outside = false) => ({ path, outside });
+  const tweak = (status, c) => ({ status, change: { state: "recorded", checked: true, files: [], unrecorded: [], ...c } });
+  const said = (t) => {
+    const c = change(t);
+    return c && [c.title, c.files.map((f) => f.path), c.unrecorded.map((f) => f.path)];
+  };
+
+  const files = { files: [file("app/views/users/_form.html.erb"), file("/shared/buttons.css", true)] };
+  assert.deepEqual(said(tweak("done", files)), ["Files changed", ["app/views/users/_form.html.erb", "/shared/buttons.css"], []]);
+  assert.deepEqual(said(tweak("done", { ...files, unrecorded: [file("a.rb")] })), ["Files changed", ["app/views/users/_form.html.erb", "/shared/buttons.css"], ["a.rb"]]);
+  assert.equal(change(tweak("done", files)).files[1].outside, true);
+  // Nothing recorded: something changed anyway, or there's no repo to check.
+  assert.deepEqual(said(tweak("done", { state: "nothing-recorded", unrecorded: [file("a.rb")] })), ["No edits recorded", [], ["a.rb"]]);
+  assert.deepEqual(said(tweak("done", { state: "nothing-recorded", checked: false })), ["No edits recorded", [], []]);
+  assert.deepEqual(said(tweak("done", { state: "nothing-recorded" })), ["No files changed", [], []]);
+  // Declined after edits keeps its change; declined before any says nothing.
+  assert.deepEqual(said(tweak("declined", files))[0], "Files changed");
+  assert.equal(change(tweak("declined", { state: "nothing-recorded" })), null);
+  // Never while Claude works or asks, nor before capture has ended once.
+  assert.equal(change(tweak("working", files)), null);
+  assert.equal(change(tweak("question", files)), null);
+  assert.equal(change({ status: "done" }), null);
+});

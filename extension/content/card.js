@@ -2,10 +2,11 @@
 // at once on a pick; Send turns it into the card, which shows the status live
 // (with the time spent while working), the request and the conversation after
 // it: Claude's plan, its question, your reply, its summary or its reason for
-// declining. While Claude has a question, the card has a reply box, and the
-// card opens by itself when the question arrives (without taking the focus).
-// When Claude hasn't picked a delivered tweak up after the bridge sent it
-// twice more, the card says so and offers Send again.
+// declining; once Claude is done, the files it changed. While Claude has a
+// question, the card has a reply box, and the card opens by itself when the
+// question arrives (without taking the focus). When Claude hasn't picked a
+// delivered tweak up after the bridge sent it twice more, the card says so
+// and offers Send again.
 // The card stays open until esc or ×; clicking around the page, or navigating
 // within it, leaves it open. While the page is dormant (no claim covers it)
 // the card is hidden, and it comes back when a claim covers the page again.
@@ -192,7 +193,12 @@
     retry.append(retryError, resend);
     retry.hidden = true;
 
-    panel.append(status, retry, request, thread, answer, heard);
+    // What the tweak changed, once Claude is done (design.md § On the card).
+    const changed = el("section", "change");
+    changed.hidden = true;
+    changed.setAttribute("aria-label", "What changed");
+
+    panel.append(status, retry, request, thread, changed, answer, heard);
     status.setAttribute("aria-live", "polite");
     // heardUpTo is how many entries have been read out or were there when the
     // card opened; a card opened by Claude's question reads that one out.
@@ -205,6 +211,8 @@
       request,
       thread,
       said: "",
+      changed,
+      listed: "",
       heard,
       heardUpTo,
       answer,
@@ -250,6 +258,8 @@
       announce(entries.slice(parts.heardUpTo));
       parts.heardUpTo = entries.length;
     }
+
+    drawChange(ns.describe.change(tweak));
 
     const asking = tweak?.status === "question";
     if (answer.hidden === asking) {
@@ -304,6 +314,39 @@
     mode.resendError = why;
     if (!why) mode.resent = mode.resendFrom;
     updateCard();
+  }
+
+  // drawChange lists what the tweak changed, redrawn only when it changes:
+  // the recorded files, then the files that changed without being recorded;
+  // files outside the session's project are labelled so.
+  function drawChange(c) {
+    const { changed } = parts;
+    const listed = JSON.stringify(c);
+    if (listed === parts.listed) return;
+    parts.listed = listed;
+    changed.hidden = !c;
+    if (!c) return changed.replaceChildren();
+    const { OUTSIDE, UNRECORDED } = ns.describe;
+    const file = (f) => {
+      const item = el("li", f.outside ? "file outside" : "file");
+      item.append(el("code", "path", f.path));
+      if (f.outside) item.append(el("span", "where", OUTSIDE));
+      return item;
+    };
+    changed.className = "change change-" + c.kind;
+    changed.replaceChildren(el("div", "entry-label", c.title));
+    if (c.files.length) {
+      const list = el("ul", "files");
+      list.append(...c.files.map(file));
+      changed.append(list);
+    }
+    if (c.unrecorded.length) {
+      const also = el("div", "unrecorded");
+      const list = el("ul", "files");
+      list.append(...c.unrecorded.map(file));
+      also.append(el("p", "note", UNRECORDED), list);
+      changed.append(also);
+    }
   }
 
   // announce reads new entries out through the live region. The text is set
@@ -371,8 +414,10 @@
     let y = at.y + GAP;
     if (x + w > innerWidth - EDGE) x = at.x - GAP - w;
     if (y + h > innerHeight - EDGE) y = at.y - GAP - h;
-    x = Math.min(Math.max(EDGE, x), innerWidth - EDGE - w);
-    y = Math.min(Math.max(EDGE, y), innerHeight - EDGE - h);
+    // Clamped to the far edge first, then the near one: a panel bigger than
+    // the viewport keeps its head on screen (its max-height scrolls the rest).
+    x = Math.max(EDGE, Math.min(x, innerWidth - EDGE - w));
+    y = Math.max(EDGE, Math.min(y, innerHeight - EDGE - h));
     panel.style.left = `${Math.round(x)}px`;
     panel.style.top = `${Math.round(y)}px`;
   }

@@ -1,7 +1,7 @@
 // A real development bridge, and the scripted stand-in for Claude that
 // drives it through the tweak CLI (design.md § Round trips).
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -69,6 +69,29 @@ export function standIn(bridge, { folder, session = `claude-stand-in-${process.p
     // The same, with stdin: a `-` message, or a hook's JSON for
     // `tweak hook pre-edit` in the round trips.
     tweakWith: (input, ...args) => run(args, { env, cwd: folder, input }),
+    // A case's edit as Claude's Edit tool makes it: first the PreToolUse
+    // hook, with the JSON Claude Code gives it on stdin, then the edit. The
+    // hook says nothing, and is quick.
+    async edit({ file, find, replace }) {
+      const path = join(folder, file);
+      const hookInput = {
+        session_id: session,
+        transcript_path: join(folder, ".transcript.jsonl"),
+        cwd: folder,
+        permission_mode: "default",
+        hook_event_name: "PreToolUse",
+        tool_name: "Edit",
+        tool_input: { file_path: path, old_string: find, new_string: replace, replace_all: false },
+        tool_use_id: "toolu_e2e",
+      };
+      const began = Date.now();
+      const out = await run(["hook", "pre-edit"], { env, cwd: folder, input: JSON.stringify(hookInput) });
+      if (out !== "") throw new Error(`tweak hook pre-edit printed ${JSON.stringify(out)}`);
+      if (Date.now() - began > 2000) throw new Error(`tweak hook pre-edit took ${Date.now() - began} ms`);
+      const before = readFileSync(path, "utf8");
+      if (!before.includes(find)) throw new Error(`${file} has no ${JSON.stringify(find)} to replace`);
+      writeFileSync(path, before.replace(find, replace));
+    },
     claim: (pattern) => tweak("claim", pattern),
     release: () => tweak("release"),
     work: (n) => tweak("work", String(n)),

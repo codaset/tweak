@@ -38,6 +38,12 @@ if [ -x "$kept" ]; then
   exec "$kept" "$@"
 fi
 
+# A hook before the first download has nothing to do: no bridge has run,
+# so nothing is capturing. It never downloads, prints or fails an edit.
+if [ "${1:-}" = hook ]; then
+  exit 0
+fi
+
 here=$(CDPATH='' cd "$(dirname "$0")" 2>/dev/null && pwd) || fail "can't find the launcher's folder"
 want=$(awk -v name="$name" '$2 == name || $2 == "*" name { print $1; exit }' "$here/checksums.txt" 2>/dev/null)
 [ -n "$want" ] || fail "no checksum for $name in $here/checksums.txt"

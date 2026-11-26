@@ -27,6 +27,10 @@ export const REPLY_INPUT = ".panel .answer textarea";
 export const REPLY_SEND = ".panel .answer .send";
 // Send again, while Claude hasn't picked a tweak up.
 export const CARD_RESEND = ".panel .retry .send";
+// What a finished tweak changed: its title ("Files changed", "No edits
+// recorded", "No files changed") and the recorded files' paths.
+export const CARD_CHANGE = ".panel .change .entry-label";
+export const CARD_FILES = ".panel .change > .files .path";
 const text = (selector) => `root.querySelector(${JSON.stringify(selector)})?.textContent`;
 const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 
@@ -165,10 +169,11 @@ async function pickCase(env, c) {
 
 // A golden case through the tracer: pick it, send a tweak, let the stand-in
 // work it, check the brief against the case, finish it, and see the card
-// reach Done. Round-trip cases (with `edit`) will add the edit and Undo
-// between work and done. The brief's and the watch line's own layout are
+// reach Done. A round-trip case (with `edit`) makes its edit through the
+// edit hook between work and done, and the Done card lists the file; Undo
+// is still to come. The brief's and the watch line's own layout are
 // golden-tested in Go; this checks the wiring.
-export async function tracer(env, c, { request = `tweak the ${c.name}`, summary = `tweaked the ${c.name}` } = {}) {
+export async function tracer(env, c, { request = `tweak the ${c.name}`, summary = `tweaked the ${c.name}`, edit = c.edit } = {}) {
   const element = await pickCase(env, c);
   await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
   await env.page.keyboard.type(request);
@@ -185,10 +190,20 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
   assert.deepEqual(briefProblems(brief, c), []);
   await env.tab.until(text(CARD_STATUS), { is: (s) => s?.startsWith("Claude is working on it"), what: "the card to show Claude working" });
 
+  // A round-trip case's edit, through the edit hook, as Claude makes it.
+  // A case's edit is made once, by its own tracer test: other tests reuse
+  // the case on the same copy, and pass edit: null.
+  if (edit) await env.claude.edit(edit);
+
   // The summary goes in on stdin, as `tweak done <n> -` reads it.
   await env.claude.tweakWith(`${summary}\n`, "done", String(n), "-");
   await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
   assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
+  if (edit) {
+    // The card lists the file the hook recorded. Undo comes with #40.
+    await env.tab.until(text(CARD_CHANGE), { is: (s) => s === "Files changed", what: "the card to list the files changed" });
+    assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(${JSON.stringify(CARD_FILES)})].map((f) => f.textContent)`), [edit.file]);
+  }
   await env.page.keyboard.press("Escape");
   await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });
   return n;

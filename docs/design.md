@@ -387,9 +387,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   starts undo capture for the session; a POST because fetching changes state),
   `POST /tweaks/:n/status` (`{status, message}`: `done`, `question` or `declined` with Claude's
   summary, question or reason, or `queued` with none; it answers `{number, status}`),
-  `POST /tweaks/:n/entries` (`{kind: "plan", text}`, answered the same way), and `POST /edits/before` (the edit hook sends a file's path
-  before an agent edits it; the bridge reads the file and decides which tweak it belongs to; see
-  [Undo](#undo)). Every CLI request counts as the
+  `POST /tweaks/:n/entries` (`{kind: "plan", text}`, answered the same way), and `POST /edits/before` (`{path}`, absolute: the edit hook sends a file's path
+  before an agent edits it; the bridge saves the before copy if the session is capturing, then
+  answers 204 either way; see [Undo](#undo)). Every CLI request counts as the
   session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
 - **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version}` (the extension's
@@ -401,7 +401,7 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   tweak has a session). `reply` is `{ref, number, text}`, answered with the number, or `not-asked`
   when Claude isn't waiting on a question, `no-tweak` or `bad-request`. `again` is `{ref, number}`, the card's
   **Send again**, answered with the number, or `picked-up` once Claude has confirmed the tweak. A snapshot holds only the open (unresolved) tweaks, and `tweak-created`,
-  `tweak-status`, `tweak-replied` and `tweak-again` events carry whole tweaks, entries included. Their shapes, with the `GET /inbox`
+  `tweak-status`, `tweak-replied` and `tweak-again` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`
   reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
   `tweak watch` exits on), are in `schema/`.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
@@ -459,8 +459,8 @@ when a tweak passes to another session; see [When the session goes quiet](#when-
 | `claims` | id, session, pattern, created |
 | `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
 | `entries` | tweak, from, kind, text, at |
-| `changes` | tweak, state, unrecorded files (JSON) |
-| `change_files` | change, path, contents before (or absent), contents after |
+| `changes` | tweak (one change each), state, unrecorded files (JSON), capturing session, folder, git repo and tree, whether the check ran |
+| `change_files` | change, path (once per change), contents before (or absent), contents after, path as shown, outside the project, recordable |
 | `events` | sequence, type, tweak or claim, payload (JSON), at |
 | `deliveries` | session, last acknowledged sequence |
 
@@ -1082,19 +1082,25 @@ why the hook records and git only checks is in
 
 ### Capture
 
-- At most one tweak per session is **capturing**. `tweak work <n>` makes it tweak *n*, replacing any
-  other. Capture ends at `tweak done`, `ask`, `decline`, `queue` or `release`, when the session
+- At most one tweak per session is **capturing**. `tweak work <n>` makes it tweak *n*, ending any
+  other first. Capture ends at `tweak done`, `ask` or `decline` of the capturing tweak (it is
+  `working`, which `queue` can't leave, so `queue`, like declining another tweak while you work,
+  leaves it running), at `release` (of any of the session's claims), when the session
   ends (exit or `/clear`, through `tweak hook session-end`), and when its claim lapses (the backstop
-  for a session that dies without its hook).
+  for a session that dies without its hook). Capture is kept in SQLite, so it survives a bridge restart.
 - While a tweak is capturing, the bridge keeps a marker file at
-  `~/.local/state/codaset-tweak/capturing/<session-id>`.
+  `~/.local/state/codaset-tweak/capturing/<session-id>` (any character other than a letter, digit,
+  `-` or `_` written as `%XX`, so an ID can only name a file there).
 - **The edit hook** (`tweak hook pre-edit`, a `PreToolUse` hook on `^(Edit|Write|NotebookEdit)$`)
   reads `session_id` from its input. With no marker it exits at once, without contacting the bridge.
   With one, it posts the file's path to `POST /edits/before`, and the bridge saves the file's
   current contents as the **before copy**, the first time each file is touched in this tweak only (a
   file that doesn't exist yet is recorded as absent). The hook always exits 0 with no output, has a
   2-second timeout, and never blocks or slows an edit; if the bridge is down, the edit just goes
-  unrecorded.
+  unrecorded. It never starts a bridge, and before the launcher's first download it exits at once.
+  The file is `tool_input.file_path` (Edit, Write) or `tool_input.notebook_path` (NotebookEdit: the
+  tool's own input names it so, but the hooks reference documents no NotebookEdit fields, so it's
+  still to be confirmed in a live session); a relative path is taken against the input's `cwd`.
 - Subagent edits (same `session_id`, with an `agent_id`) count, and so do files outside the project.
 - **Each time capture ends**, the bridge reads the after contents of every recorded file and runs the
   git check. A file whose before and after contents match (an edit denied after the hook ran) is
@@ -1104,7 +1110,9 @@ why the hook records and git only checks is in
   `git add -A` and `git write-tree`; your files and staging area are untouched; about 0.05 s on a
   5,000-file repo). When capture ends it compares that tree with the files on disk. Files that changed
   without passing through the hook (shell edits, or your own) are stored as **unrecorded files**.
-  Undo never touches them. Outside a git repo the check is skipped.
+  Undo never touches them. Outside a git repo the check is skipped. The check covers the whole repo
+  holding the session folder, and each round's `tweak work` takes a new tree, so your own edits
+  between a question and its reply aren't counted; the unrecorded files add up across rounds.
 - A reply followed by `tweak work` again extends the same change: the first before copies are kept,
   and the after contents are read again at the next end. A tweak has one change, however many rounds
   it takes. A tweak declined after partial edits keeps them as an undoable change.
@@ -1143,8 +1151,10 @@ after resolution.
   recorded", and **Ask Claude to undo**, which goes to the session as an undo conflict
   (`tweak 12 undo-conflict: no edits recorded, undo by hand`). `tweak undo` then prints Claude's
   summary and the unrecorded files, and a declined undo leaves the change `nothing-recorded`.
-- **Nothing changed**: "No files changed", and no Undo.
-- Files outside the project carry an "outside this project" label in any of these lists.
+- **Nothing changed**: "No files changed", and no Undo. A tweak declined before anything changed
+  says nothing about files.
+- Files outside the project carry an "outside this project" label in any of these lists, and are
+  shown by their absolute path (`~/` for the home folder); the others are relative to the project.
 - While `undo-requested`: "Undo needs Claude…"; afterwards "Undone", or Claude's reason if it
   declined the undo.
 

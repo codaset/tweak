@@ -99,3 +99,18 @@ func TestRelativeStateDirIsMadeAbsolute(t *testing.T) {
 		t.Fatalf("state dir %s", c.StateDir)
 	}
 }
+
+func TestAMarkerNamesOnlyAFileInCapturing(t *testing.T) {
+	c := Config{StateDir: "/state"}
+	for id, want := range map[string]string{
+		"0f9c2a4e-1b2c-4d5e-8f90-123456789abc": "0f9c2a4e-1b2c-4d5e-8f90-123456789abc",
+		"..":                                   "%2E%2E",
+		"a/../../b":                            "a%2F%2E%2E%2F%2E%2E%2Fb",
+		`a\b`:                                  "a%5Cb",
+		"a%2F":                                 "a%252F",
+	} {
+		if got := c.Marker(id); got != filepath.Join("/state", "capturing", want) {
+			t.Errorf("Marker(%q) = %s, want capturing/%s", id, got, want)
+		}
+	}
+}

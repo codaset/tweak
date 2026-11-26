@@ -195,9 +195,10 @@ every update and is deleted 14 days later, so nothing long-lived runs from it. T
 
 **The extension folder**: the binary embeds the extension's files (`go:embed`, from a package at the
 module root over the top-level `extension/` folder), so the extension always matches the binary. When
-the bridge starts, it compares the `version` in `extension/manifest.json` with its own; if they differ
-(or the folder is missing), it writes `extension.new/`, renames the old folder aside, renames the new
-one into place and deletes the old one.
+the bridge starts, it compares the `version` in `extension/manifest.json` with its own (the embedded
+manifest's, which a release stamps with the binary's); if they differ (or the folder is missing), it
+writes `extension.new/`, renames the old folder aside, renames the new one into place and deletes the
+old one. An unstamped (`dev`) build rewrites it on every start.
 
 **First install**: `tweak claim` warns `extension not connected` until an extension has ever said
 `hello`, with the steps: open `chrome://extensions`, turn on Developer mode, **Load unpacked**, and
@@ -206,15 +207,20 @@ and paste the path).
 
 **The extension updates itself**: the bridge's reply to `hello` carries its version. If it differs from
 `chrome.runtime.getManifest().version`, the worker calls `chrome.runtime.reload()`, which reloads an
-unpacked extension from disk, picking up the folder the bridge rewrote.
+unpacked extension from disk, picking up the folder the bridge rewrote. Confirmed in Chrome 158 with
+Developer mode on (without it, Chrome disables a reloaded unpacked extension): the reload re-reads the
+files, fires `onInstalled` with reason `update`, wipes runtime registrations and clears
+`chrome.storage.session`, and keeps `chrome.storage.local`.
 
 - It waits while you're in the middle of something (a composer open, pick mode on, or an unsent
-  draft) and reloads once none is.
+  draft) and reloads once none is. Each tab tells the worker over its port; a closed tab holds nothing.
 - A reload clears `chrome.storage.session`, so the worker copies its contents into
-  `chrome.storage.local` first and restores them in `onInstalled`: open cards and drafts survive.
+  `chrome.storage.local` first and restores them as the reloaded worker starts (before `onInstalled`,
+  which comes after the worker's first code runs): open cards and drafts survive.
 - Content scripts already in tabs lose the extension. Each removes its overlay when its port
   disconnects and `chrome.runtime.id` is gone, and clears its run-once guard, so the worker's
-  `onInstalled` re-injection into claimed open tabs runs fresh scripts.
+  `onInstalled` re-injection into claimed open tabs runs fresh scripts. (Inside `onDisconnect`
+  `chrome.runtime.id` is still set; it's gone a moment later, when the reconnect throws.)
 - Afterwards a toast says "Codaset Tweak updated to X.Y.Z".
 - Before reloading, the worker stores the version it expects in `chrome.storage.local`. If its
   version still differs after the reload, Chrome has a copy loaded from somewhere else (an old

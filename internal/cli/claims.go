@@ -11,6 +11,7 @@ type claimOut struct {
 		ID     string `json:"id"`
 		Folder string `json:"folder"`
 	} `json:"session"`
+	Warnings []string `json:"warnings"`
 }
 
 // claim registers the session and claims a pattern.
@@ -32,7 +33,11 @@ func claim(c *context, args []string) error {
 	if err := cl.call("POST", "/claims", map[string]string{"pattern": args[0]}, &made); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.Stdout, "claimed %s\nnow run tweak watch\n", made.Pattern)
+	fmt.Fprintf(c.Stdout, "claimed %s\n", made.Pattern)
+	for _, w := range made.Warnings {
+		fmt.Fprintln(c.Stdout, w)
+	}
+	fmt.Fprintln(c.Stdout, "now run tweak watch")
 	return nil
 }
 

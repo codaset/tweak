@@ -2,8 +2,38 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/codaset/tweak/schema/claim.json",
   "title": "claim",
-  "description": "The reply to POST /claims: the claim made, or the session's existing claim on the same pattern.",
-  "$ref": "#/$defs/claim",
+  "description": "The reply to POST /claims: the claim made, or the session's existing claim on the same pattern, with any warnings for tweak claim to print.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/claim/properties/id"
+    },
+    "pattern": {
+      "$ref": "#/$defs/claim/properties/pattern"
+    },
+    "session": {
+      "$ref": "#/$defs/claim/properties/session"
+    },
+    "created": {
+      "$ref": "#/$defs/claim/properties/created"
+    },
+    "warnings": {
+      "description": "Lines tweak claim prints after claiming, for example that Chrome loads the extension from another folder. Absent when there are none.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "id",
+    "pattern",
+    "session",
+    "created"
+  ],
+  "additionalProperties": false,
   "$defs": {
     "claim": {
       "description": "A claim: a session's ownership of the pages matching a pattern.",

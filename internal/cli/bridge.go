@@ -30,7 +30,7 @@ func runBridge(c *context, args []string) error {
 		}
 	}
 
-	b, err := bridge.Start(bridge.Options{Config: c.cfg, Version: version.Version, Log: c.Stderr})
+	b, err := bridge.Start(bridge.Options{Config: c.cfg, Version: version.Version, Development: c.Getenv("TWEAK_BIN") != "", Log: c.Stderr})
 	if errors.Is(err, bridge.ErrAlreadyRunning) {
 		if byCLI {
 			status(lineAlready)

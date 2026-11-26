@@ -8,13 +8,14 @@ import { apply } from "./lib/claims.js";
 import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
+import { createSelfUpdate } from "./self-update.js";
 
 const KEEPALIVE_MS = 20_000; // WebSocket traffic keeps the worker awake (Chrome 116+)
 const ALARM = "reconnect";
 const ALL_URLS = { origins: ["<all_urls>"] };
 
 // What the side panel shows (see lib/status.js for connection and message).
-const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [] };
+const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], update: null };
 // The claims as of event seq, from the bridge or, until it answers, the cache.
 let claimState = { seq: 0, claims: [] };
 let heardFromBridge = false; // once true, the cache is out of date
@@ -45,6 +46,7 @@ chrome.runtime.onConnect.addListener((port) => {
   ports.add(port);
   port.onDisconnect.addListener(() => ports.delete(port));
   port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
+  if (port.name === "tab") selfUpdate.watchTab(port);
 });
 
 // ---- The side panel and tabs ----
@@ -61,6 +63,8 @@ function publish(changes) {
 }
 
 const setStatus = (event, changes = {}) => publish({ ...nextStatus(view, event), ...changes });
+
+const selfUpdate = createSelfUpdate({ publish });
 
 // ---- Site access and the badge ----
 
@@ -130,7 +134,10 @@ function onBridgeMessage(msg, port) {
     setStatus({ type: "refused", message: msg.message }, { port });
     return "refused";
   }
-  if (msg.type === "snapshot") setStatus({ type: "connected" }, { port });
+  if (msg.type === "snapshot") {
+    setStatus({ type: "connected" }, { port });
+    selfUpdate.bridgeVersion(msg.version);
+  }
   const next = apply(claimState, msg);
   if (next !== claimState) adoptClaims(next);
 }

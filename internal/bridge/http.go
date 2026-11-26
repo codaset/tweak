@@ -182,7 +182,7 @@ func (b *Bridge) claim(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		b.internal(w, err)
 	default:
-		reply(w, 201, claimJSON(c))
+		reply(w, 201, claimReply{claimJSON(c), b.claimWarnings()})
 	}
 }
 
@@ -237,6 +237,13 @@ type claimOut struct {
 	Pattern string     `json:"pattern"`
 	Session sessionOut `json:"session"`
 	Created string     `json:"created"`
+}
+
+// claimReply is the reply to POST /claims: the claim, and the lines tweak
+// claim prints as warnings.
+type claimReply struct {
+	claimOut
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type errorOut struct {

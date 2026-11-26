@@ -34,6 +34,12 @@ function render(state) {
     }),
   );
 
+  const update = state.update;
+  $("another-folder").hidden = update?.state !== "stuck";
+  const note = { updated: `Updated to ${update?.version}`, waiting: `Updating to ${update?.version} once you've finished` }[update?.state];
+  $("update-note").hidden = !note;
+  $("update-note").textContent = note ?? "";
+
   const input = $("port");
   if (document.activeElement !== input) input.value = state.port === DEFAULT_PORT ? "" : String(state.port);
 }

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { retryDelay } from "../../extension/lib/backoff.js";
 import { apply } from "../../extension/lib/claims.js";
-import { badge } from "../../extension/lib/badge.js";
+import { badge, GREY } from "../../extension/lib/badge.js";
 
 test("retries back off 1, 2, 5 seconds, then every 10", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 50].map(retryDelay), [1000, 2000, 5000, 10000, 10000, 10000]);
@@ -40,6 +40,6 @@ test("other messages leave the claims as they are", () => {
 });
 
 test("until site access is granted, a grey ! shows; once granted, nothing", () => {
-  assert.deepEqual(badge({ granted: false }), { text: "!", color: "#80868b" });
-  assert.deepEqual(badge({ granted: true }), { text: "", color: "#80868b" });
+  assert.deepEqual(badge({ granted: false }), { text: "!", color: GREY });
+  assert.deepEqual(badge({ granted: true }), { text: "", color: GREY });
 });

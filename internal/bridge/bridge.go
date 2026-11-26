@@ -102,6 +102,8 @@ func Start(o Options) (*Bridge, error) {
 	if b.store, err = store.Open(o.Config.Database(), o.Version); err != nil {
 		return fail(err)
 	}
+	// Every commit that writes to the event log wakes the sockets.
+	b.store.OnEvent(b.notify)
 	// Time the bridge was down doesn't count toward a lapse.
 	if err := b.store.CheckInAll(); err != nil {
 		return fail(err)

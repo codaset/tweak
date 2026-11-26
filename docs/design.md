@@ -79,11 +79,11 @@ The overlay lives in a closed shadow root with its own styles. Nothing is added 
 **Claims and registration**: each claim's scripts are registered under `claim-<id>`, using the
 claim's pattern as-is: the content script as `claim-<id>` and the page probe as `claim-<id>-probe`,
 since a registration holds one world. Both run at `document_start` (the probe before the page's own
-scripts), top frame only (`allFrames: false`). The worker compares registrations with the claims after the snapshot and
-after every claim event. It keeps the last-known claims in `chrome.storage.local`. Chrome wipes
-runtime registrations on install and update (including reloading the unpacked extension), so on
-`onInstalled` and `onStartup` the worker re-registers from that copy at once, then corrects itself
-when the bridge snapshot arrives. Tabs already open when a claim starts get the scripts through
+scripts), top frame only (`allFrames: false`). The worker compares registrations with the claims
+after the snapshot and after every claim event. It keeps the last-known claims in
+`chrome.storage.local`. Chrome wipes runtime registrations on install and update (including
+reloading the unpacked extension), so on `onInstalled` and `onStartup` the worker re-registers
+from that copy at once, then corrects itself when the bridge snapshot arrives. Tabs already open when a claim starts get the scripts through
 `scripting.executeScript`, not a reload; the scripts guard against running twice.
 
 **Staying connected**: while connected, the WebSocket keepalive keeps the worker awake. When the
@@ -337,8 +337,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `~/.local/state/codaset-tweak/bridge.json` (port, PID, version) to find a running bridge. The
   extension tries the default port, with a port field in the side panel.
 - **Extension ↔ bridge**: one WebSocket (`/ws`) from the service worker, kept awake by a keepalive
-  every 20 seconds (documented since Chrome 116; checked first while building, long-polling as the
-  fallback). The worker relays to tabs. Screenshots are uploaded separately over HTTP
+  every 20 seconds (documented since Chrome 116). Measured in Chrome 158 with no DevTools attached,
+  it held the worker for 7 minutes. Without it, Chrome stopped the worker at 30 s without `onclose`,
+  so the 30-second reconnect alarm is set at every worker start. The worker relays to tabs. Screenshots are uploaded separately over HTTP
   (`PUT /tweaks/:n/screenshot`, PNG) after the tweak is created, and stored as files beside the
   database.
 - **CLI ↔ bridge**: plain HTTP. Every request carries `x-tweak: 1`, `x-tweak-protocol: <n>` and the

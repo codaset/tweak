@@ -33,17 +33,45 @@ type claimRecord struct {
 	LastCheckIn int64  `json:"lastCheckIn"`
 }
 
-type execer interface {
-	Exec(string, ...any) (sql.Result, error)
+// OnEvent sets the function called after every commit that wrote to the event
+// log, so its readers (the extension's sockets) hear of it whoever wrote it.
+// Set it before the store is shared.
+func (s *Store) OnEvent(fn func()) { s.onEvent = fn }
+
+// eventTx is the only way to write to the event log: a transaction whose
+// commit calls the OnEvent function when it logged anything.
+type eventTx struct {
+	*sql.Tx
+	s      *Store
+	logged bool
 }
 
-func logClaimEvent(x execer, typ string, c Claim) error {
+func (s *Store) begin() (*eventTx, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	return &eventTx{Tx: tx, s: s}, nil
+}
+
+func (t *eventTx) commit() error {
+	if err := t.Tx.Commit(); err != nil {
+		return err
+	}
+	if t.logged && t.s.onEvent != nil {
+		t.s.onEvent()
+	}
+	return nil
+}
+
+func (t *eventTx) logClaim(typ string, c Claim) error {
 	payload, _ := json.Marshal(claimRecord{
 		ID: c.ID, Pattern: c.Pattern, Created: c.Created.UnixMilli(),
 		Session: c.Session.ID, Agent: c.Session.Agent, Folder: c.Session.Folder,
 		Label: c.Session.Label, LastCheckIn: c.Session.LastCheckIn.UnixMilli(),
 	})
-	_, err := x.Exec(`INSERT INTO events (type, claim, payload, at) VALUES (?, ?, ?, ?)`, typ, c.ID, string(payload), now())
+	_, err := t.Exec(`INSERT INTO events (type, claim, payload, at) VALUES (?, ?, ?, ?)`, typ, c.ID, string(payload), now())
+	t.logged = t.logged || err == nil
 	return err
 }
 

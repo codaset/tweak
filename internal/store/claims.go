@@ -84,7 +84,7 @@ func (s *Store) CheckInAll() error {
 // claim, as after /reload-plugins. The check and the insert are one
 // transaction, so two sessions can't both win.
 func (s *Store) Claim(sessionID string, p pattern.Pattern) (Claim, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.begin()
 	if err != nil {
 		return Claim{}, err
 	}
@@ -128,10 +128,10 @@ func (s *Store) Claim(sessionID string, p pattern.Pattern) (Claim, error) {
 	}
 	id, _ := r.LastInsertId()
 	c := Claim{ID: id, Pattern: want, Session: se, Created: fromMillis(created)}
-	if err := logClaimEvent(tx, EventClaimMade, c); err != nil {
+	if err := tx.logClaim(EventClaimMade, c); err != nil {
 		return Claim{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.commit(); err != nil {
 		return Claim{}, err
 	}
 	return c, nil
@@ -151,7 +151,7 @@ func (s *Store) ClaimCount() (int, error) {
 // when pattern is "". It returns the released patterns; releasing a pattern
 // the session doesn't hold is ErrNotClaimed.
 func (s *Store) Release(sessionID, pat string) ([]string, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.begin()
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (s *Store) Release(sessionID, pat string) ([]string, error) {
 		if _, err := tx.Exec(`DELETE FROM claims WHERE id = ?`, c.ID); err != nil {
 			return nil, err
 		}
-		if err := logClaimEvent(tx, EventClaimReleased, c); err != nil {
+		if err := tx.logClaim(EventClaimReleased, c); err != nil {
 			return nil, err
 		}
 		released = append(released, c.Pattern)
@@ -176,7 +176,7 @@ func (s *Store) Release(sessionID, pat string) ([]string, error) {
 	if pat != "" && len(released) == 0 {
 		return nil, ErrNotClaimed
 	}
-	return released, tx.Commit()
+	return released, tx.commit()
 }
 
 type querier interface {

@@ -70,3 +70,24 @@ func TestReleasingEveryClaimLogsEach(t *testing.T) {
 		t.Fatalf("events = %+v", events)
 	}
 }
+
+func TestCommittedEventsWakeTheListener(t *testing.T) {
+	s := open(t)
+	woken := 0
+	s.OnEvent(func() { woken++ })
+	register(t, s, "s1", "/dev/a")
+
+	s.Claim("s1", mustParse(t, "https://a.localhost/*"))
+	if woken != 1 {
+		t.Fatalf("woken %d times after a claim, want 1", woken)
+	}
+	s.Claim("s1", mustParse(t, "https://a.localhost/*")) // the same claim: nothing logged
+	s.Release("s1", "https://b.localhost/*")             // not held: nothing logged
+	if woken != 1 {
+		t.Fatalf("woken %d times with nothing logged, want 1", woken)
+	}
+	s.Release("s1", "")
+	if woken != 2 {
+		t.Fatalf("woken %d times after a release, want 2", woken)
+	}
+}

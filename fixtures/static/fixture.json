@@ -1,4 +1,5 @@
 {
   "start": ["node", "server.mjs", "{port}"],
+  "public": "public",
   "ready": "/"
 }

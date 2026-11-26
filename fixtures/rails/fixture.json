@@ -1,5 +1,6 @@
 {
   "start": ["bundle", "exec", "puma", "-b", "tcp://127.0.0.1:{port}", "config.ru"],
+  "public": "public",
   "ready": "/",
   "needs": ["ruby"],
   "env": { "ANNOTATE_VIEWS": "1" }

@@ -1430,8 +1430,15 @@ Each fixture has:
   and environment variables for the start command (`env`, e.g. the one that turns Rails'
   annotations on), and optionally `loaded`, a selector each page waits for once opened (SvelteKit's
   layout marks hydration, which brings the metadata), and `hot`, set when the dev server updates the
-  page itself after an edit (`vite-react19`), so its round trip expects no reload from us. The ready path is polled on the host the app is opened on: for `localhost`, on
-  both `127.0.0.1` and `::1`, as Chrome tries both, so a server bound to either is ready;
+  page itself after an edit (`vite-react19`), so its round trip expects no reload from us. Each server binds `127.0.0.1` explicitly (Vite's
+  `--host`, Puma's `-b`, the static server's own `listen`). `public` names the folder the server
+  serves at the root (`public`, or SvelteKit's `static`): each start writes a marker file there
+  holding a random token. The ready path is polled on the host the app is opened on: for
+  `localhost`, on both `127.0.0.1` and `::1`, as Chrome tries both, so a server bound to either is
+  ready, but only once it serves that start's token. A server that answers the marker with anything
+  else is another app on the port, and the fixture starts again on a fresh one. The free port is
+  free on both loopback addresses, as a server on `::1` doesn't stop the kernel handing its port
+  out again for `127.0.0.1`;
 - `expected.json`: the golden cases (below).
 
 A fixture's npm dependencies are installed in it from its lockfile (`npm ci --prefix fixtures/<name>`,

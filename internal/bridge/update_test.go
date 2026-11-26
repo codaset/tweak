@@ -48,10 +48,16 @@ func TestStartWritesTheEmbeddedExtension(t *testing.T) {
 // The version the worker compares with its own is the extension the bridge
 // wrote, which a release stamps with the binary's version.
 func TestTheHelloReplyCarriesTheExtensionsVersion(t *testing.T) {
-	s := start(t).connect()
+	h := start(t)
+	s := h.connect()
 	s.hello(version.Protocol)
-	if v := s.next("snapshot")["version"]; v != embeddedVersion(t) {
-		t.Fatalf("snapshot version = %v, want %s", v, embeddedVersion(t))
+	snap := s.next("snapshot")
+	if snap["version"] != embeddedVersion(t) {
+		t.Fatalf("snapshot version = %v, want %s", snap["version"], embeddedVersion(t))
+	}
+	// Where to load it from, for the side panel's "loaded from another folder".
+	if snap["folder"] != tilde(filepath.Join(h.cfg.StateDir, "extension")) {
+		t.Fatalf("snapshot folder = %v", snap["folder"])
 	}
 }
 

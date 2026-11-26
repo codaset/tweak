@@ -16,11 +16,19 @@ const TOAST_MS = 20_000; // tabs (re)injected this soon after the update get the
 
 // createSelfUpdate returns the hooks the worker calls. publish(changes)
 // updates the side panel's view; the view's `update` is
-// {state: "updated" | "waiting" | "stuck", version} or null.
-export function createSelfUpdate({ publish }) {
+// {state: "updated" | "waiting" | "stuck", version, folder?} or null.
+export function createSelfUpdate({ publish: publishView }) {
   const own = chrome.runtime.getManifest().version;
+  // Every publish reaches every tab, so only a change is published.
+  let lastUpdate = null;
+  const publish = ({ update }) => {
+    if (JSON.stringify(update) === JSON.stringify(lastUpdate)) return;
+    lastUpdate = update;
+    publishView({ update });
+  };
   const tabs = new Map(); // tab port -> busy
   let bridge; // the version in the last hello reply
+  let folder; // and where the bridge keeps that version
   let updatedAt = 0;
   let reloading = false;
 
@@ -61,7 +69,7 @@ export function createSelfUpdate({ publish }) {
         publish({ update: { state: "waiting", version: bridge } });
         break;
       case "stuck":
-        publish({ update: { state: "stuck", version: own } });
+        publish({ update: { state: "stuck", version: own, folder } });
         break;
       case "reload": {
         reloading = true;
@@ -86,9 +94,10 @@ export function createSelfUpdate({ publish }) {
     restored,
 
     // bridgeVersion takes the version from each hello reply (none from a
-    // development bridge).
-    bridgeVersion(version) {
+    // development bridge), and the folder the bridge writes it to.
+    bridgeVersion(version, extensionFolder) {
       bridge = version;
+      folder = extensionFolder;
       run();
     },
 
@@ -97,7 +106,9 @@ export function createSelfUpdate({ publish }) {
     watchTab(port) {
       tabs.set(port, false);
       port.onMessage.addListener((msg) => {
-        if (msg?.type !== "busy") return;
+        // A tab repeats its busy state after each state message, so a
+        // restarted worker hears it; only a change matters.
+        if (msg?.type !== "busy" || Boolean(msg.busy) === tabs.get(port)) return;
         tabs.set(port, Boolean(msg.busy));
         run();
       });

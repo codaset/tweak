@@ -18,6 +18,11 @@
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
+    "folder": {
+      "description": "The folder the bridge writes that version to (~ for the home folder), which the side panel names when Chrome loads the extension from another. Sent with version.",
+      "type": "string",
+      "minLength": 1
+    },
     "claims": {
       "description": "Every claim, oldest first.",
       "type": "array",
@@ -97,5 +102,13 @@
       ],
       "additionalProperties": false
     }
+  },
+  "dependentRequired": {
+    "folder": [
+      "version"
+    ],
+    "version": [
+      "folder"
+    ]
   }
 }

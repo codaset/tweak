@@ -21,6 +21,7 @@
         "wrong-status",
         "not-undoable",
         "not-undo-requested",
+        "still-capturing",
         "internal"
       ]
     },

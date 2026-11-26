@@ -1182,8 +1182,9 @@ before writing any:
 - **Conflicting merge, or the file deleted or recreated since, edited since Claude created it, or now
   binary or over 2 MB**: the file conflicts.
 
-If every file is clean, the bridge writes them all (if a write fails, the files already written are
-put back, and the card says so), the change becomes `undone`, an `undo` entry from you goes in the
+If every file is clean, the bridge writes them all (each file's old contents are moved aside first, so
+if a write fails the files already written are put back by renames, and the card says so; a file that
+is now a symlink conflicts), the change becomes `undone`, an `undo` entry from you goes in the
 conversation, and the page reloads as after a change (on the `tweak-undone` event, which `tweak undone`
 logs too). If any file conflicts, nothing
 is written and the change becomes `undo-requested`. It goes to the session that now claims the
@@ -1192,7 +1193,8 @@ session. Claude reverses it by hand (`tweak undo`, then `tweak undone` or `tweak
 skill). If no session claims the page, the request waits, and the card says "Needs a session to
 resolve: run `/tweak <origin>`"; it is delivered as soon as a claim covers the page, and goes back to
 waiting if that session releases the page first. Undo work is never captured: the bridge's writes
-don't pass the edit hook, and `tweak undo` starts no capture.
+don't pass the edit hook, `tweak undo` starts no capture, and it is refused (`still-capturing`)
+while the session is capturing another tweak, whose change would record the reversal.
 
 ### On the card
 

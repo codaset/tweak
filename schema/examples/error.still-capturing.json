@@ -1,0 +1,4 @@
+{
+  "error": "still-capturing",
+  "message": "you're working on tweak 13, and edits now would be recorded as part of it: finish it first (tweak done, ask or decline 13), then run tweak undo 12"
+}

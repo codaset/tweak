@@ -188,6 +188,9 @@ func TestAFailedWriteRestoresWhatWasWritten(t *testing.T) {
 	if !absent(filepath.Join(dir, "gone.rb")) {
 		t.Error("gone.rb was left written")
 	}
+	if got := leftovers(t, dir); len(got) != 0 {
+		t.Errorf("left %v", got)
+	}
 	tw, _ := h.b.store.Tweak(1)
 	if tw.Change.State != "recorded" {
 		t.Fatalf("state %s", tw.Change.State)

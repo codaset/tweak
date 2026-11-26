@@ -20,7 +20,7 @@ import (
 // a bridge.
 
 // hookDeadline is how long a hook may take before it gives up: well inside
-// the 2 seconds a hook gets (hooks.json gives pre-edit 5, for a handover),
+// what hooks.json gives it (5 seconds for pre-edit, 2 for session-end),
 // leaving the launcher its start.
 const hookDeadline = time.Second
 

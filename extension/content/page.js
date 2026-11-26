@@ -63,6 +63,9 @@
     tweaks: () => list(),
     // here says whether a tweak is of the page the tab shows, while claimed.
     here: (t) => claimed && t?.page === shownPage,
+    // listed says whether the worker has sent this load its tweaks yet: the
+    // card open before a reload reopens with them, not with the connection.
+    listed: () => listed,
     // redraw puts the pins and card in step with the tweaks.
     redraw() {
       ns.pins.render(list());

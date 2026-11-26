@@ -106,14 +106,17 @@ export function setup(fixture, options = {}) {
   return env;
 }
 
-// Opens a page of the app and waits for the content script to connect,
-// and for the fixture's `loaded` selector, if it has one (a page rendered on
-// the server is hydrated later: SvelteKit's metadata comes with hydration).
+// Opens a page of the app and waits for the content script to connect and
+// hear the page's tweaks, and for the fixture's `loaded` selector, if it
+// has one (a page rendered on the server is hydrated later: SvelteKit's
+// metadata comes with hydration). The tweaks come after the connection,
+// and with them the card open before the load reopens: a test that presses
+// esc before then closes nothing, and the card opens after it.
 // goto: false waits on the page already there, as after a reload.
 export async function open(env, path = "/", { goto = true } = {}) {
   if (goto) await env.page.goto(env.app.url(path));
   if (env.fixture?.loaded) await env.page.waitForSelector(env.fixture.loaded);
-  await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: `the content script to connect on ${path}` });
+  await env.tab.until(`Boolean(root) && ns.worker.connection === "connected" && ns.page.listed()`, { what: `the content script to connect and list the tweaks on ${path}` });
 }
 
 // Points at a case's pick the way the developer would, and waits for the

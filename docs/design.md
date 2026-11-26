@@ -1365,7 +1365,7 @@ claim is registered. The message is sent from a page click the content script he
 open in a tab. The `activeTab` path serves `static` a second time on `127.0.0.1`, which the copy has
 no grant for, and uses `page.triggerExtensionAction`, asserting the screenshot is captured (after a
 reload, which is when the claim's scripts run there; the side panel the button opens narrows the
-real view, so that test drops the emulated viewport). Screenshots with access granted use a copy with `<all_urls>` in
+real view behind the emulated viewport, so that test closes it and waits for the tab's width). Screenshots with access granted use a copy with `<all_urls>` in
 `host_permissions` (`setup(fixture, {allUrls: true})`), at a real 2× (`--force-device-scale-factor`:
 an emulated device scale doesn't reach `captureVisibleTab`).
 Captures are spaced more than 1 s apart (Chrome's 2-per-second quota). `--no-sandbox` is passed only

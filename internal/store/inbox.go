@@ -14,7 +14,8 @@ type Inbox struct {
 	Claims int     // how many claims the session holds now
 }
 
-// inboxEvents are the event types a session's watcher hears about.
+// inboxWhere picks the events a session's watcher hears about: its new tweaks
+// and its released claims.
 const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'claim-released')`
 
 // Inbox acknowledges the session's events up to after, then returns those

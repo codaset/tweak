@@ -151,6 +151,11 @@ func (b *Bridge) replyInbox(w http.ResponseWriter, in store.Inbox) {
 	reply(w, 200, out)
 }
 
+// noTweak is the refusal for a tweak number that doesn't exist.
+func noTweak(n string) string {
+	return fmt.Sprintf("there is no tweak %s: check the number in the tweak's card", n)
+}
+
 // tweakNumber reads the session and :n, refusing a missing session ID or a bad number.
 func tweakNumber(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
 	id, ok := sessionID(w, r)
@@ -159,7 +164,7 @@ func tweakNumber(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
 	}
 	n, err := strconv.ParseInt(r.PathValue("n"), 10, 64)
 	if err != nil || n < 1 {
-		refuse(w, 404, "no-tweak", fmt.Sprintf("there is no tweak %s", r.PathValue("n")))
+		refuse(w, 404, "no-tweak", noTweak(r.PathValue("n")))
 		return "", 0, false
 	}
 	return id, n, true
@@ -172,7 +177,7 @@ func (b *Bridge) setStatus(w http.ResponseWriter, session string, n int64, statu
 	var wrong *store.TransitionError
 	switch {
 	case errors.Is(err, store.ErrNoTweak):
-		refuse(w, 404, "no-tweak", fmt.Sprintf("there is no tweak %d", n))
+		refuse(w, 404, "no-tweak", noTweak(strconv.FormatInt(n, 10)))
 	case errors.As(err, &notYours):
 		refuse(w, 409, "not-yours", err.Error())
 	case errors.As(err, &wrong):

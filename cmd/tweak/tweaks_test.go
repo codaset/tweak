@@ -187,6 +187,29 @@ func TestANewWatcherSkipsAnOldRelease(t *testing.T) {
 	}
 }
 
+func TestAWatcherAcknowledgesWhatItPrintedBeforeExiting(t *testing.T) {
+	s := newSandbox(t)
+	ernie := s.folder("ernie")
+	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
+	ext := s.extension()
+	old := ext.create("https://ernie.localhost/", "make it green")
+	s.tweak("s1", ernie, "release")
+	first := s.watch("s1", ernie)
+	if got := first.line(); !strings.HasPrefix(got, fmt.Sprintf("tweak %d new:", old)) {
+		t.Fatalf("first watcher's line %q", got)
+	}
+	if code := first.exited(); code != 0 {
+		t.Fatalf("first watcher exited %d: %s", code, first.err)
+	}
+
+	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
+	w := s.watch("s1", ernie)
+	n := ext.create("https://ernie.localhost/", "make it blue")
+	if got := w.line(); !strings.HasPrefix(got, fmt.Sprintf("tweak %d new:", n)) {
+		t.Fatalf("the next watcher's first line is %q, want tweak %d's", got, n)
+	}
+}
+
 func TestWatchExitsAtOnceWithNoClaims(t *testing.T) {
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
@@ -228,7 +251,7 @@ func TestWorkAndDoneNeedATweakNumber(t *testing.T) {
 			t.Errorf("%v: %d %q", args, r.code, r.stderr)
 		}
 	}
-	if r := s.tweak("s1", ernie, "work", "7"); r.code != 1 || r.stderr != "there is no tweak 7\n" {
+	if r := s.tweak("s1", ernie, "work", "7"); r.code != 1 || r.stderr != "there is no tweak 7: check the number in the tweak's card\n" {
 		t.Errorf("no such tweak: %d %q", r.code, r.stderr)
 	}
 }

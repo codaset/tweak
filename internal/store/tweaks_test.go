@@ -161,3 +161,17 @@ func TestTweakChangesAreLoggedAndInTheSnapshot(t *testing.T) {
 		t.Fatalf("snapshot %d %+v", latest, tweaks)
 	}
 }
+
+func TestNotYoursSaysWhatToDo(t *testing.T) {
+	for _, c := range []struct {
+		err  NotYoursError
+		want string
+	}{
+		{NotYoursError{Number: 3, Folder: "/dev/ernie"}, "tweak 3 is for the session in /dev/ernie: work on it from that session"},
+		{NotYoursError{Number: 3}, "tweak 3 isn't for this session: no session claims its page, so send it again from the page once one does"},
+	} {
+		if got := c.err.Error(); got != c.want {
+			t.Errorf("got %q, want %q", got, c.want)
+		}
+	}
+}

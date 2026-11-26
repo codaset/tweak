@@ -183,9 +183,9 @@ func TestStatusRefusals(t *testing.T) {
 		status              int
 		code, message       string
 	}{
-		{"no such tweak", "s1", "/tweaks/9/work", nil, 404, "no-tweak", "there is no tweak 9"},
-		{"not a number", "s1", "/tweaks/x/work", nil, 404, "no-tweak", "there is no tweak x"},
-		{"another session's", "s2", "/tweaks/1/work", nil, 409, "not-yours", "tweak 1 is for the session in /dev/ernie"},
+		{"no such tweak", "s1", "/tweaks/9/work", nil, 404, "no-tweak", "there is no tweak 9: check the number in the tweak's card"},
+		{"not a number", "s1", "/tweaks/x/work", nil, 404, "no-tweak", "there is no tweak x: check the number in the tweak's card"},
+		{"another session's", "s2", "/tweaks/1/work", nil, 409, "not-yours", "tweak 1 is for the session in /dev/ernie: work on it from that session"},
 		{"no session ID", "", "/tweaks/1/work", nil, 400, "no-session-id", ""},
 		{"a status not yet supported", "s1", "/tweaks/1/status", map[string]string{"status": "queued", "message": "x"}, 400, "bad-request", ""},
 		{"done without a summary", "s1", "/tweaks/1/status", map[string]string{"status": "done", "message": " "}, 400, "bad-request", ""},

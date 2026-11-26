@@ -114,9 +114,9 @@ type NotYoursError struct {
 
 func (e *NotYoursError) Error() string {
 	if e.Folder == "" {
-		return fmt.Sprintf("tweak %d isn't for this session: no session claims its page", e.Number)
+		return fmt.Sprintf("tweak %d isn't for this session: no session claims its page, so send it again from the page once one does", e.Number)
 	}
-	return fmt.Sprintf("tweak %d is for the session in %s", e.Number, e.Folder)
+	return fmt.Sprintf("tweak %d is for the session in %s: work on it from that session", e.Number, e.Folder)
 }
 
 // PageOf is the page a URL belongs to: its origin and path, without the

@@ -261,6 +261,9 @@
         ? await fetch(sheet.href, { credentials: "same-origin" }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
         : sheet.ownerNode?.textContent ?? "";
       const map = text ? await ns.sourcemap.forText(text, sheet.href ?? location.href, { fetch: fetching, reload: fetching }) : null;
+      // A map the sheet names that didn't load (a rebuild's 503) is tried
+      // again on the next pick: the read isn't kept.
+      if (!map && fetching && ns.sourcemap.mapURL(text)) sheetCache.delete(sheet);
       return Object.assign(entry, { text, map, index: map ? preludes(text) : null, done: true });
     })().catch(() => (sheetCache.delete(sheet), {})); // tried again on the next pick
     sheetCache.set(sheet, entry);

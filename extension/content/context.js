@@ -136,24 +136,40 @@
     return "";
   }
 
+  // nest is a nested rule's selector made absolute against its parent's
+  // (CSS nesting): & is the parent; with no &, the rule is a descendant,
+  // or follows its own leading combinator.
+  function nest(selector, parent) {
+    if (!parent) return selector;
+    if (selector.includes("&")) return selector.replaceAll("&", `:is(${parent})`);
+    if (/^\s*[>+~]/.test(selector)) return `:is(${parent}) ${selector.trim()}`;
+    return `:is(${parent}) :is(${selector})`;
+  }
+
   // rules are the CSS rules matching el, in cascade source order, the
-  // latest 10. Cross-origin sheets can't be read and are skipped.
+  // latest 10, nested rules included (shown inside their parent's
+  // braces). Cross-origin sheets can't be read and are skipped.
   function rules(el) {
     const out = [];
-    const visit = (list, file) => {
+    // parent is the enclosing style rule's absolute selector, and shown how
+    // the brief names it.
+    const visit = (list, file, parent = null) => {
       for (const rule of list) {
         if (rule.selectorText !== undefined) {
+          const absolute = nest(rule.selectorText, parent?.absolute);
+          const shown = parent ? `${parent.shown} { ${oneLine(rule.selectorText)} }` : oneLine(rule.selectorText);
           let hit = false;
           try {
-            hit = el.matches(rule.selectorText);
+            hit = el.matches(absolute);
           } catch {}
-          if (hit) out.push({ selector: cut(oneLine(rule.selectorText), SELECTOR_CAP), ...(file && { file }) });
+          if (hit) out.push({ selector: cut(shown, SELECTOR_CAP), ...(file && { file }) });
+          if (rule.cssRules?.length) visit(rule.cssRules, file, { absolute, shown });
         } else if (rule.styleSheet) {
           sheet(rule.styleSheet); // @import
         } else if (rule.cssRules) {
           if (rule.media && rule.media.mediaText && !matchMedia(rule.media.mediaText).matches) continue;
           if (rule instanceof CSSSupportsRule && !CSS.supports(rule.conditionText)) continue;
-          visit(rule.cssRules, file);
+          visit(rule.cssRules, file, parent);
         }
       }
     };
@@ -231,5 +247,5 @@
     elements: els.map(element),
   });
 
-  ns.context = { targets, element, styles, trimHTML, role, cut };
+  ns.context = { targets, element, styles, trimHTML, role, nest, cut };
 })();

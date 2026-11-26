@@ -24,10 +24,22 @@
   const TIMEOUT = 300;
   const ROLES = new Set(["element", "component", "usage", "style"]);
 
-  // within is what a promise gives in TIMEOUT, or `none` (failures too).
-  function within(promise, none) {
+  // A deadline is when a pick's mappers stop being waited for: they run
+  // while you type, so each one's TIMEOUT starts at Send (start()), or at
+  // its own start if that's later (an element added after a send was given
+  // back). Without one (the hover label), TIMEOUT starts now.
+  function deadline() {
+    let start;
+    const sent = new Promise((done) => (start = done));
+    return { sent, start: () => start() };
+  }
+
+  const now = { sent: Promise.resolve() };
+
+  // within is what a promise gives by the deadline, or `none` (failures too).
+  function within(promise, none, until = now) {
     let timer;
-    const late = new Promise((done) => (timer = setTimeout(() => done(none), TIMEOUT)));
+    const late = until.sent.then(() => new Promise((done) => (timer = setTimeout(() => done(none), TIMEOUT))));
     return Promise.race([Promise.resolve(promise).catch(() => none), late]).finally(() => clearTimeout(timer));
   }
 
@@ -282,14 +294,15 @@
   }
 
   // ruleLines are the gathered rules' source lines, in their order (null
-  // where there's none), within the timeout. The rules aren't changed.
-  const ruleLines = (rules, { fetch: fetching = true } = {}) =>
-    within(Promise.all(rules.map((rule) => line(rule, fetching).catch(() => null))), rules.map(() => null));
+  // where there's none), by the deadline (options.until, else TIMEOUT from
+  // now). The rules aren't changed.
+  const ruleLines = (rules, { fetch: fetching = true, until } = {}) =>
+    within(Promise.all(rules.map((rule) => line(rule, fetching).catch(() => null))), rules.map(() => null), until);
 
   const css = {
     via: "css",
-    map: async (el, { fetch: fetching = true, rules } = {}) => {
-      const lines = await ruleLines(rules ?? ns.context.rules(el), { fetch: fetching });
+    map: async (el, { fetch: fetching = true, rules, until } = {}) => {
+      const lines = await ruleLines(rules ?? ns.context.rules(el), { fetch: fetching, until });
       return lines.filter(Boolean).map((at) => ({ ...at, role: "style", via: "css" }));
     },
   };
@@ -302,18 +315,20 @@
   const valid = (l) => l && typeof l.file === "string" && l.file.trim() !== "" && ROLES.has(l.role) && typeof l.via === "string";
 
   // run is every mapper's locations for el, one mapper after another in
-  // priority order, each innermost first.
+  // priority order, each innermost first. options.until is a deadline();
+  // without one, each mapper has TIMEOUT from now.
   async function run(el, { mappers = MAPPERS, ...options } = {}) {
     const results = await Promise.all(
       mappers.map((m) =>
         within(
           Promise.resolve().then(() => m.map(el, options)).then((ls) => (Array.isArray(ls) ? ls.filter(valid) : [])),
           [],
+          options.until,
         ),
       ),
     );
     return results.flat();
   }
 
-  ns.mappers = { run, ruleLines, annotations, templates, modules, preludes, prelude };
+  ns.mappers = { run, ruleLines, deadline, annotations, templates, modules, preludes, prelude };
 })();

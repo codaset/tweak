@@ -108,6 +108,27 @@ test("every mapper runs; one that fails or takes over 300 ms gives nothing, the 
   assert.deepEqual(plain(got), [loc("rails"), loc("vue")]);
 });
 
+// A pick's mappers run while you type: their 300 ms count from Send.
+test("given a deadline, a mapper answers whenever it can until 300 ms after the deadline starts", async () => {
+  const m = load();
+  const loc = (via) => ({ file: `${via}.x`, role: "component", via });
+  const after = (ms, via) => () => new Promise((done) => setTimeout(() => done([loc(via)]), ms));
+  const until = m.deadline();
+  const got = m.run({}, { until, mappers: [{ via: "rails", map: after(400, "rails") }, { via: "vue", map: after(700, "vue") }] });
+  setTimeout(() => until.start(), 200); // Send, 200 ms after the pick
+  assert.deepEqual(plain(await got), [loc("rails")], "400 ms is within Send's 300; 700 ms isn't");
+});
+
+test("a mapper started after Send (an element added once a send was given back) still has its own 300 ms", async () => {
+  const m = load();
+  const loc = (via) => ({ file: `${via}.x`, role: "component", via });
+  const until = m.deadline();
+  until.start();
+  await new Promise((done) => setTimeout(done, 350));
+  const got = await m.run({}, { until, mappers: [{ via: "rails", map: () => new Promise((done) => setTimeout(() => done([loc("rails")]), 50)) }] });
+  assert.deepEqual(plain(got), [loc("rails")]);
+});
+
 test("the hover label names the strongest place's file, its line only when there is one", () => {
   const { label } = mappers;
   assert.equal(label([]), "");

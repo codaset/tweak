@@ -288,9 +288,9 @@
   }
 
   // submit sends the tweak. Send waits for the mappers only if they haven't
-  // finished (each has its timeout); a send ended meanwhile (the composer
-  // closed, or the port went and unsent() gave it back) sends nothing, as a
-  // retry is a send of its own.
+  // finished, and at most 300 ms (they ran while you typed); a send ended
+  // meanwhile (the composer closed, or the port went and unsent() gave it
+  // back) sends nothing, as a retry is a send of its own.
   async function submit() {
     if (mode?.kind !== "compose" || parts.send.disabled) return;
     const sending = mode;
@@ -300,6 +300,7 @@
     parts.text.readOnly = true;
     parts.refresh();
     const request = parts.text.value.trim();
+    sending.until.start(); // the mappers have had your typing; now 300 ms more at most
     await sending.located;
     if (mode !== sending || !sending.sending || sending.ref !== ref) return;
     ns.worker.post({
@@ -819,8 +820,9 @@
       // and the page's scroll then: the capture's.
       const rects = ns.pointing.rects(pick);
       const scrolled = { x: scrollX, y: scrollY };
-      const located = ns.context.locate(targets, pick.elements).catch(() => {});
-      mode = { kind: "compose", pick, targets, rects, scrolled, shot, located, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
+      const until = ns.mappers.deadline();
+      const located = ns.context.locate(targets, pick.elements, until).catch(() => {});
+      mode = { kind: "compose", pick, targets, rects, scrolled, shot, located, until, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
       ns.drafts.setCompose(null); // a new pick starts a new draft
       drawCompose();
       place();
@@ -1023,7 +1025,7 @@
         const added = ns.context.element(target);
         targets.elements.push(added);
         // Its mappers run too; Send waits for them as for the rest.
-        const locating = ns.context.locate({ elements: [added] }, [target]).catch(() => {});
+        const locating = ns.context.locate({ elements: [added] }, [target], mode.until).catch(() => {});
         mode.located = Promise.all([mode.located, locating]);
         said = `Element ${pick.elements.length} added: ${targets.elements.at(-1).label}.`;
       }

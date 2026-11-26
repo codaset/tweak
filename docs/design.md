@@ -785,7 +785,8 @@ the nearest ancestor with enough of it), and an area is `area: {page, viewport}`
 width, height}`; the elements follow the same numbering (`content/pointing.js`).
 
 **When mapping runs**: at pick time, alongside the screenshot, in the background while you type, so
-the composer opens at once. Send waits for it only if it hasn't finished (bounded by the timeouts).
+the composer opens at once. Send waits for it only if it hasn't finished: a pick's 300 ms timeouts
+count from Send, so a slow source map fetched while you type still counts.
 The hover label uses the same mappers but skips source-map fetches: it shows the file, and a line
 only if the map is already cached. It is debounced (about 60 ms), and names the first place that
 isn't a style (else the first style; with none, the latest matching rule's stylesheet) by its last

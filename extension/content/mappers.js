@@ -330,5 +330,5 @@
     return results.flat();
   }
 
-  ns.mappers = { run, ruleLines, deadline, annotations, templates, modules, preludes, prelude };
+  ns.mappers = { run, ruleLines, deadline, annotations, templates, modules, prelude };
 })();

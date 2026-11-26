@@ -10,6 +10,7 @@
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
+  const { cut } = ns.util;
 
   const CLUES = 8;
   const TEXT_CAP = 80;
@@ -25,11 +26,6 @@
   const MONTHS = "jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december";
   const DAYS = "mon|monday|tue|tues|tuesday|wed|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday";
   const NOT_WORDS = new RegExp(`[\\d\\s.,:;/%$€£¥+\\-–—()#]|\\b(${MONTHS}|${DAYS}|am|pm|st|nd|rd|th)\\b`, "gi");
-
-  function cut(s, n) {
-    const cps = [...s];
-    return cps.length > n ? `${cps.slice(0, n - 1).join("")}…` : s;
-  }
 
   // numberOrDate is text with nothing to search for: 42, $19.99, 26 Nov
   // 2026. A date has a digit in it, so a lone "May" or "Sun" is a word.

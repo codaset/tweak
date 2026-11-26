@@ -16,7 +16,7 @@
 
   const WAIT_MS = 1000; // after done, for a hot update to land
   const RECHECK_MS = 500; // while a reload is held back
-  const IN_PROGRESS = new Set(["sent", "delivered", "queued", "working", "question"]);
+  const { OPEN, ENDED_BY_CLAUDE } = ns.describe;
 
   // ---- Decisions (pure) ----
 
@@ -36,7 +36,7 @@
     if (now.status === "working" && was?.status !== "working") return "watch";
     // Only a tweak the tab had can end here: one it hasn't (resolved, and
     // gone from the page) settles only by being undone.
-    const ended = was && (now.status === "done" || now.status === "declined") && was.status !== now.status;
+    const ended = was && ENDED_BY_CLAUDE.has(now.status) && was.status !== now.status;
     if (!ended) return null;
     const c = ns.describe.change(now);
     if (now.status === "done" && !now.change) return "settle"; // nothing recorded either way
@@ -90,9 +90,9 @@
   // inProgress are the numbers of the tweaks a reload waits for: open ones,
   // and finished ones whose undo is still with Claude; not those in waiting.
   const inProgress = (tweaks, waiting) =>
-    tweaks.filter((t) => (IN_PROGRESS.has(t.status) || t.change?.state === "undo-requested") && !waiting.has(t.number)).map((t) => t.number);
+    tweaks.filter((t) => (OPEN.has(t.status) || t.change?.state === "undo-requested") && !waiting.has(t.number)).map((t) => t.number);
 
-  ns.reload = { moment, signalled, reason, unsaved, inProgress, WAIT_MS };
+  ns.reload = { moment, signalled, reason, unsaved, inProgress };
   if (typeof document === "undefined") return; // the decisions alone, in node
 
   // ---- The page ----

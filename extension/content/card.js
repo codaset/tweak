@@ -28,6 +28,7 @@
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
+  const { find, pageKey } = ns.util;
 
   const GAP = 14; // between the anchor point and the panel
   const EDGE = 8; // from the viewport's edges
@@ -138,7 +139,6 @@
 
   // composeDraft is the open composer as ns.drafts keeps it: what it points
   // at, by selector, and its text, so it can open again after a reload.
-  const pageKey = () => `${location.origin}${location.pathname}`;
   const composeDraft = () => ({
     page: pageKey(),
     kind: mode.pick.kind,
@@ -277,14 +277,6 @@
     range.setStart(...point(at));
     range.setEnd(...point(at + text.length));
     return range;
-  }
-
-  function find(selector) {
-    try {
-      return document.querySelector(selector);
-    } catch {
-      return null;
-    }
   }
 
   // submit sends the tweak. Send waits for the mappers only if they haven't

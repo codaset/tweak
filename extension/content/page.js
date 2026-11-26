@@ -11,7 +11,7 @@
   if (!ns || ns.ready) return;
 
   const tweaks = new Map(); // number -> tweak: this page's, and the open card's
-  const FINISHED = new Set(["done", "declined"]);
+  const { ENDED_BY_CLAUDE } = ns.describe;
   let frame = 0;
   let listed = false; // the worker has sent this page's tweaks once
   let claimed = true; // the scripts run only on claimed pages; the worker says otherwise
@@ -19,8 +19,7 @@
   // A lapsed claim's page counts as unclaimed (no picker), but keeps its
   // pins and cards, which say the session stopped responding.
   let kept = true;
-  // The page is origin and path: the query and hash don't change it.
-  const pageKey = () => `${location.origin}${location.pathname}`;
+  const { pageKey } = ns.util;
   let shownPage = pageKey();
   // Claims match the query too, so the worker hears of every new path or query.
   const urlKey = () => `${location.origin}${location.pathname}${location.search}`;
@@ -158,7 +157,7 @@
         // With the pins hidden, a tweak finishing here is a toast, unless
         // its card says so already.
         const t = msg.tweak;
-        const finished = FINISHED.has(t.status) && was && !FINISHED.has(was.status);
+        const finished = ENDED_BY_CLAUDE.has(t.status) && was && !ENDED_BY_CLAUDE.has(was.status);
         if (finished && ns.pins.hidden() && claimed && t.page === shownPage && ns.panel.showing() !== t.number) {
           ns.toast(`Tweak ${t.number}: ${ns.describe.status(t).text}`);
         }

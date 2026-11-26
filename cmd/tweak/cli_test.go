@@ -60,7 +60,9 @@ func freePort(t *testing.T) int {
 
 func newSandbox(t *testing.T) *sandbox {
 	t.Helper()
-	root := t.TempDir()
+	// Canonical (macOS's /var is /private/var), so folders in it are under
+	// HOME as the bridge sees them, and lines show them from ~.
+	root, _ := filepath.EvalSymlinks(t.TempDir())
 	s := &sandbox{t: t, port: freePort(t), state: filepath.Join(root, "state"), home: filepath.Join(root, "home")}
 	// The allow rule is in the user's settings, so `tweak claim` has nothing
 	// to warn about unless a test moves them (TestClaimWarnsWhenTheAllowRuleIsMissing).
@@ -226,7 +228,7 @@ func TestAnOverlappingClaimIsRefusedWithItsHolder(t *testing.T) {
 	}
 	// --session stands in for CLAUDE_CODE_SESSION_ID.
 	r := s.tweak("", ernie2, "claim", "--session", "s2", "https://ernie.localhost/admin/*")
-	want := fmt.Sprintf("https://ernie.localhost/admin/* overlaps https://ernie.localhost/*, claimed by the session in %s (s1)\n", ernie)
+	want := "https://ernie.localhost/admin/* overlaps https://ernie.localhost/*, claimed by the session in ~/dev/ernie (s1)\n"
 	if r.code != 1 || r.stderr != want || r.stdout != "" {
 		t.Fatalf("exit %d, stdout %q, stderr %q\nwant stderr %q", r.code, r.stdout, r.stderr, want)
 	}

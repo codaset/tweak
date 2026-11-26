@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -72,13 +71,15 @@ func Render(tw store.Tweak, o Options) string {
 	b.WriteString(Notice + "\n\n")
 
 	b.WriteString("## Where to look\n\n")
-	if lines := r.whereToLook(t.Elements); len(lines) > 0 {
+	lines, exact := r.whereToLook(t.Elements)
+	if !exact {
+		b.WriteString("No exact source location. Search the project for each element's search clues, most distinctive first.\n\n")
+	}
+	if len(lines) > 0 {
 		for _, l := range lines {
 			b.WriteString("- " + l + "\n")
 		}
 		b.WriteString("\n")
-	} else {
-		b.WriteString("No exact source location. Search the project for each element's search clues, most distinctive first.\n\n")
 	}
 
 	for i, e := range t.Elements {
@@ -133,186 +134,6 @@ func viewport(v *Viewport) string {
 // px is a length in whole pixels.
 func px(f float64) string { return strconv.FormatInt(int64(math.Round(f)), 10) }
 
-type renderer struct{ folder string }
-
-// path is a page-given path as the brief shows it: placed in the project,
-// or as given and marked.
-func (r renderer) path(file string, line, column int) string {
-	pos := ""
-	if line > 0 {
-		pos = ":" + strconv.Itoa(line)
-		if column > 0 {
-			pos += ":" + strconv.Itoa(column)
-		}
-	}
-	if rel, ok := Place(r.folder, file); ok {
-		return Code(rel + pos)
-	}
-	return Code(Cut(file, pathCap)+pos) + " (not found in project)"
-}
-
-func (r renderer) loc(l Location) string { return r.path(l.File, l.Line, l.Column) }
-
-// mapperName is how the brief names a mapper; never the raw string.
-func mapperName(via string) string {
-	for _, m := range mappers {
-		if m.via == via {
-			return m.name
-		}
-	}
-	return "another mapper"
-}
-
-func mapperRank(via string) int {
-	for i, m := range mappers {
-		if m.via == via {
-			return i
-		}
-	}
-	return len(mappers)
-}
-
-func roleRank(role string) int {
-	switch role {
-	case RoleElement:
-		return 0
-	case RoleComponent:
-		return 1
-	case RoleUsage:
-		return 2
-	}
-	return 3
-}
-
-// how says what a location is, in brackets after it.
-func how(l Location) string {
-	switch {
-	case l.Role == RoleElement && l.Exact():
-		return "(" + mapperName(l.Via) + ", exact)"
-	case l.Role == RoleElement:
-		return "(" + mapperName(l.Via) + ", file only; search this file for its clues)"
-	case l.Via == "rails":
-		return "(Rails template)"
-	case l.Role == RoleStyle:
-		return "(" + mapperName(l.Via) + ")"
-	}
-	return "(" + mapperName(l.Via) + " component)"
-}
-
-// elements is "element 1", "elements 1 and 2" or "elements 1, 2 and 4".
-func elements(ns []int) string {
-	s := make([]string, len(ns))
-	for i, n := range ns {
-		s[i] = strconv.Itoa(n)
-	}
-	if len(s) == 1 {
-		return "element " + s[0]
-	}
-	return "elements " + strings.Join(s[:len(s)-1], ", ") + " and " + s[len(s)-1]
-}
-
-// source is an element's innermost location and the ones enclosing it,
-// leaving out styles.
-func source(e Element) []Location {
-	var out []Location
-	for _, l := range e.Locations {
-		if l.Role != RoleStyle && l.File != "" {
-			out = append(out, l)
-		}
-	}
-	return out
-}
-
-// whereToLook lists, for every element, the innermost location each mapper
-// found, then the CSS rules with a line and other style locations; the same
-// place for several elements is listed once.
-func (r renderer) whereToLook(els []Element) []string {
-	type entry struct {
-		key   string
-		loc   Location
-		rule  string // the rule's selector, for a CSS rule
-		els   []int
-		order int
-	}
-	var entries []*entry
-	byKey := map[string]*entry{}
-	add := func(key string, l Location, rule string, n int) {
-		if en, ok := byKey[key]; ok {
-			if en.els[len(en.els)-1] != n {
-				en.els = append(en.els, n)
-			}
-			return
-		}
-		en := &entry{key: key, loc: l, rule: rule, els: []int{n}, order: len(entries)}
-		byKey[key] = en
-		entries = append(entries, en)
-	}
-	place := func(l Location) string {
-		if rel, ok := Place(r.folder, l.File); ok {
-			return rel
-		}
-		return l.File
-	}
-	for i, e := range els {
-		seen := map[string]bool{}
-		for _, l := range source(e) {
-			if !seen[l.Via] {
-				seen[l.Via] = true
-				add(fmt.Sprintf("%s\x00%d\x00%d\x00%s", place(l), l.Line, l.Column, l.Role), l, "", i+1)
-			}
-		}
-	}
-	ruled := map[string]bool{}
-	for i, e := range els {
-		for _, ru := range e.Rules {
-			if ru.File != "" && ru.Line > 0 {
-				l := Location{File: ru.File, Line: ru.Line, Column: ru.Column, Role: RoleStyle, Via: "css"}
-				at := fmt.Sprintf("%s\x00%d", place(l), l.Line)
-				ruled[at] = true
-				add("rule\x00"+at+"\x00"+ru.Selector, l, ru.Selector, i+1)
-			}
-		}
-	}
-	for i, e := range els {
-		for _, l := range e.Locations {
-			if l.Role == RoleStyle && l.File != "" && !ruled[fmt.Sprintf("%s\x00%d", place(l), l.Line)] {
-				add(fmt.Sprintf("style\x00%s\x00%d\x00%d", place(l), l.Line, l.Column), l, "", i+1)
-			}
-		}
-	}
-	sort.SliceStable(entries, func(a, b int) bool {
-		x, y := entries[a].loc, entries[b].loc
-		if roleRank(x.Role) != roleRank(y.Role) {
-			return roleRank(x.Role) < roleRank(y.Role)
-		}
-		if x.Exact() != y.Exact() {
-			return x.Exact()
-		}
-		if mapperRank(x.Via) != mapperRank(y.Via) {
-			return mapperRank(x.Via) < mapperRank(y.Via)
-		}
-		return entries[a].order < entries[b].order
-	})
-	var lines []string
-	for _, en := range entries {
-		l := en.loc
-		at := r.loc(l)
-		switch {
-		case en.rule != "":
-			lines = append(lines, fmt.Sprintf("%s: %s, %s", at, Code(Cut(en.rule, selectorCap)), elements(en.els)))
-		case l.Role == RoleElement:
-			lines = append(lines, fmt.Sprintf("%s: %s %s", at, elements(en.els), how(l)))
-		case l.Role == RoleUsage:
-			lines = append(lines, fmt.Sprintf("%s: uses the component that renders %s %s", at, elements(en.els), how(l)))
-		case l.Role == RoleStyle:
-			lines = append(lines, fmt.Sprintf("%s: styles %s %s", at, elements(en.els), how(l)))
-		default:
-			lines = append(lines, fmt.Sprintf("%s: renders %s %s", at, elements(en.els), how(l)))
-		}
-	}
-	return lines
-}
-
 // heading is an element's label and its text.
 func heading(e Element) string {
 	s := Code(Cut(e.Label, labelCap))
@@ -325,11 +146,15 @@ func heading(e Element) string {
 // element writes element n's full section.
 func (r renderer) element(b *strings.Builder, n int, e Element) {
 	fmt.Fprintf(b, "## Element %d: %s\n\n", n, heading(e))
-	if src := source(e); len(src) > 0 {
-		fmt.Fprintf(b, "- Source: %s %s\n", r.loc(src[0]), how(src[0]))
-		if inside := r.chain(src[1:]); inside != "" {
-			fmt.Fprintf(b, "- Rendered inside: %s\n", inside)
-		}
+	self, enclosing := own(e)
+	if self != nil {
+		fmt.Fprintf(b, "- Source: %s %s\n", r.at(*self), how(*self))
+	} else if len(enclosing) > 0 {
+		fmt.Fprintf(b, "- Rendered by: %s\n", r.renderedBy(enclosing[0]))
+		enclosing = enclosing[1:]
+	}
+	if inside := r.chain(enclosing); inside != "" {
+		fmt.Fprintf(b, "- Rendered inside: %s\n", inside)
 	}
 	if clues := clues(e.Clues, clueCount); clues != "" {
 		fmt.Fprintf(b, "- Search clues: %s\n", clues)
@@ -349,7 +174,7 @@ func (r renderer) element(b *strings.Builder, n int, e Element) {
 		for _, ru := range e.Rules[max(0, len(e.Rules)-ruleCount):] {
 			s := Code(Cut(ru.Selector, selectorCap))
 			if ru.File != "" {
-				s += " in " + r.path(ru.File, ru.Line, ru.Column)
+				s += " in " + r.spot(ru.File, ru.Line, ru.Column).String()
 			} else {
 				s += ", in a `<style>` element"
 			}
@@ -372,31 +197,6 @@ func (r renderer) element(b *strings.Builder, n int, e Element) {
 		b.WriteString(fenced(clip(html, htmlCap), "html", "  "))
 	}
 	b.WriteString("\n")
-}
-
-// chain is the "rendered inside" list: up to 4 enclosing components or
-// templates, one per file.
-func (r renderer) chain(ls []Location) string {
-	var parts []string
-	files := map[string]bool{}
-	for _, l := range ls {
-		if len(parts) == chainCount {
-			break
-		}
-		if files[l.File] {
-			continue
-		}
-		files[l.File] = true
-		switch {
-		case l.Name != "":
-			parts = append(parts, fmt.Sprintf("%s (%s)", Code(Cut(l.Name, labelCap)), r.loc(l)))
-		case l.Via == "rails":
-			parts = append(parts, "template "+r.loc(l))
-		default:
-			parts = append(parts, r.loc(l))
-		}
-	}
-	return strings.Join(parts, ", ")
 }
 
 // attrName is an attribute clue's name, safe to show bare.
@@ -461,8 +261,10 @@ func styles(m map[string]string) string {
 // its selector.
 func (r renderer) short(n int, e Element) string {
 	s := fmt.Sprintf("Element %d: %s", n, heading(e))
-	if src := source(e); len(src) > 0 {
-		s += ": " + r.loc(src[0]) + " " + how(src[0])
+	if self, enclosing := own(e); self != nil {
+		s += ": " + r.at(*self).String() + " " + how(*self)
+	} else if len(enclosing) > 0 {
+		s += ": rendered by " + r.renderedBy(enclosing[0])
 	} else if c := clues(e.Clues, shortClues); c != "" {
 		s += ": clues " + c
 	}

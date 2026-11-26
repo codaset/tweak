@@ -82,6 +82,28 @@ func TestPathsNotPlaced(t *testing.T) {
 		 "rules":[{"selector":".card","file":"http://localhost:5173/assets/app-3f2a.css","line":7}]}]}`), Options{Folder: root(t)}))
 }
 
+// The same file and line from two mappers, or two elements, is listed once,
+// with the strongest role and mapper; Source is only ever the element's own
+// location, and an element with none says what renders it.
+func TestSameFileAndLineListedOnce(t *testing.T) {
+	form := filepath.ToSlash(root(t)) + "/app/javascript/components/UserForm.tsx"
+	golden(t, "same-line", Render(tweak(`{"elements":[
+		{"label":"a.nav","selector":"nav > a","locations":[
+			{"file":"`+form+`","line":10,"column":5,"role":"element","via":"react"},
+			{"file":"app/javascript/components/UserForm.tsx","line":10,"role":"element","via":"svelte"}]},
+		{"label":"li","selector":"li","locations":[
+			{"file":"app/views/admin/users/edit.html.erb","role":"component","via":"rails"},
+			{"file":"app/javascript/components/UserForm.tsx","line":10,"role":"component","via":"react","name":"UserForm"}]}]}`), Options{Folder: root(t)}))
+}
+
+// With no element or component location that has a line, Claude is told to
+// search the clues, even when a CSS rule has a line; what there is follows.
+func TestNoExactLocationWithRuleLines(t *testing.T) {
+	golden(t, "rules-only", Render(tweak(`{"elements":[{"label":"p","selector":"p",
+		"locations":[{"file":"app/views/admin/users/edit.html.erb","role":"component","via":"rails"}],
+		"rules":[{"selector":".lead","file":"app/assets/stylesheets/buttons.css","line":3}]}]}`), Options{Folder: root(t)}))
+}
+
 // From element 6 on, each element gets one line: its label, its source or
 // top 3 clues, and its selector.
 func TestMoreThanFiveElements(t *testing.T) {
@@ -91,8 +113,9 @@ func TestMoreThanFiveElements(t *testing.T) {
 	}
 	els = append(els,
 		`{"label":"li.user","text":"Ada","selector":"ul > li:nth-of-type(6)","locations":[{"file":"app/javascript/components/UserForm.tsx","line":40,"column":3,"role":"element","via":"react"}]}`,
-		`{"label":"li","text":"Grace","selector":"ul > li:nth-of-type(7)","clues":[{"kind":"data-testid","value":"grace"},{"kind":"id","value":"grace"},{"kind":"aria-label","value":"Grace Hopper"},{"kind":"text","value":"Grace"}]}`)
-	golden(t, "seven-elements", Render(tweak(`{"elements":[`+strings.Join(els, ",")+`]}`), Options{Folder: root(t)}))
+		`{"label":"li","text":"Grace","selector":"ul > li:nth-of-type(7)","clues":[{"kind":"data-testid","value":"grace"},{"kind":"id","value":"grace"},{"kind":"aria-label","value":"Grace Hopper"},{"kind":"text","value":"Grace"}]}`,
+		`{"label":"li","selector":"ul > li:nth-of-type(8)","locations":[{"file":"app/javascript/components/UserForm.tsx","line":2,"role":"component","via":"react","name":"List"}]}`)
+	golden(t, "more-elements", Render(tweak(`{"elements":[`+strings.Join(els, ",")+`]}`), Options{Folder: root(t)}))
 }
 
 // The footer names every finishing command, with the number filled in.

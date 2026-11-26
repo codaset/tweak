@@ -141,6 +141,25 @@ func TestWorkOnAWithdrawnTweakSaysSkipIt(t *testing.T) {
 	}
 }
 
+// Skipping a withdrawn tweak ends only that tweak's capture: the session's
+// capture of another tweak goes on.
+func TestSkippingAWithdrawnTweakLeavesAnotherCapture(t *testing.T) {
+	dir := project(t, map[string]string{"app.css": appCSS})
+	h, s := capturing(t, dir)
+	s.withdraw("w1", 1, "tweak-withdrawn")
+	s.send(createMsg("r2", "https://ernie.localhost/other", "and this"))
+	s.readUntil("result")
+	if resp, body := h.do(as("s1", req{method: "POST", path: "/tweaks/2/work"})); resp.StatusCode != 200 {
+		t.Fatalf("work 2: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"})); string(body) != "tweak 1: withdrawn, skip it\n" {
+		t.Fatalf("work 1: %d %q", resp.StatusCode, body)
+	}
+	if c, err := h.b.store.Capturing("s1"); err != nil || c.Tweak != 2 || !h.marked("s1") {
+		t.Fatalf("capture %+v, %v, marked %v: tweak 2 should still be capturing", c, err, h.marked("s1"))
+	}
+}
+
 func TestOnlyAnOpenTweakIsWithdrawnAndOnlyAFinishedOneResolved(t *testing.T) {
 	h, s := tracer(t, func(o *Options) { o.InboxWait = 100 * time.Millisecond })
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))

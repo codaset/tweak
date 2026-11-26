@@ -336,3 +336,24 @@ func TestALostClaimIsForgottenAfter24Hours(t *testing.T) {
 		t.Fatalf("a day later: %v", err)
 	}
 }
+
+// A handed-over tweak whose old session's capture hasn't ended yet (its
+// teardown is in the git check) can't be worked on by the new one until it
+// has: the old round's baseline must judge the old round's edits.
+func TestAHandedOverTweakWaitsForTheOldCaptureToEnd(t *testing.T) {
+	s, c, tw := held(t)
+	s.Work("s1", tw.Number, nil, CaptureStart{Folder: "/dev/ernie", Repo: "/dev/ernie", Base: "abc"})
+	c.advance(lapseAfter)
+	s.Lapse("s1", lapseAfter)
+	s.Claim("s2", mustParse(t, "https://ernie.localhost/*"))
+	if _, err := s.Work("s2", tw.Number, nil, CaptureStart{Folder: "/dev/ernie-2", Base: "def"}); !errors.Is(err, ErrCapturedElsewhere) {
+		t.Fatalf("work while s1 still captures: %v", err)
+	}
+	if capt, err := s.Capturing("s1"); err != nil || capt.Base != "abc" {
+		t.Fatalf("s1's capture %+v %v", capt, err)
+	}
+	s.EndCapture("s1", CaptureEnd{Tweak: tw.Number})
+	if _, err := s.Work("s2", tw.Number, nil, CaptureStart{Folder: "/dev/ernie-2", Base: "def"}); err != nil {
+		t.Fatalf("work once s1's capture ended: %v", err)
+	}
+}

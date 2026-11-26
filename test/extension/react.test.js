@@ -157,6 +157,24 @@ test("React 19 on webpack: frame 1 is mapped through the chunk's external .map, 
   assert.deepEqual(fetched, [`${WEBPACK}main.js`, `${WEBPACK}main.js.map`]);
 });
 
+test("React 19 on webpack: a module fetched again at a new URL (a hot update's ?t=) reads its external .map again", async () => {
+  const files = { ...bundle };
+  const { react, element } = load(files);
+  const at = (stack, query) => stack.replaceAll(`${WEBPACK}main.js:`, `${WEBPACK}main.js${query}:`);
+  const versioned = (query) => {
+    const d = dump("react19-webpack", "save");
+    const fiber = Object.values(d)[0];
+    fiber._debugStack.stack = at(fiber._debugStack.stack, query);
+    return d;
+  };
+  files[`${WEBPACK}main.js?t=1`] = files[`${WEBPACK}main.js`];
+  files[`${WEBPACK}main.js?t=2`] = files[`${WEBPACK}main.js`];
+  assert.equal((await react(element(versioned("?t=1"))))[0].file, "webpack://wp/./src/App.jsx");
+  // The rebuild renamed the file: same map URL, new map.
+  files[`${WEBPACK}main.js.map`] = files[`${WEBPACK}main.js.map`].replaceAll("./src/App.jsx", "./src/Home.jsx");
+  assert.equal((await react(element(versioned("?t=2"))))[0].file, "webpack://wp/./src/Home.jsx");
+});
+
 // probe sends a tweak:probe on el the way the content script does and gives
 // the tweak:probe-result details heard on document during the dispatch.
 function probe({ document, CustomEvent }, el, detail) {

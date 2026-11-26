@@ -55,7 +55,9 @@ const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 //   for the activeTab path, stopped with the rest.
 // Options go to devBridge: againAfter shortens the bridge's 3-minute wait
 // before an again: line. Give such a setup its own describe, so its again:
-// lines and card text reach no other test.
+// lines and card text reach no other test. allUrls gives the test copy
+// <all_urls>, as after Allow access, which screenshots need; deviceScaleFactor
+// sets the page's.
 export function setup(fixture, options = {}) {
   const extra = [];
   const env = {
@@ -70,11 +72,11 @@ export function setup(fixture, options = {}) {
     env.app = await startFixture(fixture);
     t.diagnostic(`${fixture.name} ready in ${env.app.bootMs} ms`);
     env.bridge = await devBridge(options);
-    env.extension = testCopy({ bridgePort: env.bridge.port });
+    env.extension = testCopy({ bridgePort: env.bridge.port, allUrls: options.allUrls });
     env.claude = standIn(env.bridge, { folder: env.app.folder });
     await env.claude.claim(`${env.app.url("")}/*`);
     env.watcher = env.claude.watch();
-    env.browser = await launch(env.extension);
+    env.browser = await launch(env.extension, { deviceScaleFactor: options.deviceScaleFactor });
     // A page loaded before the worker registers the claim's scripts never
     // gets them: the worker injects into open tabs only with <all_urls>,
     // which the copy doesn't grant. So the first page waits for them.
@@ -82,7 +84,7 @@ export function setup(fixture, options = {}) {
       what: "the extension to register the claim's scripts",
     });
     env.page = await env.browser.newPage();
-    await env.page.setViewport({ width: 1100, height: 800 });
+    await env.page.setViewport({ width: 1100, height: 800, deviceScaleFactor: options.deviceScaleFactor ?? 1 });
     env.tab = await contentScript(env.page);
   });
   after(async () => {

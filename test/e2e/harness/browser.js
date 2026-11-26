@@ -7,12 +7,15 @@ import { until } from "./util.js";
 export const NO_SANDBOX = process.platform === "linux" && Boolean(process.env.CI);
 
 // New headless (chrome-headless-shell doesn't load extensions), with the
-// test copy loaded through Puppeteer's enableExtensions.
-export function launch(extension) {
+// test copy loaded through Puppeteer's enableExtensions. A
+// deviceScaleFactor is Chrome's own (--force-device-scale-factor), so
+// captureVisibleTab sees it too: emulating it through the viewport doesn't
+// change the captured pixels.
+export function launch(extension, { deviceScaleFactor } = {}) {
   return puppeteer.launch({
     headless: true,
     enableExtensions: [extension],
-    args: NO_SANDBOX ? ["--no-sandbox"] : [],
+    args: [...(NO_SANDBOX ? ["--no-sandbox"] : []), ...(deviceScaleFactor ? [`--force-device-scale-factor=${deviceScaleFactor}`] : [])],
   });
 }
 

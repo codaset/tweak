@@ -1,9 +1,9 @@
 // The static fixture: no framework, a server that never reloads.
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
-import { contentScript } from "./harness/browser.js";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { contentScript, inWorker } from "./harness/browser.js";
 import { CARD, CARD_RESEND, CARD_STATUS, COMPOSER_INPUT, conversation, loadFixture, open, pick, setup, skipReason, tracer, undoFromCard, until } from "./harness/index.js";
 
 const fixture = loadFixture("static");
@@ -75,7 +75,8 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     const r = root.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
     return Boolean(r?.width) && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === ns.overlay.host;
   })()`;
-  const composing = `root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`;
+  // Not null === null: the composer opens once the pick's capture is taken.
+  const composing = `Boolean(root.activeElement) && root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`;
   const noCard = `!root.querySelector(${JSON.stringify(CARD)})`;
 
   test("over a modal dialog the overlay is hittable, esc leaves the dialog open, and the host moves back on close", async () => {
@@ -507,5 +508,114 @@ describe("static, when Claude doesn't pick a tweak up", { skip: skipReason(fixtu
       await env.tab.evaluate("e2eRestore()");
       await env.page.keyboard.press("Escape");
     }
+  });
+});
+
+// Screenshots (design.md § Screenshot). A tweak sent from the page, and the
+// PNG the bridge stored for it: its signature and its IHDR size.
+async function sendTweak(env, target, request) {
+  await pick(env, target);
+  await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
+  await env.page.keyboard.type(request);
+  const from = env.watcher.lines.length;
+  await env.page.keyboard.press("Enter");
+  const { number } = await env.claude.nextTweak(env.watcher, { from });
+  await env.tab.until(`ns.panel.showing()`, { is: (s) => s === number, what: `the card of tweak ${number}` });
+  return number;
+}
+
+async function storedScreenshot(env, n) {
+  const file = join(env.bridge.state, "screenshots", `${n}.png`);
+  await until(() => existsSync(file), { what: `tweak ${n}'s screenshot to be stored` });
+  const png = readFileSync(file);
+  assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "a PNG signature");
+  assert.equal(png.subarray(12, 16).toString(), "IHDR");
+  return { file, width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+}
+
+// The box design.md crops to, in device pixels: the element plus 48 CSS px,
+// clipped to the viewport (which the side panel, once open, narrows). Taken
+// before the pick, as the page then is.
+async function expectedCrop(env, selector) {
+  const { r, vw, vh, dpr } = await env.page.$eval(selector, (el) => ({
+    r: el.getBoundingClientRect().toJSON(),
+    vw: innerWidth,
+    vh: innerHeight,
+    dpr: devicePixelRatio,
+  }));
+  const left = Math.max(0, r.left - 48);
+  const top = Math.max(0, r.top - 48);
+  const right = Math.min(vw, r.right + 48);
+  const bottom = Math.min(vh, r.bottom + 48);
+  return { width: Math.ceil(right * dpr) - Math.floor(left * dpr), height: Math.ceil(bottom * dpr) - Math.floor(top * dpr) };
+}
+
+// With Allow access granted (<all_urls> in the copy), at 2× device pixels.
+describe("static, with access to every site", { skip: skipReason(fixture) ?? false }, () => {
+  const env = setup(fixture, { allUrls: true, deviceScaleFactor: 2 });
+  const held = () => inWorker(env.browser, "e2eHeldCaptures()");
+
+  test("a tweak's screenshot is the element plus a margin, in device pixels, and the brief names it", async () => {
+    await open(env);
+    assert.equal(await env.page.evaluate("devicePixelRatio"), 2);
+    const crop = await expectedCrop(env, "#save");
+    const n = await sendTweak(env, { selector: "#save" }, "make the save button green");
+    const shot = await storedScreenshot(env, n);
+    assert.deepEqual({ width: shot.width, height: shot.height }, crop);
+    assert.equal(await held(), 0, "the capture went with the tweak");
+    assert.ok(await env.tab.evaluate(`!ns.overlay.host.style.visibility`), "the overlay is shown again");
+    const brief = await env.claude.work(n);
+    assert.ok(brief.includes(`Screenshot: ${shot.file}. View it`), "the brief names the screenshot");
+    await env.page.keyboard.press("Escape");
+  });
+
+  test("a big area's screenshot is scaled down to 1600 px on its longest side", async () => {
+    await open(env);
+    const n = await sendTweak(env, { area: { x: 10, y: 10, width: 1080, height: 780 } }, "tidy up this whole area");
+    const shot = await storedScreenshot(env, n);
+    assert.equal(Math.max(shot.width, shot.height), 1600);
+    assert.ok(shot.width > shot.height, `${shot.width}×${shot.height} keeps the viewport's shape`);
+    await env.page.keyboard.press("Escape");
+  });
+
+  test("a capture is held while composing and thrown away on cancel", async (t) => {
+    await open(env);
+    const started = performance.now();
+    await pick(env, { selector: "#name" });
+    t.diagnostic(`the composer opened ${Math.round(performance.now() - started)} ms after the ⌥-click, capture included`);
+    await until(held, { is: (n) => n === 1, what: "the capture held for the composer" });
+    await env.page.keyboard.press("Escape");
+    await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the composer" });
+    await until(held, { is: (n) => n === 0, what: "the capture thrown away" });
+  });
+});
+
+// The activeTab path: static again on 127.0.0.1, which the copy has no grant
+// for. The toolbar button (page.triggerExtensionAction) grants activeTab, so
+// after a reload the claim's scripts run there and the capture works.
+describe("static on 127.0.0.1, through activeTab", { skip: skipReason(fixture) ?? false }, () => {
+  const env = setup(fixture);
+
+  test("after the toolbar button, a tweak on an ungranted host gets its screenshot", async () => {
+    const app = await env.serve("127.0.0.1");
+    await env.claude.claim(`${app.url("")}/*`);
+    await until(() => inWorker(env.browser, `chrome.scripting.getRegisteredContentScripts().then((r) => r.length >= 4)`), {
+      what: "the 127.0.0.1 claim's scripts to be registered",
+    });
+    await env.page.goto(app.url("/"));
+    const [extension] = (await env.browser.extensions()).values();
+    await env.page.triggerExtensionAction(extension);
+    // The button opens the side panel, which narrows the real view; an
+    // emulated viewport would hide that from the page, but not from the capture.
+    await env.page.setViewport(null);
+    await env.page.reload();
+    await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the content script on 127.0.0.1" });
+    const crop = await expectedCrop(env, "#save");
+    const n = await sendTweak(env, { selector: "#save" }, "make the save button green");
+    const shot = await storedScreenshot(env, n);
+    // The exact crop is the granted test's; headless's side panel leaves this
+    // narrow view a pixel or two unsure at its edge.
+    assert.equal(shot.height, crop.height);
+    assert.ok(Math.abs(shot.width - crop.width) <= 2, `${shot.width} px wide, ${crop.width} expected`);
   });
 });

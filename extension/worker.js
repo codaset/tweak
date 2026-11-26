@@ -12,6 +12,7 @@ import { createSelfUpdate } from "./self-update.js";
 import { applyTweaks, askedIn, forTab, pageOf, reachesTab } from "./lib/tweaks.js";
 import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
+import { draw, frame, paced } from "./lib/screenshot.js";
 
 const KEEPALIVE_MS = 20_000; // WebSocket traffic keeps the worker awake (Chrome 116+)
 const ALARM = "reconnect";
@@ -58,8 +59,10 @@ chrome.runtime.onConnect.addListener((port) => {
   if (!ports) return;
   ports.add(port);
   port.tabId = port.sender?.tab?.id;
+  port.shots = new Map(); // a tab's captures, held until Send or drop
   port.onDisconnect.addListener(() => {
     ports.delete(port);
+    port.shots.clear();
     if (port.suggestions?.length) publishSuggestions();
   });
   if (port.name === "tab") port.onMessage.addListener((msg) => onTabMessage(port, msg));
@@ -145,18 +148,99 @@ async function onTabMessage(port, msg) {
       if (msg.number) await chrome.storage.session.set({ [cardKey(tabId)]: msg.number });
       else await chrome.storage.session.remove(cardKey(tabId));
       break;
+    case "capture":
+      capture(port, msg);
+      break;
+    case "drop":
+      port.shots.delete(msg.id);
+      break;
     case "create":
     case "reply":
     case "again":
     case "undo": {
       const answered = { create: "created", reply: "replied", again: "resent", undo: "undid" }[msg.type];
-      const ref = bridge.request(msg, (answer) => {
-        if (msg.type === "create" && answer.number) rememberSender(answer.number, tabId);
+      // The capture stays here: the bridge gets the PNG once it has a number.
+      const { shot, ...request } = msg;
+      const held = shot && port.shots.get(shot.id);
+      const png = held ? render(held, shot.rects ?? []) : null;
+      const ref = bridge.request(request, (answer) => {
+        if (msg.type === "create" && answer.number) {
+          rememberSender(answer.number, tabId);
+          if (png) {
+            port.shots.delete(shot.id);
+            upload(answer.number, png);
+          }
+        }
         port.postMessage({ type: answered, ref: msg.ref, ...answer });
       });
       if (ref) port.onDisconnect.addListener(() => bridge.pending.forget(ref));
       break;
     }
+  }
+}
+
+// ---- Screenshots ----
+
+// design.md § Screenshot: the tab hides its overlay and asks; the capture is
+// the viewport in device pixels, held by the tab's port until the tweak is
+// sent (then cropped, outlined and uploaded) or dropped. Captures queue to
+// stay inside Chrome's two a second. Without <all_urls> or activeTab on the
+// tab, Chrome refuses, and the tweak goes without one.
+const pace = paced();
+const HELD = 2; // captures held per tab: the composer's, and a pick replacing it
+
+async function capture(port, { id, viewport }) {
+  let ok = false;
+  try {
+    const tab = await chrome.tabs.get(port.tabId);
+    if (!tab.active) throw new Error("the tab isn't the one shown");
+    const dataUrl = await pace(() => chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }));
+    port.shots.set(id, { dataUrl, viewport });
+    for (const old of [...port.shots.keys()].slice(0, -HELD)) port.shots.delete(old);
+    ok = true;
+  } catch (e) {
+    console.info("Codaset Tweak: no screenshot:", e.message);
+  }
+  try {
+    port.postMessage({ type: "captured", id, ok });
+  } catch {
+    port.shots.delete(id); // the tab went meanwhile
+  }
+}
+
+// render crops the capture to what was pointed at, outlines it and scales
+// it (lib/screenshot.js), resolving with the PNG, or null.
+async function render({ dataUrl, viewport }, rects) {
+  try {
+    const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    const f = frame(rects, viewport, bitmap);
+    const canvas = new OffscreenCanvas(f.size.width, f.size.height);
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, f.crop.x, f.crop.y, f.crop.width, f.crop.height, 0, 0, f.size.width, f.size.height);
+    bitmap.close();
+    draw(ctx, f);
+    return await canvas.convertToBlob({ type: "image/png" });
+  } catch (e) {
+    console.warn("Codaset Tweak: couldn't process the screenshot", e);
+    return null;
+  }
+}
+
+// upload is PUT /tweaks/:n/screenshot, to the socket's host. Without a host
+// grant it's a CORS request, which the bridge approves for this path.
+async function upload(number, png) {
+  const blob = await png;
+  if (!blob) return;
+  try {
+    const r = await fetch(`http://127.0.0.1:${await bridgePort()}/tweaks/${number}/screenshot`, {
+      method: "PUT",
+      headers: { "x-tweak": "1", "x-tweak-protocol": String(PROTOCOL), "content-type": "image/png" },
+      body: blob,
+    });
+    if (!r.ok) console.warn(`Codaset Tweak: the bridge refused tweak ${number}'s screenshot`, r.status, await r.text());
+  } catch (e) {
+    console.warn(`Codaset Tweak: couldn't upload tweak ${number}'s screenshot`, e.message);
   }
 }
 

@@ -279,6 +279,8 @@
       request,
       targets: sending.targets,
       anchor: sending.anchor,
+      // The pick's capture and its outlines: the worker keeps them to itself.
+      ...(sending.shot ? { shot: { id: sending.shot, rects: sending.rects } } : {}),
     });
   }
 
@@ -703,9 +705,11 @@
 
   ns.panel = {
     // compose opens the composer on a pick (pointing.js): its elements, and
-    // the selected text or the area.
-    compose(pick) {
-      if (mode?.kind === "compose" && mode.sending) return; // one send at a time
+    // the selected text or the area. shot is the pick's capture
+    // (ns.screenshot), sent with the tweak, or thrown away if it isn't.
+    compose(pick, shot = null) {
+      if (!this.canCompose()) return ns.screenshot.drop(shot); // one send at a time
+      if (mode?.kind === "compose") ns.screenshot.drop(mode.shot); // a new pick replaces it
       // The context is gathered now, while the page still shows what was
       // picked, and the mappers start on every element in the background
       // while you type.
@@ -716,7 +720,7 @@
       // rects are the numbered outlines for the screenshot, taken now (#38).
       const rects = ns.pointing.rects(pick);
       const located = ns.context.locate(targets, pick.elements).catch(() => {});
-      mode = { kind: "compose", pick, targets, rects, located, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
+      mode = { kind: "compose", pick, targets, rects, shot, located, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
       drawCompose();
       place();
       composing(true);
@@ -726,6 +730,9 @@
     // and gives it back to returnTo when it closes; a card reopened after a
     // reload doesn't take it.
     show(number, { request, label, focus = false, returnTo = null, announce = false, range = null } = {}) {
+      // A composer this card replaces unsent takes its capture with it; a
+      // sent one's went to the worker with its create.
+      if (mode?.kind === "compose" && !mode.created) ns.screenshot.drop(mode.shot);
       ns.picker.release();
       composing(false);
       opened++;
@@ -770,6 +777,7 @@
       const was = mode;
       // Focus goes back only if it was in the overlay: never taken from the page.
       const focused = ns.overlay.root?.activeElement;
+      if (was?.kind === "compose") ns.screenshot.drop(was.shot); // cancelled: thrown away
       mode = null;
       panel?.remove();
       panel = null;
@@ -786,6 +794,7 @@
     created(msg) {
       if (mode?.kind !== "compose" || msg.ref !== mode.ref) return;
       if (msg.number) {
+        mode.created = true; // its capture is the worker's now
         this.show(msg.number, {
           request: parts.text.value.trim(),
           label: ns.describe.pointedAt(mode.targets),
@@ -839,6 +848,9 @@
       ns.marks.draw(marked());
       place();
     },
+    // canCompose says whether a pick would open a composer: not while a
+    // send is on its way.
+    canCompose: () => !(mode?.kind === "compose" && mode.sending),
     // canAdd says whether ⇧-click would change the open composer's elements.
     canAdd: () => addable(),
     // adding is what ⇧-click on target would do to the composer: "Add as

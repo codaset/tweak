@@ -58,7 +58,9 @@ Decided in [Extension architecture](https://github.com/codaset/tweak/issues/12).
 **Allow access** button on the first claim (`permissions.request` needs a click, so a claim can't
 prompt by itself). After that, a claim on a new dev domain (`*.test`, `lvh.me`) needs no prompt.
 Screenshots are why: `captureVisibleTab` needs `activeTab` or the literal `<all_urls>`, and ⌥-click
-doesn't grant `activeTab` (see [ADR 0002](adr/0002-optional-all-urls-for-screenshots.md)). Until
+doesn't grant `activeTab` (see [ADR 0002](adr/0002-optional-all-urls-for-screenshots.md)). The
+manifest also asks for `activeTab` (no install warning), so before access is granted the toolbar
+button still lets one tab capture; it also lets the claim's scripts run there from the next reload. Until
 access is granted, the worker can't read tab URLs (that would need the `tabs` permission and its
 install warning), so it shows one grey `!` on the toolbar icon in every tab, meaning "action
 needed", and the side panel shows **Allow access**. If
@@ -151,11 +153,13 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 |---|---|---|
 | Tab to worker | `page` | `url`: the tab's full URL, sent when the port opens and again after each client-side navigation, a query-only one included |
 | | `card` | `number`: the tab's open card, or `null` when it closes |
-| | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own) |
+| | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own), and `shot: {id, rects}` when the pick has a capture: the worker keeps that, and uploads the PNG once the number comes back |
 | | `reply` | a `reply` for the bridge, with the tab's `ref`, likewise |
 | | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
-| Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
+| | `capture` | `id`, and `viewport` (`innerWidth`, `innerHeight`): capture the tab now, its overlay hidden, and hold it under `id` |
+| | `drop` | `id`: throw that capture away (its composer closed unsent, or a new pick replaced it) || Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
 | | `tweak` | `tweak`: one changed tweak (a page's, or the open card's) |
+| | `captured` | `id`, `ok`: whether the capture is held |
 | | `created` | `ref`, and the `number` created or an `error` and `message` |
 | | `replied` | `ref`, and the `number` replied to or an `error` and `message` |
 | | `claimed` | `claimed`, sent to every tab whenever the claims change |
@@ -356,7 +360,11 @@ changes and screenshots are deleted 7 days after resolution.
 
 - Listen on `127.0.0.1` only.
 - Every HTTP request carries the custom header `x-tweak: 1`. A web page cannot send it to
-  localhost without a CORS preflight, which the bridge never approves.
+  localhost without a CORS preflight, which the bridge never approves. The one exception is the
+  worker's screenshot upload: without a host grant for `127.0.0.1` its `PUT` is a CORS request, so
+  the bridge answers the preflight, and the `PUT`'s replies, for `/tweaks/:n/screenshot` and the
+  extension's exact origin only (that origin, `PUT`, the three headers it sends, `Vary: Origin`, no
+  credentials). A page can't send that `Origin`, and the `PUT` still needs `x-tweak: 1`.
 - The WebSocket (which can't carry custom headers) is accepted only from the extension's exact
   origin, `chrome-extension://<id>`. The manifest pins a `key`, so the ID is the same for every
   install, and the binary knows it.
@@ -379,7 +387,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   it held the worker for 7 minutes. Without it, Chrome stopped the worker at 30 s without `onclose`,
   so the 30-second reconnect alarm is set at every worker start. The worker relays to tabs. Screenshots are uploaded separately over HTTP
   (`PUT /tweaks/:n/screenshot`, PNG) after the tweak is created, and stored as files beside the
-  database.
+  database (`screenshots/<n>.png`; 204, or `no-tweak`, `bad-request` for anything but a PNG, or
+  `too-large` over 16 MiB).
 - **CLI ↔ bridge**: plain HTTP. Every request carries `x-tweak: 1`, `x-tweak-protocol: <n>` and the
   session ID. Endpoints: `POST /sessions` (register and check in), `GET/POST/DELETE /claims`,
   `GET /inbox?after=<seq>` (long-poll; one line of at most 500 characters per event; it also
@@ -842,17 +851,22 @@ How it's made (decided in [Extension architecture](https://github.com/codaset/tw
 
 1. Captured the moment you pick, before the composer opens, since that's what you were pointing at
    (hover menus may close once the composer takes focus). Held until Send, thrown away on cancel.
-2. The content script hides the overlay host and waits two animation frames. The worker calls
-   `captureVisibleTab` (PNG; the viewport only, in device pixels).
+2. The content script hides the overlay host (a `visibility` style, so focus and layering are left
+   alone) and waits two animation frames. The worker calls `captureVisibleTab` (PNG; the viewport
+   only, in device pixels) on the sender's tab if it's the one shown; the host comes back when the
+   worker answers, or after 1.5 s. Without `<all_urls>` or `activeTab` Chrome refuses, and the tweak
+   goes without one.
 3. The content script sends the rects of the elements, text or area, taken at pick time
    (`ns.panel.rects()`: `{kind: element|text|area, number?, x, y, width, height}`, viewport CSS px). In an `OffscreenCanvas`, the
    worker crops to their union plus a 48 CSS-px margin (clipped to the viewport, converted to device
-   pixels), draws the numbered outlines into the image, and scales so the longest side is at most
-   1600px.
+   pixels, at the capture's width over `innerWidth`, so zoom counts), draws the numbered outlines into the image, and scales so the longest side is at most
+   1600px. The outlines are drawn after the scaling, in its pixels, so they stay 2 CSS px wide. The
+   rects are the composer's at Send, so ⇧-clicked elements are outlined too.
 4. Uploaded with `PUT /tweaks/:n/screenshot` once the bridge has given the tweak its number. The
    bridge only stores the file.
 
-Captures queue in the worker to stay within Chrome's limit of two a second.
+Captures queue in the worker to stay within Chrome's limit of two a second: each starts at least
+550 ms after the one before, refused ones included.
 
 ## Claude's side
 
@@ -1349,7 +1363,11 @@ doesn't inject into tabs already open when a claim arrives, so a test opens its 
 claim is registered. The message is sent from a page click the content script hears: handlers like `sidePanel.open` need a user gesture, and CDP's
 `userGesture` flag doesn't carry one to the worker. The side panel is tested as `panel.html`
 open in a tab. The `activeTab` path serves `static` a second time on `127.0.0.1`, which the copy has
-no grant for, and uses `page.triggerExtensionAction`, asserting the screenshot is captured.
+no grant for, and uses `page.triggerExtensionAction`, asserting the screenshot is captured (after a
+reload, which is when the claim's scripts run there; the side panel the button opens narrows the
+real view, so that test drops the emulated viewport). Screenshots with access granted use a copy with `<all_urls>` in
+`host_permissions` (`setup(fixture, {allUrls: true})`), at a real 2× (`--force-device-scale-factor`:
+an emulated device scale doesn't reach `captureVisibleTab`).
 Captures are spaced more than 1 s apart (Chrome's 2-per-second quota). `--no-sandbox` is passed only
 on Linux CI (the ubuntu-24.04 AppArmor restriction). Confirmed on an ubuntu-24.04 runner: without it,
 Chrome for Testing exits at launch with "No usable sandbox!"; with it, Puppeteer loads the test copy.

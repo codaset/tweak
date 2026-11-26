@@ -1200,8 +1200,8 @@ before writing any:
   binary or over 2 MB**: the file conflicts.
 
 If every file is clean, the bridge writes them all (each file's old contents are moved aside first, so
-if a write fails the files already written are put back by renames, and the card says so; a file that
-is now a symlink conflicts), the change becomes `undone`, an `undo` entry from you goes in the
+if a write fails the files already written are put back by renames, and the card says so; a file
+that is now a symlink, or has one on its path, conflicts), the change becomes `undone`, an `undo` entry from you goes in the
 conversation, and the page reloads as after a change (on the `tweak-undone` event, which `tweak undone`
 logs too). If any file conflicts, nothing
 is written and the change becomes `undo-requested`. It goes to the session that now claims the

@@ -38,11 +38,22 @@ type tweakOut struct {
 	Targets  json.RawMessage `json:"targets"`
 	Anchor   json.RawMessage `json:"anchor"`
 	Entries  []entryOut      `json:"entries"`
+	// Resends and AgainAt are how the card tells a tweak Claude hasn't
+	// picked up: the again: lines sent so far, and when the current wait
+	// for Claude ends (none while an again: line waits to be printed).
+	Resends int    `json:"resends,omitempty"`
+	AgainAt string `json:"againAt,omitempty"`
 }
 
-func tweakJSON(t store.Tweak) tweakOut {
+func (b *Bridge) tweakJSON(t store.Tweak) tweakOut {
 	out := tweakOut{Number: t.Number, Page: t.Page, URL: t.URL, Status: t.Status, StatusAt: stamp(t.StatusAt),
 		Created: stamp(t.Created), Updated: stamp(t.Updated), Targets: t.Targets, Anchor: t.Anchor, Entries: []entryOut{}}
+	if t.Status == store.StatusDelivered {
+		out.Resends = t.Resends
+		if !t.WaitFrom.IsZero() {
+			out.AgainAt = stamp(t.WaitFrom.Add(b.opts.AgainAfter))
+		}
+	}
 	for _, e := range t.Entries {
 		out.Entries = append(out.Entries, entryOut{From: e.From, Kind: e.Kind, Text: e.Text, At: stamp(e.At)})
 	}
@@ -90,6 +101,18 @@ func replyLine(number int64, text string) string {
 	return fmt.Sprintf("tweak %d reply: %s", number, brief.Cut(text, requestCap))
 }
 
+// againLine is a delivered tweak sent again: "tweak <n> again: " and the
+// line it repeats, the reply when the developer has answered a question
+// (only a reply sends a tweak again after Claude has had it), else the new
+// tweak's line.
+func againLine(tw store.Tweak) string {
+	repeat := newLine(tw.Number, tw.Page, tw.Request(), tw.Targets)
+	if en, ok := tw.LastEntry(store.KindReply); ok {
+		repeat = replyLine(tw.Number, en.Text)
+	}
+	return fmt.Sprintf("tweak %d again: %s", tw.Number, repeat)
+}
+
 // line is an inbox event as the watcher prints it.
 func line(e store.Event) string {
 	switch e.Type {
@@ -99,6 +122,8 @@ func line(e store.Event) string {
 		if en, ok := e.Tweak.LastEntry(store.KindReply); ok {
 			return replyLine(e.Tweak.Number, en.Text)
 		}
+	case store.EventTweakAgain:
+		return againLine(*e.Tweak)
 	case store.EventClaimReleased:
 		return "claim released: " + e.Claim.Pattern
 	}
@@ -216,6 +241,8 @@ func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string
 		return 409, "not-asked", err.Error()
 	case errors.Is(err, store.ErrBlankReply):
 		return 400, "bad-request", err.Error()
+	case errors.Is(err, store.ErrPickedUp):
+		return 409, "picked-up", err.Error()
 	}
 	b.log.Print(err)
 	return 500, "internal", "the bridge failed: " + err.Error()

@@ -118,7 +118,7 @@ commands:
   claim <url>        claim the pages matching a URL pattern for this session
   claims             list every claim and its session
   release [pattern]  release one claim, or all of this session's
-  watch              print one line per new tweak, reply or released claim (the Monitor command)
+  watch              print one line per new tweak, reply, tweak sent again or released claim (the Monitor command)
   work <n>           print tweak n's brief and mark it as being worked on
   plan <n> <msg>     post a short plan for tweak n, naming the file
   ask <n> <msg>      ask the developer a question about tweak n

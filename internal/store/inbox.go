@@ -1,11 +1,14 @@
 package store
 
+import "database/sql"
+
 // The inbox: the events waiting for a session (its new tweaks, its released
 // claims), read from the event log after the session's cursor. Delivery is at
 // least once: asking for what comes after a sequence acknowledges everything
 // up to it, so a line handed out but never acknowledged (the watcher died) is
-// handed out again. The two-stage acknowledgement of "No lost tweaks" builds
-// on this cursor.
+// handed out again. This is the first stage of "No lost tweaks": a line
+// acknowledged is printed, and a tweak printed is delivered. The second
+// stage, Claude confirming it, is in again.go.
 
 // Inbox is one read of a session's inbox.
 type Inbox struct {
@@ -15,8 +18,9 @@ type Inbox struct {
 }
 
 // inboxWhere picks the events a session's watcher hears about: its new
-// tweaks, the replies to its questions, and its released claims.
-const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-replied', 'claim-released')`
+// tweaks, the replies to its questions, the tweaks sent again, and its
+// released claims.
+const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-replied', 'tweak-again', 'claim-released')`
 
 // Inbox acknowledges the session's events up to after, then returns those
 // after it. after < 0 means "where the last watcher left off" and
@@ -82,38 +86,64 @@ func (s *Store) Inbox(sessionID string, after int64) (Inbox, error) {
 	return in, tx.commit()
 }
 
-// deliver moves the session's cursor from acked to upto, marking the new
-// tweaks and replies acknowledged in between delivered if they are still
-// sent to it.
+// deliver moves the session's cursor from acked to upto. The new tweaks and
+// replies acknowledged in between become delivered if they are still sent
+// to it, and start their wait for Claude to confirm them; a delivered
+// tweak's again: line acknowledged starts its next wait.
 func (t *eventTx) deliver(sessionID string, acked, upto int64) error {
 	if _, err := t.Exec(`UPDATE deliveries SET last_ack = ? WHERE session = ?`, upto, sessionID); err != nil {
 		return err
 	}
+	at := t.s.now()
 	// A tweak sent again after upto (a reply since) waits for that line's ack.
-	rows, err := t.Query(`SELECT tweak FROM events e WHERE seq > ? AND seq <= ? AND type IN ('tweak-created', 'tweak-replied')
-		AND json_extract(payload, '$.session') = ?
-		AND NOT EXISTS (SELECT 1 FROM events l WHERE l.tweak = e.tweak AND l.seq > ? AND l.type IN ('tweak-created', 'tweak-replied'))`,
-		acked, upto, sessionID, upto)
+	sent, err := t.acknowledged(`'tweak-created', 'tweak-replied'`, sessionID, acked, upto)
 	if err != nil {
 		return err
 	}
+	err = t.updateLogging(sent, func(n int64) (sql.Result, error) {
+		return t.Exec(`UPDATE tweaks SET status = ?, status_at = ?, updated = ?, resends = 0, wait_from = ?
+			WHERE number = ? AND session = ? AND status = ?`, StatusDelivered, at, at, at, n, sessionID, StatusSent)
+	})
+	if err != nil {
+		return err
+	}
+	again, err := t.acknowledged(`'tweak-again'`, sessionID, acked, upto)
+	if err != nil {
+		return err
+	}
+	return t.updateLogging(again, func(n int64) (sql.Result, error) {
+		return t.Exec(`UPDATE tweaks SET wait_from = ?, updated = ?
+			WHERE number = ? AND session = ? AND status = ? AND wait_from IS NULL`, at, at, n, sessionID, StatusDelivered)
+	})
+}
+
+// acknowledged lists the tweaks with a line of one of types for the session
+// in (acked, upto], leaving out any with a later such line still to come.
+func (t *eventTx) acknowledged(types, sessionID string, acked, upto int64) ([]int64, error) {
+	rows, err := t.Query(`SELECT DISTINCT tweak FROM events e WHERE seq > ? AND seq <= ? AND type IN (`+types+`)
+		AND json_extract(payload, '$.session') = ?
+		AND NOT EXISTS (SELECT 1 FROM events l WHERE l.tweak = e.tweak AND l.seq > ? AND l.type IN (`+types+`))`,
+		acked, upto, sessionID, upto)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	var numbers []int64
 	for rows.Next() {
 		var n int64
 		if err := rows.Scan(&n); err != nil {
-			rows.Close()
-			return err
+			return nil, err
 		}
 		numbers = append(numbers, n)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
+	return numbers, rows.Err()
+}
+
+// updateLogging runs update on each tweak, and logs tweak-status for each
+// one it changed.
+func (t *eventTx) updateLogging(numbers []int64, update func(int64) (sql.Result, error)) error {
 	for _, n := range numbers {
-		at := now()
-		r, err := t.Exec(`UPDATE tweaks SET status = ?, status_at = ?, updated = ? WHERE number = ? AND session = ? AND status = ?`,
-			StatusDelivered, at, at, n, sessionID, StatusSent)
+		r, err := update(n)
 		if err != nil {
 			return err
 		}

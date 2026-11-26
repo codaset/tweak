@@ -393,14 +393,15 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
 - **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version}` (the extension's
-  version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `resolve`,
+  version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `again`, `resolve`,
   `undo`; from the bridge a snapshot or events, and refusals. A request carries the worker's
   `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
   socket stays open. `create` is `{ref, url, request, targets, anchor}`; the bridge refuses it with
   `bad-request` for a malformed one, and `no-claim` for a page no claim covers (so every stored
   tweak has a session). `reply` is `{ref, number, text}`, answered with the number, or `not-asked`
-  when Claude isn't waiting on a question, `no-tweak` or `bad-request`. A snapshot holds only the open (unresolved) tweaks, and `tweak-created`,
-  `tweak-status` and `tweak-replied` events carry whole tweaks, entries included. Their shapes, with the `GET /inbox`
+  when Claude isn't waiting on a question, `no-tweak` or `bad-request`. `again` is `{ref, number}`, the card's
+  **Send again**, answered with the number, or `picked-up` once Claude has confirmed the tweak. A snapshot holds only the open (unresolved) tweaks, and `tweak-created`,
+  `tweak-status`, `tweak-replied` and `tweak-again` events carry whole tweaks, entries included. Their shapes, with the `GET /inbox`
   reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
   `tweak watch` exits on), are in `schema/`.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
@@ -482,13 +483,18 @@ The inbox is acknowledged in two stages, because a printed line isn't proof Clau
 Monitor research saw a burst lose one line and cut another):
 
 - `tweak watch` prints at most one line every 250 ms, outside Monitor's 200 ms batching window, and
-  acknowledges each line once printed. That sets `delivered`, and the bridge redelivers anything
-  unacknowledged when a watcher reconnects.
-- A printed tweak is confirmed only when Claude runs `tweak work` or `tweak queue` on it. Otherwise
-  the bridge redelivers it as an `again:` line after 3 minutes, at most twice. After the second goes
+  acknowledges each line once printed (it asks for what comes after that line). That sets `delivered`,
+  and the bridge redelivers anything unacknowledged when a watcher reconnects.
+- A printed tweak is confirmed only when Claude runs `tweak work` or `tweak queue` on it (or
+  `tweak decline`: anything that moves it on from `delivered`). Otherwise
+  the bridge redelivers it as an `again:` line after 3 minutes, at most twice. Each wait runs from
+  the ack of the line before, so a watcher that was away doesn't get both at once. After the second goes
   unanswered, the card says "Claude hasn't picked this up. The session may be busy." with a
   **Send again** button that sends one more `again:`. The status stays `delivered`; the card works
-  out the text from the wait and the number of resends.
+  out the text from the wait and the number of resends: a delivered tweak carries `resends` and
+  `againAt` (when the current wait ends), and the card says so once `resends` is 2 or more and
+  `againAt` has passed. A tweak delivered afresh (a reply) starts again from none. Tests shorten the
+  3 minutes with `TWEAK_TEST_AGAIN_AFTER` (a Go duration), which only a development build reads.
 
 ### When the session goes quiet
 
@@ -865,6 +871,8 @@ claim restored: https://ernie.localhost/*
 claim lost: https://ernie.localhost/* is now claimed by the session in ~/dev/ernie-2
 ```
 
+An `again:` line repeats the whole line, `tweak 12 again: tweak 12 new: …`, or the `reply` line
+once the developer has answered a question.
 Only the developer's own words appear, cut at 300 characters with `…`. Page text (element labels,
 visible text) never goes in the line; it stays in the brief, marked as data. The path and element
 count come from the bridge. The watcher exits after `claim released` once its session has no claims

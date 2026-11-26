@@ -44,14 +44,14 @@ type eventOut struct {
 	Tweak *tweakOut `json:"tweak,omitempty"`
 }
 
-func eventJSON(e store.Event) eventOut {
+func (b *Bridge) eventJSON(e store.Event) eventOut {
 	out := eventOut{Type: "event", Seq: e.Seq, Event: e.Type}
 	if e.Claim != nil {
 		c := claimJSON(*e.Claim)
 		out.Claim = &c
 	}
 	if e.Tweak != nil {
-		t := tweakJSON(*e.Tweak)
+		t := b.tweakJSON(*e.Tweak)
 		out.Tweak = &t
 	}
 	return out
@@ -140,7 +140,7 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 		snap.Claims = append(snap.Claims, claimJSON(cl))
 	}
 	for _, tw := range tweaks {
-		snap.Tweaks = append(snap.Tweaks, tweakJSON(tw))
+		snap.Tweaks = append(snap.Tweaks, b.tweakJSON(tw))
 	}
 	if write(ctx, c, snap) != nil {
 		return
@@ -169,7 +169,7 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range events {
-			if write(ctx, c, eventJSON(e)) != nil {
+			if write(ctx, c, b.eventJSON(e)) != nil {
 				return
 			}
 			seq = e.Seq
@@ -207,7 +207,37 @@ func (b *Bridge) handle(ctx context.Context, c *websocket.Conn, raw []byte) {
 			return
 		}
 		write(ctx, c, b.reply(in))
+	case "again":
+		var in againIn
+		if json.Unmarshal(raw, &in) != nil || in.Ref == "" {
+			return
+		}
+		write(ctx, c, b.again(in))
 	}
+}
+
+// againIn is an again message: the card's Send again, for a tweak Claude
+// hasn't picked up.
+type againIn struct {
+	Ref    string `json:"ref"`
+	Number int64  `json:"number"`
+}
+
+// again sends a delivered tweak to its session once more; its tweak-again
+// event is the inbox line, and reaches every socket through the log.
+func (b *Bridge) again(in againIn) resultOut {
+	out := resultOut{Type: "result", Ref: in.Ref}
+	if in.Number < 1 {
+		out.Error, out.Message = "bad-request", "send again needs the tweak's number"
+		return out
+	}
+	tw, err := b.store.SendAgain(in.Number)
+	if err != nil {
+		_, out.Error, out.Message = b.refusalOf(in.Number, err)
+		return out
+	}
+	out.Number = tw.Number
+	return out
 }
 
 // replyIn is a reply message: the developer's answer to Claude's question,

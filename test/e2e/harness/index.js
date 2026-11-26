@@ -25,6 +25,8 @@ export const CARD_SUMMARY = ".panel .entry.kind-summary .entry-text";
 export const CARD_ENTRY = ".panel .entry";
 export const REPLY_INPUT = ".panel .answer textarea";
 export const REPLY_SEND = ".panel .answer .send";
+// Send again, while Claude hasn't picked a tweak up.
+export const CARD_RESEND = ".panel .retry .send";
 const text = (selector) => `root.querySelector(${JSON.stringify(selector)})?.textContent`;
 const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 
@@ -42,7 +44,10 @@ const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 // - tab: the content script in that page (contentScript);
 // - serve(host): the same fixture again on another host, e.g. 127.0.0.1
 //   for the activeTab path, stopped with the rest.
-export function setup(fixture) {
+// Options go to devBridge: againAfter shortens the bridge's 3-minute wait
+// before an again: line. Give such a setup its own describe, so its again:
+// lines and card text reach no other test.
+export function setup(fixture, options = {}) {
   const extra = [];
   const env = {
     async serve(host) {
@@ -54,7 +59,7 @@ export function setup(fixture) {
   before(async (t) => {
     env.app = await startFixture(fixture);
     t.diagnostic(`${fixture.name} ready in ${env.app.bootMs} ms`);
-    env.bridge = await devBridge();
+    env.bridge = await devBridge(options);
     env.extension = testCopy({ bridgePort: env.bridge.port });
     env.claude = standIn(env.bridge, { folder: env.app.folder });
     await env.claude.claim(`${env.app.url("")}/*`);

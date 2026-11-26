@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/again.json",
+  "title": "again",
+  "description": "To the bridge on the WebSocket: the card's Send again, for a delivered tweak Claude hasn't picked up. Answered by a result with the tweak's number (picked-up once Claude has confirmed it); the tweak-again event follows, and is the session's again: line.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "again"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "number": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "type",
+    "ref",
+    "number"
+  ],
+  "additionalProperties": false
+}

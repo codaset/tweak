@@ -14,6 +14,7 @@ const (
 	EventTweakCreated  = "tweak-created"
 	EventTweakStatus   = "tweak-status"  // its status changed, or an entry was added
 	EventTweakReplied  = "tweak-replied" // the developer answered Claude's question
+	EventTweakAgain    = "tweak-again"   // a delivered tweak Claude hasn't confirmed, sent again
 )
 
 // Event is one entry in the append-only event log. Seq is monotonic. It
@@ -78,7 +79,7 @@ func (t *eventTx) logClaim(typ string, c Claim) error {
 		Session: c.Session.ID, Agent: c.Session.Agent, Folder: c.Session.Folder,
 		Label: c.Session.Label, LastCheckIn: c.Session.LastCheckIn.UnixMilli(),
 	})
-	_, err := t.Exec(`INSERT INTO events (type, claim, payload, at) VALUES (?, ?, ?, ?)`, typ, c.ID, string(payload), now())
+	_, err := t.Exec(`INSERT INTO events (type, claim, payload, at) VALUES (?, ?, ?, ?)`, typ, c.ID, string(payload), t.s.now())
 	t.logged = t.logged || err == nil
 	return err
 }
@@ -96,6 +97,8 @@ type tweakRecord struct {
 	Targets  json.RawMessage `json:"targets"`
 	Anchor   json.RawMessage `json:"anchor"`
 	Entries  []entryRecord   `json:"entries"`
+	Resends  int             `json:"resends,omitempty"`
+	WaitFrom int64           `json:"waitFrom,omitempty"`
 }
 
 type entryRecord struct {
@@ -108,12 +111,15 @@ type entryRecord struct {
 func (t *eventTx) logTweak(typ string, tw Tweak) error {
 	r := tweakRecord{Number: tw.Number, Session: tw.Session, Page: tw.Page, URL: tw.URL, Status: tw.Status,
 		StatusAt: tw.StatusAt.UnixMilli(), Created: tw.Created.UnixMilli(), Updated: tw.Updated.UnixMilli(),
-		Targets: tw.Targets, Anchor: tw.Anchor, Entries: []entryRecord{}}
+		Targets: tw.Targets, Anchor: tw.Anchor, Entries: []entryRecord{}, Resends: tw.Resends}
+	if !tw.WaitFrom.IsZero() {
+		r.WaitFrom = tw.WaitFrom.UnixMilli()
+	}
 	for _, e := range tw.Entries {
 		r.Entries = append(r.Entries, entryRecord{From: e.From, Kind: e.Kind, Text: e.Text, At: e.At.UnixMilli()})
 	}
 	payload, _ := json.Marshal(r)
-	_, err := t.Exec(`INSERT INTO events (type, tweak, payload, at) VALUES (?, ?, ?, ?)`, typ, tw.Number, string(payload), now())
+	_, err := t.Exec(`INSERT INTO events (type, tweak, payload, at) VALUES (?, ?, ?, ?)`, typ, tw.Number, string(payload), t.s.now())
 	t.logged = t.logged || err == nil
 	return err
 }
@@ -121,7 +127,10 @@ func (t *eventTx) logTweak(typ string, tw Tweak) error {
 func (r tweakRecord) tweak() *Tweak {
 	tw := &Tweak{Number: r.Number, Session: r.Session, Page: r.Page, URL: r.URL, Status: r.Status,
 		StatusAt: fromMillis(r.StatusAt), Created: fromMillis(r.Created), Updated: fromMillis(r.Updated),
-		Targets: r.Targets, Anchor: r.Anchor}
+		Targets: r.Targets, Anchor: r.Anchor, Resends: r.Resends}
+	if r.WaitFrom != 0 {
+		tw.WaitFrom = fromMillis(r.WaitFrom)
+	}
 	for _, e := range r.Entries {
 		tw.Entries = append(tw.Entries, Entry{From: e.From, Kind: e.Kind, Text: e.Text, At: fromMillis(e.At)})
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/codaset/tweak/internal/bridge"
 	"github.com/codaset/tweak/internal/version"
@@ -30,7 +31,8 @@ func runBridge(c *context, args []string) error {
 		}
 	}
 
-	b, err := bridge.Start(bridge.Options{Config: c.cfg, Version: version.Version, Development: c.Getenv("TWEAK_BIN") != "", Log: c.Stderr})
+	b, err := bridge.Start(bridge.Options{Config: c.cfg, Version: version.Version, Development: c.Getenv("TWEAK_BIN") != "",
+		AgainAfter: testAgainAfter(c.Getenv), Log: c.Stderr})
 	if errors.Is(err, bridge.ErrAlreadyRunning) {
 		if byCLI {
 			status(lineAlready)
@@ -52,4 +54,20 @@ func runBridge(c *context, args []string) error {
 		b.Shutdown()
 	}()
 	return b.Serve()
+}
+
+// testAgainAfter is the test-only TWEAK_TEST_AGAIN_AFTER (a Go duration such
+// as 2s): how long a delivered tweak waits for Claude before the bridge
+// sends it again, so the e2e suite needn't wait 3 minutes. Only a
+// development build (TWEAK_BIN set) reads it; otherwise, or when it isn't a
+// positive duration, it is 0, the bridge's 3 minutes.
+func testAgainAfter(getenv func(string) string) time.Duration {
+	if getenv("TWEAK_BIN") == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(getenv("TWEAK_TEST_AGAIN_AFTER"))
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return d
 }

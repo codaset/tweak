@@ -52,6 +52,12 @@ type Tweak struct {
 	Targets  json.RawMessage // what it points at, as the extension sent it
 	Anchor   json.RawMessage // where its pin sits
 	Entries  []Entry
+	// Resends counts the again: lines sent while it is delivered and
+	// unconfirmed; WaitFrom is when the wait for Claude to confirm it
+	// began, zero while an again: line waits to be printed (or once it is
+	// no longer delivered). See docs/design.md, "No lost tweaks".
+	Resends  int
+	WaitFrom time.Time
 }
 
 // Entry is one turn of a tweak's conversation.
@@ -207,7 +213,7 @@ func (s *Store) CreateTweak(n NewTweak) (Tweak, error) {
 	if !session.Valid {
 		return Tweak{}, ErrNoClaim
 	}
-	at := now()
+	at := s.now()
 	r, err := tx.Exec(`INSERT INTO tweaks (session, page, page_url, status, status_at, created, updated, targets, click_anchor)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session, page, n.URL, StatusSent, at, at, at, string(orEmpty(n.Targets)), string(orEmpty(n.Anchor)))
@@ -328,7 +334,7 @@ func ownTweak(tx *eventTx, sessionID string, number int64) (Tweak, error) {
 // change sets a tweak's status, adds entry when given, and logs the tweak
 // as it now is. status_at moves only when the status does.
 func (t *eventTx) change(number int64, status string, entry *Entry, event string) (Tweak, error) {
-	at := now()
+	at := t.s.now()
 	if _, err := t.Exec(`UPDATE tweaks SET status = ?, status_at = CASE WHEN status = ? THEN status_at ELSE ? END, updated = ? WHERE number = ?`,
 		status, status, at, at, number); err != nil {
 		return Tweak{}, err
@@ -363,13 +369,16 @@ func sessionIn(q queryRower, id string) (Session, error) {
 	return se, err
 }
 
-const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, '')`
+const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, ''), resends, coalesce(wait_from, 0)`
 
 func scanTweak(row interface{ Scan(...any) error }) (Tweak, error) {
 	var tw Tweak
-	var statusAt, created, updated int64
+	var statusAt, created, updated, waitFrom int64
 	var targets, anchor string
-	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor)
+	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor, &tw.Resends, &waitFrom)
+	if waitFrom != 0 && tw.Status == StatusDelivered {
+		tw.WaitFrom = fromMillis(waitFrom)
+	}
 	tw.StatusAt, tw.Created, tw.Updated = fromMillis(statusAt), fromMillis(created), fromMillis(updated)
 	tw.Targets, tw.Anchor = json.RawMessage(targets), orEmpty(json.RawMessage(anchor))
 	return tw, err

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codaset/tweak/internal/store"
 	"github.com/codaset/tweak/internal/version"
 )
 
@@ -316,6 +317,11 @@ func TestALongPathStaysInsideTheLineCap(t *testing.T) {
 	got := newLine(7, "https://x.localhost/"+strings.Repeat("a", 600), strings.Repeat("b", 400), json.RawMessage(`{"elements":[{}]}`))
 	if n := len([]rune(got)); n > 500 {
 		t.Fatalf("line of %d characters", n)
+	}
+	again := againLine(store.Tweak{Number: 1_000_000, Page: "https://x.localhost/" + strings.Repeat("a", 600),
+		Targets: json.RawMessage(`{"elements":[{}]}`), Entries: []store.Entry{{Kind: store.KindRequest, Text: strings.Repeat("b", 400)}}})
+	if n := len([]rune(again)); n > 500 {
+		t.Fatalf("again: line of %d characters", n)
 	}
 }
 

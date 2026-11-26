@@ -215,7 +215,10 @@
     .status { display: flex; align-items: center; gap: 8px; font-weight: 550; }
     .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); transition: background-color 200ms ease; }
     .status.working .dot { animation: pulse 1.4s ease-in-out infinite; }
-    .request {
+    /* Claude hasn't picked it up: two lines, the dot on the first */
+    .status.unanswered { align-items: flex-start; text-wrap: pretty; }
+    .status.unanswered .dot { margin-top: 0.42em; }
+    .retry { display: flex; align-items: center; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }    .request {
       margin: 0;
       padding-left: 10px;
       border-left: 2px solid var(--line);

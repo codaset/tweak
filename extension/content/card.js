@@ -4,6 +4,8 @@
 // it: Claude's plan, its question, your reply, its summary or its reason for
 // declining. While Claude has a question, the card has a reply box, and the
 // card opens by itself when the question arrives (without taking the focus).
+// When Claude hasn't picked a delivered tweak up after the bridge sent it
+// twice more, the card says so and offers Send again.
 // The card stays open until esc or ×; clicking around the page, or navigating
 // within it, leaves it open. While the page is dormant (no claim covers it)
 // the card is hidden, and it comes back when a claim covers the page again.
@@ -22,9 +24,10 @@
   const EDGE = 8; // from the viewport's edges
 
   // mode: null, {kind: "compose", element, targets, anchor, sending, error, ref}
-  // or {kind: "card", number, request, label, replying, replyError, replyRef}
-  // (request and label are the local copies while the bridge's tweak hasn't
-  // arrived yet; the reply fields are a reply on its way). Both may carry
+  // or {kind: "card", number, request, label, replying, replyError, replyRef,
+  // resending, resendError, resendRef} (request and label are the local
+  // copies while the bridge's tweak hasn't arrived yet; the reply fields are
+  // a reply on its way, the resend fields a Send again). Both may carry
   // returnTo, the element focus goes back to on close.
   let mode = null;
   let panel = null;
@@ -179,13 +182,39 @@
     });
     send.addEventListener("click", submitReply);
 
-    panel.append(status, request, thread, answer, heard);
+    // Send again, shown while Claude hasn't picked the tweak up.
+    const retry = el("div", "retry");
+    const retryError = el("span", "error");
+    retryError.setAttribute("role", "alert");
+    const resend = el("button", "send", "Send again");
+    resend.type = "button";
+    resend.addEventListener("click", submitResend);
+    retry.append(retryError, resend);
+    retry.hidden = true;
+
+    panel.append(status, retry, request, thread, answer, heard);
     status.setAttribute("aria-live", "polite");
     // heardUpTo is how many entries have been read out or were there when the
     // card opened; a card opened by Claude's question reads that one out.
     const entries = ns.describe.thread(tweak);
     const heardUpTo = mode.announce ? Math.max(0, entries.length - 1) : entries.length;
-    parts = { chip: panel.querySelector(".chip"), status, statusText, request, thread, said: "", heard, heardUpTo, answer, box, send, error };
+    parts = {
+      chip: panel.querySelector(".chip"),
+      status,
+      statusText,
+      request,
+      thread,
+      said: "",
+      heard,
+      heardUpTo,
+      answer,
+      box,
+      send,
+      error,
+      retry,
+      resend,
+      retryError,
+    };
     updateCard(tweak);
   }
 
@@ -195,7 +224,8 @@
     if (chip.textContent !== label) chip.textContent = label;
     chip.hidden = !label;
     const s = ns.describe.status(tweak);
-    const statusClass = `status ${ns.describe.classes(tweak)}`;
+    const unanswered = ns.describe.unanswered(tweak);
+    const statusClass = `status ${ns.describe.classes(tweak)}${unanswered ? " unanswered" : ""}`;
     if (status.className !== statusClass) status.className = statusClass;
     if (statusText.textContent !== s.text) statusText.textContent = s.text;
     const words = tweak?.entries?.find((e) => e.kind === "request")?.text ?? mode.request ?? "";
@@ -233,6 +263,47 @@
       }
     }
     refreshReply();
+
+    // Send again stays up while its answer is on the way, or it failed.
+    // Once sent, it hides until the tweak's resend shows, which may come
+    // after the bridge's answer.
+    const resent = mode.resent !== undefined && tweak?.resends === mode.resent;
+    const offer = (unanswered && !resent) || Boolean(mode.resending || mode.resendError);
+    if (parts.retry.hidden === offer) {
+      if (!offer && ns.overlay.root?.activeElement === parts.resend) panel.focus({ preventScroll: true });
+      parts.retry.hidden = !offer;
+    }
+    refreshResend();
+  }
+
+  function refreshResend() {
+    const { resend, retryError } = parts;
+    const connected = ns.worker.connection === "connected";
+    const disabled = Boolean(mode.resending) || !connected;
+    if (resend.disabled !== disabled) resend.disabled = disabled;
+    const label = mode.resending ? "Sending…" : "Send again";
+    if (resend.textContent !== label) resend.textContent = label;
+    const why = mode.resendError || (connected ? "" : "Not connected to Tweak");
+    if (retryError.textContent !== why) retryError.textContent = why;
+  }
+
+  function submitResend() {
+    if (mode?.kind !== "card" || parts.resend.disabled) return;
+    mode.resending = true;
+    mode.resendError = "";
+    mode.resendRef = `t${++refs}`;
+    mode.resendFrom = ns.page.tweak(mode.number)?.resends; // the resends it was sent at
+    refreshResend();
+    ns.worker.post({ type: "again", ref: mode.resendRef, number: mode.number });
+  }
+
+  // resendEnded finishes a Send again: sent (the tweak's next event, with
+  // its again: line on the way, hides the offer), or refused with why.
+  function resendEnded(why) {
+    mode.resending = false;
+    mode.resendError = why;
+    if (!why) mode.resent = mode.resendFrom;
+    updateCard();
   }
 
   // announce reads new entries out through the live region. The text is set
@@ -414,10 +485,16 @@
       if (mode?.kind !== "card" || msg.ref !== mode.replyRef || !mode.replying) return;
       replyEnded(msg.number ? "" : msg.error || "Couldn't send the reply");
     },
+    // resent is the bridge's answer to a Send again.
+    resent(msg) {
+      if (mode?.kind !== "card" || msg.ref !== mode.resendRef || !mode.resending) return;
+      resendEnded(msg.number ? "" : msg.error || "Couldn't send it again");
+    },
     // unsent ends a send whose answer can't come (the worker's port went):
     // the composer or reply box keeps the text and says why.
     unsent(why) {
       if (mode?.kind === "card" && mode.replying) replyEnded(why);
+      if (mode?.kind === "card" && mode.resending) resendEnded(why);
       if (mode?.kind !== "compose" || !mode.sending) return;
       mode.sending = false;
       mode.error = why;

@@ -268,3 +268,45 @@ func (s *sandbox) tweakIn(stdin io.Reader, session, folder string, args ...strin
 	cmd.Run()
 	return result{cmd.ProcessState.ExitCode(), out.String(), errOut.String()}
 }
+
+// A tweak the session never picks up comes back as again: lines, twice. A
+// development bridge takes its wait from TWEAK_TEST_AGAIN_AFTER.
+func TestAnUnconfirmedTweakComesBackAgain(t *testing.T) {
+	s := newSandbox(t)
+	s.extra = []string{"TWEAK_TEST_AGAIN_AFTER=300ms"}
+	ernie := s.folder("ernie")
+	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
+	ext := s.extension()
+	w := s.watch("s1", ernie)
+	n := ext.create("https://ernie.localhost/", "make it green")
+	first := w.line()
+	for range 2 {
+		if got := w.line(); got != fmt.Sprintf("tweak %d again: %s", n, first) {
+			t.Fatalf("line %q", got)
+		}
+	}
+	s.tweak("s1", ernie, "work", fmt.Sprint(n))
+}
+
+// A burst of tweaks reaches the Monitor one line at a time, outside its
+// 200 ms batching window.
+func TestWatchPacesABurst(t *testing.T) {
+	s := newSandbox(t)
+	ernie := s.folder("ernie")
+	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
+	ext := s.extension()
+	for _, r := range []string{"one", "two", "three"} {
+		ext.create("https://ernie.localhost/", r)
+	}
+	w := s.watch("s1", ernie)
+	var at []time.Time
+	for range 3 {
+		w.line()
+		at = append(at, time.Now())
+	}
+	for i := 1; i < len(at); i++ {
+		if gap := at[i].Sub(at[i-1]); gap < 100*time.Millisecond {
+			t.Fatalf("line %d came %v after the one before", i+1, gap)
+		}
+	}
+}

@@ -27,5 +27,33 @@
       { "file": "src/theme.css", "line": 20, "role": "style", "via": "css" }
     ],
     "clues": ["data-qa=plan-badge", "text Current", "class badge"]
+  },
+  {
+    "name": "name field and save button, ⇧-clicked",
+    "pick": { "selectors": ["#name", "#save"] },
+    "locations": [],
+    "clues": ["id=name", "data-testid=save"],
+    "brief": ["## Element 1: `input#name`", "## Element 2: `button#save`"]
+  },
+  {
+    "name": "selected words in the lede",
+    "pick": { "text": "no framework", "in": ".lede" },
+    "locations": [],
+    "clues": [],
+    "brief": ["## Element 1: `p.lede`", "## Selected text, in element 1", "\nno framework\n", "Before it: \"A page with\""]
+  },
+  {
+    "name": "area over the name field and save button",
+    "pick": { "area": { "around": ["#name", "#save"], "margin": 4 } },
+    "locations": [],
+    "clues": ["id=name", "data-testid=save"],
+    "brief": ["## Element 1: `main`", "## Element 2: `input#name`", "## Element 3: `button#save`", "## Area", "Contains: elements 2–3"]
+  },
+  {
+    "name": "area over empty space in the toolbar",
+    "pick": { "area": { "x": 400, "y": 60, "width": 300, "height": 50 } },
+    "locations": [],
+    "clues": [],
+    "brief": ["## Element 1: `header.toolbar`", "## Area", "Contains: no elements"]
   }
 ]

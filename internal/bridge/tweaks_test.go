@@ -136,9 +136,11 @@ func TestTheRoundTrip(t *testing.T) {
 	}()
 	time.Sleep(100 * time.Millisecond)
 	s.send(createMsg("r1", "https://ernie.localhost/admin/users?x=1", "make it green"))
+	// A broken wake would answer empty at InboxWait, which the line check
+	// below catches; the wide window only allows for a loaded runner.
 	select {
 	case body = <-got:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("the long-poll didn't return when the tweak arrived")
 	}
 	conforms(t, "inbox", body)

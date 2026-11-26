@@ -1,0 +1,40 @@
+{
+  "type": "create",
+  "ref": "tab-3-1",
+  "url": "https://ernie.localhost/admin/users?tab=2",
+  "request": "make this button green",
+  "targets": {
+    "viewport": {
+      "width": 1100,
+      "height": 800,
+      "dpr": 2
+    },
+    "elements": [
+      {
+        "label": "p",
+        "selector": "p"
+      }
+    ],
+    "selection": {
+      "text": "x"
+    },
+    "area": {
+      "page": {
+        "x": 0,
+        "y": 0,
+        "width": 10,
+        "height": 10
+      },
+      "viewport": {
+        "x": 0,
+        "y": 0,
+        "width": 10,
+        "height": 10
+      }
+    }
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.4
+  }
+}

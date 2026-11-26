@@ -1,0 +1,42 @@
+{
+  "type": "create",
+  "ref": "tab-3-1",
+  "url": "https://ernie.localhost/admin/users?tab=2",
+  "request": "make this button green",
+  "targets": {
+    "viewport": {
+      "width": 1100,
+      "height": 800,
+      "dpr": 2
+    },
+    "elements": [
+      {
+        "label": "form.settings",
+        "selector": "main > form"
+      },
+      {
+        "label": "button#save",
+        "text": "Save",
+        "selector": "#save"
+      }
+    ],
+    "area": {
+      "page": {
+        "x": 40,
+        "y": 612.5,
+        "width": 320,
+        "height": 180
+      },
+      "viewport": {
+        "x": 40,
+        "y": 212.5,
+        "width": 320,
+        "height": 180
+      }
+    }
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.4
+  }
+}

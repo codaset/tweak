@@ -9,7 +9,7 @@ import (
 // goes quiet" and "Storage"): Withdraw takes back an open one, Resolve
 // clears a finished one away; either way it's resolved and its pin leaves
 // the page. Resolved tweaks are kept, with their changes, for Undo, until
-// Expire deletes them.
+// the bridge deletes them.
 
 // Refusals of Withdraw and Resolve, as the card shows them.
 var (
@@ -82,7 +82,7 @@ func (s *Store) Resolve(number int64) (Tweak, error) {
 }
 
 // lastSeq is the event log's end: the last sequence handed out, which
-// stays even when Expire deletes the event that had it (AUTOINCREMENT
+// stays even when the bridge deletes the event that had it (AUTOINCREMENT
 // keeps it in sqlite_sequence), so a client's cursor never runs past it.
 const lastSeq = `coalesce((SELECT seq FROM sqlite_sequence WHERE name = 'events'), 0)`
 

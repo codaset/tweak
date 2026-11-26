@@ -252,7 +252,7 @@ func TestResolvedTweaksAreDeletedAfterAWeek(t *testing.T) {
 	c := &fakeClock{t: time.Now().Add(time.Hour).Truncate(time.Millisecond)}
 	h, s := tracer(t, func(o *Options) {
 		o.Clock = c.now
-		o.ExpireCheck = 5 * time.Millisecond
+		o.DeleteResolvedCheck = 5 * time.Millisecond
 	})
 	for _, r := range []string{"r1", "r2"} {
 		s.send(createMsg(r, "https://ernie.localhost/", "make it green"))

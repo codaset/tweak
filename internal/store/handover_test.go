@@ -140,13 +140,13 @@ func TestALapsedClaimComesBackAtTheNextCheckIn(t *testing.T) {
 	s, c, tw := held(t)
 	s.Work("s1", tw.Number, nil, CaptureStart{Folder: "/dev/ernie", Repo: "/dev/ernie", Base: "abc"})
 	c.advance(lapseAfter - time.Second)
-	if stale, _ := s.Stale(lapseAfter); len(stale) != 0 {
-		t.Fatalf("stale before 10 minutes: %v", stale)
+	if lapsing, _ := s.LapsingSessions(lapseAfter); len(lapsing) != 0 {
+		t.Fatalf("lapsing before 10 minutes: %v", lapsing)
 	}
 	c.advance(time.Second)
-	stale, _ := s.Stale(lapseAfter)
-	if len(stale) != 1 || stale[0] != "s1" {
-		t.Fatalf("stale %v", stale)
+	lapsing, _ := s.LapsingSessions(lapseAfter)
+	if len(lapsing) != 1 || lapsing[0] != "s1" {
+		t.Fatalf("lapsing %v", lapsing)
 	}
 	lapsed, err := s.Lapse("s1", lapseAfter)
 	if err != nil || len(lapsed) != 1 {
@@ -215,7 +215,7 @@ func TestALapsedClaimIsKeptFor24Hours(t *testing.T) {
 	c.advance(lapseAfter)
 	s.Lapse("s1", lapseAfter)
 	c.advance(restoreFor)
-	if err := s.Expire(restoreFor); err != nil {
+	if err := s.ForgetLapsed(restoreFor); err != nil {
 		t.Fatal(err)
 	}
 	back, _ := s.Return("s1", restoreFor)
@@ -330,7 +330,7 @@ func TestALostClaimIsForgottenAfter24Hours(t *testing.T) {
 		c.advance(time.Hour)
 		s.Return("s1", restoreFor)
 	}
-	s.Expire(restoreFor)
+	s.ForgetLapsed(restoreFor)
 	_, err := s.SetStatus("s1", tw.Number, StatusQueued, nil)
 	if !errors.As(err, new(*NotYoursError)) {
 		t.Fatalf("a day later: %v", err)

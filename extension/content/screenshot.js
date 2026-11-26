@@ -24,6 +24,27 @@
       requestAnimationFrame(() => requestAnimationFrame(() => (clearTimeout(timer), done())));
     });
 
+  const TRIES = 3;
+  const size = () => ({ width: innerWidth, height: innerHeight });
+  // steady waits until the view's size has held for three frames (at most
+  // about half a second): the side panel's slide is over.
+  const steady = () =>
+    new Promise((done) => {
+      let last = size();
+      let still = 0;
+      const timer = setTimeout(done, 500);
+      const check = () => {
+        const now = size();
+        still = now.width === last.width && now.height === last.height ? still + 1 : 0;
+        last = now;
+        if (still >= 3) {
+          clearTimeout(timer);
+          done();
+        } else requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    });
+
   // conceal hides the host while any capture is under way. A style, not
   // hidePopover(), so the focus and the layering are left alone.
   let hiding = 0;
@@ -44,19 +65,31 @@
   ns.screenshot = {
     // take captures the tab without the overlay, resolving with the
     // capture's id, or null when there's none.
+    // The view can change size meanwhile: the side panel slides in over
+    // several frames, narrowing it. The worker scales the capture by the
+    // viewport sent with it, so a capture taken at another size than that
+    // is thrown away and taken again, once the size holds still.
     async take() {
       if (ns.worker.connection !== "connected") return null;
-      const id = `s${++n}`;
       conceal(true);
       try {
-        await painted();
-        const ok = await new Promise((done) => {
-          waiting.set(id, done);
-          setTimeout(() => answer(id, "late"), TIMEOUT);
-          ns.worker.post({ type: "capture", id, viewport: { width: innerWidth, height: innerHeight } });
-        });
-        if (ok === "late") this.drop(id); // still capturing: it isn't kept
-        return ok === true ? id : null;
+        for (let tries = 0; tries < TRIES; tries++) {
+          await painted();
+          await steady();
+          const id = `s${++n}`;
+          const viewport = size();
+          const ok = await new Promise((done) => {
+            waiting.set(id, done);
+            setTimeout(() => answer(id, "late"), TIMEOUT);
+            ns.worker.post({ type: "capture", id, viewport });
+          });
+          if (ok === "late") this.drop(id); // still capturing: it isn't kept
+          if (ok !== true) return null;
+          const now = size();
+          if (now.width === viewport.width && now.height === viewport.height) return id;
+          this.drop(id);
+        }
+        return null;
       } finally {
         conceal(false);
       }

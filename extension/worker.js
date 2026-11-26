@@ -5,7 +5,8 @@
 import { plan, CONTENT_FILES, PROBE_FILES } from "./lib/registrations.js";
 import { retryDelay } from "./lib/backoff.js";
 import { apply, coverOf, heldBy, registered } from "./lib/claims.js";
-import { badge } from "./lib/badge.js";
+import { GREY, badge, claimedBefore, tabBadge } from "./lib/badge.js";
+import { toolbar } from "./lib/toolbar.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
@@ -19,7 +20,7 @@ const ALL_URLS = { origins: ["<all_urls>"] };
 const NOT_CONNECTED = "Not connected to Tweak";
 
 // What the side panel shows (see lib/status.js for connection and message).
-const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], lapsed: [], update: null, suggestions: [], resolved: [] };
+const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], lapsed: [], update: null, suggestions: [], resolved: [], gone: [] };
 // The claims (held and lapsed) as of event seq, from the bridge or, until it
 // answers, the cache.
 let claimState = { seq: 0, claims: [], lapsed: [] };
@@ -30,10 +31,16 @@ let tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks: [] }
 // The tab each tweak was sent from, by number: its question pops up there
 // (askedIn). Kept in storage.session too, so a worker restart keeps it.
 const senders = new Map();
+// What each tab's badge was last set to (showBadge), by tab ID.
+const badges = new Map();
+let badgeRun = Promise.resolve();
 
 // ---- Listeners ----
 
-chrome.runtime.onInstalled.addListener(() => restoreFromCache());
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({ id: MENU, title: "Open side panel", contexts: ["action"] }, () => void chrome.runtime.lastError);
+  restoreFromCache();
+});
 chrome.runtime.onStartup.addListener(() => restoreFromCache());
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== ALARM) return;
@@ -53,10 +60,26 @@ chrome.storage.onChanged.addListener((changes, area) => {
     publishSuggestions();
   }
 });
-// Toggling pick mode on a claimed page (design.md § Toolbar button) is still
-// to come; ⌥-click picks for now. While the bridge is down the button keeps
-// opening the side panel, as pick mode will then too.
-chrome.action.onClicked.addListener((tab) => openSidePanel(tab));
+// The toolbar button and its shortcuts (design.md § Toolbar button). Each
+// handler opens the side panel, when it does, before any await: the gesture
+// sidePanel.open needs ends with the listener's first turn.
+chrome.action.onClicked.addListener((tab) => pickMode(tab));
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === MENU && tab) openSidePanel(tab).catch(warnPanel);
+});
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (!tab) return;
+  if (command === "pick-mode") pickMode(tab);
+  else if (command === "side-panel") openSidePanel(tab).catch(warnPanel);
+  else if (command === "pins") togglePins(tab);
+});
+// Chrome keeps a tab's badge across navigation: recomputed as the tab moves.
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if ("url" in change || change.status === "loading") {
+    badges.delete(tabId);
+    showBadge();
+  }
+});
 chrome.runtime.onConnect.addListener((port) => {
   const ports = { panel: panels, tab: tabs }[port.name];
   if (!ports) return;
@@ -68,26 +91,66 @@ chrome.runtime.onConnect.addListener((port) => {
     ports.delete(port);
     port.shots.clear();
     if (port.suggestions?.length) publishSuggestions();
+    if (port.gone?.length) publishGone();
   });
   if (port.name === "tab") port.onMessage.addListener((msg) => onTabMessage(port, msg));
   if (port.name === "panel") port.onMessage.addListener((msg) => onPanelMessage(port, msg));
   port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
   if (port.name === "tab") selfUpdate.watchTab(port);
 });
-chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove([cardKey(tabId), draftKey(tabId)]));
+chrome.tabs.onRemoved.addListener((tabId) => {
+  badges.delete(tabId);
+  chrome.storage.session.remove([cardKey(tabId), draftKey(tabId)]);
+});
 // A tab asks for the side panel: an ⌥-click while the bridge is down. Sent
 // with runtime.sendMessage from the click, whose user gesture
 // sidePanel.open needs; it's called first, while the gesture lasts.
 chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (msg?.type === "side-panel" && sender.tab) openSidePanel(sender.tab).catch((e) => console.warn("Codaset Tweak: couldn't open the side panel", e.message));
+  if (msg?.type === "side-panel" && sender.tab) openSidePanel(sender.tab).catch(warnPanel);
 });
 
-// ---- The side panel and tabs ----
+// ---- The toolbar button, its menu and the shortcuts ----
 
-// Called first in its handler, while the gesture lasts. The e2e test copy
-// calls it by message, as the shortcut and context menu will.
+const MENU = "side-panel";
+const warnPanel = (e) => console.warn("Codaset Tweak: couldn't open the side panel", e.message);
+
+// openSidePanel opens the window's one side panel, which follows its active
+// tab. Called first in its handler, while the gesture lasts: the context
+// menu, ⌥⇧N, and the toolbar button where there's nothing to pick. The e2e
+// test copy calls the handlers by message.
 function openSidePanel(tab) {
-  return chrome.sidePanel.open({ tabId: tab.id });
+  return chrome.sidePanel.open({ windowId: tab.windowId });
+}
+
+const tabPort = (tabId) => [...tabs].find((p) => p.tabId === tabId);
+const down = () => view.connection === "disconnected" || view.connection === "refused";
+
+// pickMode is the toolbar click and ⌥⇧C (lib/toolbar.js): pick mode on a
+// claimed page, else the side panel. A claimed page the scripts don't run
+// on yet (only the click's activeTab reaches it) gets them now, then picks.
+function pickMode(tab) {
+  const port = tabPort(tab.id);
+  const action = toolbar({ down: down(), url: port?.url ?? tab.url, hasScripts: Boolean(port), claimed });
+  if (action === "side-panel") return openSidePanel(tab).catch(warnPanel);
+  if (action === "pick") return port.postMessage({ type: "pick-mode" });
+  return inject(tab.id).then(() =>
+    chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => globalThis.codasetTweak?.picker?.toggleMode(true) }).catch(() => {}),
+  );
+}
+
+// togglePins is ⌥⇧H: the tab's site's pins hide or show, remembered in
+// storage.local's pinsHidden {origin: true}, which the tabs and the side
+// panel read. Local, so it works while the bridge is down too.
+async function togglePins(tab) {
+  const url = tabPort(tab.id)?.url ?? tab.url;
+  if (!url) return;
+  const origin = new URL(url).origin;
+  const { pinsHidden = {} } = await chrome.storage.local.get("pinsHidden");
+  const hidden = !pinsHidden[origin];
+  if (hidden) pinsHidden[origin] = true;
+  else delete pinsHidden[origin];
+  await chrome.storage.local.set({ pinsHidden });
+  tabPort(tab.id)?.postMessage({ type: "pins", hidden });
 }
 
 const panels = new Set();
@@ -127,6 +190,21 @@ async function publishSuggestions() {
     for (const kind of port.suggestions ?? []) if (!dismissed[origin]?.includes(kind)) suggestions.push({ tabId: port.tabId, origin, kind });
   }
   if (JSON.stringify(suggestions) !== JSON.stringify(view.suggestions)) publish({ suggestions });
+}
+
+// ---- Pins whose element is gone ----
+
+// The side panel lists, for the tab in front, the tweaks whose pin has no
+// element on its page: gone is [{tabId, number, request, status}].
+function publishGone() {
+  const gone = [];
+  for (const port of tabs) {
+    for (const number of port.gone ?? []) {
+      const t = tweakState.tweaks.get(number);
+      if (t && port.tabId !== undefined) gone.push({ tabId: port.tabId, number, request: t.entries?.find((e) => e.kind === "request")?.text ?? "", status: t.status });
+    }
+  }
+  if (JSON.stringify(gone) !== JSON.stringify(view.gone)) publish({ gone });
 }
 
 // ---- Tweaks in tabs ----
@@ -172,6 +250,11 @@ async function onTabMessage(port, msg) {
       await tweaksRestored;
       if (msg.draft) await chrome.storage.session.set({ [draftKey(tabId)]: msg.draft });
       else await chrome.storage.session.remove(draftKey(tabId));
+      break;
+    case "gone":
+      // The tab's pins whose element isn't on the page: the side panel lists them.
+      port.gone = msg.numbers;
+      publishGone();
       break;
     case "capture":
       capture(port, msg);
@@ -286,9 +369,11 @@ async function upload(number, png) {
   }
 }
 
-// The side panel's one request: Undo (or Ask Claude to undo) on a resolved
-// tweak in its list, answered as the card's is.
+// The side panel's messages: Undo (or Ask Claude to undo) on a resolved
+// tweak in its list, answered as the card's is; and Show on a gone pin,
+// which opens its card in that tab.
 function onPanelMessage(port, msg) {
+  if (msg.type === "show") tabPort(msg.tabId)?.postMessage({ type: "show", number: msg.number });
   if (msg.type !== "undo") return;
   const ref = bridge.request({ type: "undo", number: msg.number }, (answer) => port.postMessage({ type: "undid", ref: msg.ref, ...answer }));
   if (ref) port.onDisconnect.addListener(() => bridge.pending.forget(ref));
@@ -314,6 +399,9 @@ function cover(url) {
   const { kind } = coverOf(claimState, url);
   return { claimed: kind === "claimed", lapsed: kind === "lapsed" };
 }
+// claimed says whether a held claim covers a URL: a lapsed page counts as
+// unclaimed, so the toolbar opens the side panel there.
+const claimed = (url) => coverOf(claimState, url).kind === "claimed";
 
 // A tweak as tabs get it: with heldBy, the session holding its page and
 // whether it's listening, which its card says (design.md § When the
@@ -358,6 +446,8 @@ function adoptTweaks(next, msg) {
   const was = tweakState;
   tweakState = next;
   saveTweaks(next);
+  showBadge();
+  publishGone();
   const shown = [...tabs].filter((port) => port.page);
   for (const port of shown) {
     if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: tweaksFor(port), ...cover(port.url) });
@@ -391,13 +481,32 @@ async function refreshAccess() {
   return granted;
 }
 
-// showBadge shows the grey "!" until access is granted or while the bridge
-// is down (lib/badge.js).
-async function showBadge() {
+// showBadge is the one place the badge is set (lib/badge.js): the grey "!"
+// in every tab until access is granted or while the bridge is down, else
+// each tab's own. It's called on every change to the connection, access,
+// claims or a tweak, and as a tab navigates. badges holds what each tab was
+// last given, so only changes reach Chrome; null is the global badge.
+function showBadge() {
+  badgeRun = badgeRun.then(drawBadges).catch((e) => console.warn("Codaset Tweak: badge", e.message));
+  return badgeRun;
+}
+
+async function drawBadges() {
   const b = badge(view);
   if (!b) return;
   await chrome.action.setBadgeBackgroundColor({ color: b.color });
   await chrome.action.setBadgeText({ text: b.text });
+  const { claimedOrigins: before = [] } = b.perTab ? await chrome.storage.local.get("claimedOrigins") : {};
+  for (const tab of await chrome.tabs.query({})) {
+    // null falls back to the global badge.
+    const want = b.perTab ? tabBadge({ url: tab.url, claims: claimState.claims, tweaks: tweakState.tweaks, before }) : null;
+    const key = want && `${want.text} ${want.color}`;
+    if (badges.has(tab.id) && badges.get(tab.id) === key) continue;
+    badges.set(tab.id, key);
+    // The global colour is always grey, so a tab falling back to it is too.
+    await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: want?.color ?? GREY }).catch(() => {});
+    await chrome.action.setBadgeText({ tabId: tab.id, text: want ? want.text : null }).catch(() => {});
+  }
 }
 
 // ---- Claims and registration ----
@@ -424,14 +533,17 @@ async function injectIntoOpenTabs(list) {
   if (!list.length || !(await chrome.permissions.contains(ALL_URLS))) return;
   for (const claim of list) {
     const open = await chrome.tabs.query({ url: claim.pattern }).catch(() => []);
-    for (const tab of open) {
-      const target = { tabId: tab.id }; // the top frame only
-      await chrome.scripting
-        .executeScript({ target, files: PROBE_FILES, world: "MAIN", injectImmediately: true })
-        .then(() => chrome.scripting.executeScript({ target, files: CONTENT_FILES }))
-        .catch((e) => console.warn(`Codaset Tweak: couldn't inject into tab ${tab.id}`, e.message));
-    }
+    for (const tab of open) await inject(tab.id);
   }
+}
+
+// inject runs a claim's scripts in a tab's top frame.
+function inject(tabId) {
+  const target = { tabId };
+  return chrome.scripting
+    .executeScript({ target, files: PROBE_FILES, world: "MAIN", injectImmediately: true })
+    .then(() => chrome.scripting.executeScript({ target, files: CONTENT_FILES }))
+    .catch((e) => console.warn(`Codaset Tweak: couldn't inject into tab ${tabId}`, e.message));
 }
 
 // Chrome wipes runtime registrations on install and update, so the
@@ -454,7 +566,12 @@ async function adoptClaims(next) {
     else if (port.url) port.postMessage({ type: "claimed", ...cover(port.url) });
   }
   publish({ claims: next.claims, lapsed: next.lapsed });
-  await chrome.storage.local.set({ claims: next.claims, lapsed: next.lapsed });
+  // Their origins are remembered: once released, the badge's grey "!" still
+  // marks them as dev servers.
+  const { claimedOrigins = [] } = await chrome.storage.local.get("claimedOrigins");
+  const origins = claimedBefore(claimedOrigins, next.claims);
+  await chrome.storage.local.set({ claims: next.claims, lapsed: next.lapsed, ...(origins !== claimedOrigins ? { claimedOrigins: origins } : {}) });
+  showBadge();
   await syncRegistrations(registered(next));
 }
 

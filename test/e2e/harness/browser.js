@@ -86,20 +86,23 @@ export async function contentScript(page) {
     until: (expression, opts) => until(() => evaluate(expression), { what: expression, ...opts }),
     // The test copy's test-only message: calls a worker handler the
     // shortcuts or the toolbar's context menu call, with this tab. It's sent
-    // from a real click in the page's top-left corner, so it carries a user
-    // gesture as theirs do (sidePanel.open needs one, and CDP's userGesture
-    // flag doesn't reach the worker as one). The page doesn't hear the click.
+    // from a real key press (F9), so it carries a user gesture as theirs do
+    // (sidePanel.open needs one, and CDP's userGesture flag doesn't reach the
+    // worker as one). A key, not a click: pick mode would take a click. The
+    // page doesn't hear the key.
     async handler(name) {
       await evaluate(`(() => {
+        globalThis.e2eReply = null;
         const send = (e) => {
+          if (e.key !== "F9") return;
           e.stopImmediatePropagation();
           e.preventDefault();
-          removeEventListener("click", send, true);
+          removeEventListener("keydown", send, true);
           globalThis.e2eReply = chrome.runtime.sendMessage({ type: "e2e:handler", name: ${JSON.stringify(name)} });
         };
-        addEventListener("click", send, true);
+        addEventListener("keydown", send, true);
       })()`);
-      await page.mouse.click(1, 1);
+      await page.keyboard.press("F9");
       const reply = await evaluate(`globalThis.e2eReply`);
       if (!reply?.ok) throw new Error(`handler ${name} failed: ${reply?.error ?? "no reply"}`);
     },

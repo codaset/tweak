@@ -232,6 +232,40 @@
     .pins.offline .pin { opacity: 0.45; filter: saturate(0.35); transition-delay: 0s, 300ms, 300ms; }
     .pins.offline .pin:hover, .pins.offline .pin.open { opacity: 0.8; transition-delay: 0s; }
     .pins.offline.picking .pin { opacity: 0.3; }
+    /* Hidden for the site (⌥⇧H): still positioned, so a gone pin is known. */
+    .pins.hidden { visibility: hidden; }
+    .pins.hidden .pin { pointer-events: none; }
+
+    /* Pick mode's hint, at the top of the viewport */
+    .pick-hint {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px 6px 14px;
+      border-radius: 999px;
+      background: var(--bg);
+      color: var(--text);
+      box-shadow: var(--shadow), 0 0 0 1px var(--line);
+      font-weight: 500;
+      opacity: 0;
+      translate: -50% -6px;
+      transition: opacity 150ms ease-out, translate 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .pick-hint.shown { opacity: 1; translate: -50% 0; }
+    .pick-hint kbd {
+      padding: 1px 6px;
+      border-radius: 5px;
+      background: var(--surface);
+      box-shadow: inset 0 0 0 1px var(--line);
+      color: var(--muted);
+      font: 500 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pick-hint { transition: opacity 120ms linear; translate: -50% 0; }
+    }
     /* The card stays opaque, so the page never shows through: what it shows
        from the snapshot fades, and what you type stays crisp. */
     .panel > .status, .panel > .request, .panel > .thread, .panel > .change, .panel > .pointed-at { transition: opacity 200ms ease; }

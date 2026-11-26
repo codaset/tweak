@@ -52,6 +52,33 @@
         </div>
       </section>
 
+      <section class="unclaimed" id="unclaimed" hidden aria-labelledby="unclaimed-title">
+        <h2 id="unclaimed-title">No session claims this page</h2>
+        <p>To tweak it, claim it from Claude Code with</p>
+        <div class="command">
+          <code id="unclaimed-command"></code>
+          <button type="button" class="copy" data-copy="unclaimed-command" aria-label="Copy the command">Copy</button>
+        </div>
+      </section>
+
+      <section class="gone" id="gone" hidden aria-labelledby="gone-title">
+        <h2 id="gone-title">Not found on this page</h2>
+        <p class="note">These tweaks point at something the page no longer shows, so their pins are hidden.</p>
+        <ul id="gone-list"></ul>
+      </section>
+
+      <section class="pins-setting" id="pins-setting" hidden aria-labelledby="pins-title">
+        <h2 id="pins-title">Pins</h2>
+        <label class="switch">
+          <input type="checkbox" id="pins-shown" role="switch" aria-describedby="pins-note" />
+          <span>Show pins on <code id="pins-site"></code></span>
+        </label>
+        <p class="note" id="pins-note">
+          <kbd>⌥⇧H</kbd> does the same on the page. Hidden, cards still open, Claude's questions still pop up, and a
+          finished tweak shows a toast.
+        </p>
+      </section>
+
       <section class="suggestion" id="rails-annotations" hidden aria-labelledby="rails-annotations-title">
         <h2 id="rails-annotations-title">Point Claude at the exact template</h2>
         <p>

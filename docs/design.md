@@ -120,7 +120,7 @@ another page. The bridge enforces the same rule: `create` for an unclaimed page 
 | Where | What |
 |---|---|
 | Bridge | tweaks, conversations, claims, changes: the source of truth |
-| `chrome.storage.local` | last-known claims, the bridge port, per-site settings (pins hidden, auto-reload off), dismissed improvement suggestions |
+| `chrome.storage.local` | last-known claims, the bridge port, per-site settings (pins hidden as `pinsHidden` `{origin: true}`, auto-reload off), dismissed improvement suggestions, the origins claimed before (`claimedOrigins`, whole-site patterns, for the badge) |
 | `chrome.storage.session` | the open tweaks and the resolved ones still kept (the worker's copy of the last snapshot and events, so pins and cards survive a worker restart while the bridge is down); per tab: the open card, and composer and reply drafts, saved as you type, restored on load, cleared on Send or esc |
 | The page's own storage | nothing; the page can read and clear it |
 
@@ -161,7 +161,9 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
 | | `draft` | `draft`: the tab's drafts as you type, `{compose, replies}` (the composer's page, pick kind, selectors, anchor, selection (with its whole text, uncapped) or area, and text; each card's reply by number, with which of its questions it answers), or `null` once none is left. A tab sends it again after its port reconnects |
 | | `capture` | `id`, and `viewport` (`innerWidth`, `innerHeight`): capture the tab now, its overlay hidden, and hold it under `id` |
-| | `drop` | `id`: throw that capture away (its composer closed unsent, or a new pick replaced it) || Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `draft`: the tab's drafts, in answer to `page`; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
+| | `drop` | `id`: throw that capture away (its composer closed unsent, or a new pick replaced it) |
+| | `gone` | `numbers`: the tab's pins whose element its selector no longer finds, sent when that changes; the side panel lists them |
+| Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `draft`: the tab's drafts, in answer to `page`; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
 | | `tweak` | `tweak`: one changed tweak (a page's, or the open card's) |
 | | `captured` | `id`, `ok`: whether the capture is held |
 | | `created` | `ref`, and the `number` created or an `error` and `message` |
@@ -169,10 +171,14 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `claimed` | `claimed`, sent to every tab whenever the claims change |
 | | `asked` | `tweak`, which has just become a question: sent to the tab it was sent from, which opens its card, or with `toast: true` to the tabs showing its page when that tab is gone |
 | | `state` | `connection`: connecting, connected, refused or disconnected |
+| | `pick-mode` | toggle pick mode: the toolbar button or ⌥⇧C on a claimed page while connected |
+| | `pins` | `hidden`: ⌥⇧H was pressed in this tab, which toasts it (the setting itself is `pinsHidden`, which every tab reads) |
+| | `show` | `number`: open that tweak's card, from the side panel's list of pins whose element is gone |
 | Tab to worker, `runtime.sendMessage` | `side-panel` | open the side panel for the tab: an ⌥-click while the bridge is down. Sent from the input event, so it carries the user gesture `sidePanel.open` needs |
 | Port, local | `open`, `closed` | made by the content script's own port when it connects and when it's lost; `open` is what sends `page`, and `closed` ends a send in flight |
-| Worker to side panel | `state` | the whole view: connection and message, bridge port, whether access is granted, the claims, any pending update, and the resolved tweaks still kept (number, page, URL, status, request, change, `resolvedAt`, `deleteAt`), newest first |
+| Worker to side panel | `state` | the whole view: connection and message, bridge port, whether access is granted, the claims, any pending update, the pins whose element is gone (`gone`: `{tabId, number, request, status}`), and the resolved tweaks still kept (number, page, URL, status, request, change, `resolvedAt`, `deleteAt`), newest first |
 | Side panel to worker | `undo` | `{ref, number}`: Undo on a resolved tweak in its list, answered by `undid` (`ref`, and the `number` or an `error` and `message`) |
+| | `show` | `{tabId, number}`: Show on a gone pin, passed to that tab as `show` |
 
 ### The `tweak` binary (Go)
 
@@ -903,7 +909,9 @@ How it's made (decided in [Extension architecture](https://github.com/codaset/tw
    only, in device pixels) on the sender's tab if it's the one shown, both when the queued call
    runs and after it (a capture of another tab is never kept); the host comes back when the
    worker answers, or after 1.5 s. Without `<all_urls>` or `activeTab` Chrome refuses, and the tweak
-   goes without one.
+   goes without one. The side panel slides in over several frames, narrowing the view, so the tab
+   first waits until its size has held for three frames (at most half a second), and a capture
+   taken while the size changed is thrown away and taken again (three tries).
 3. The content script sends the rects of the elements, text or area, taken at pick time
    (`ns.panel.rects()`: `{kind: element|text|area, number?, x, y, width, height}`, viewport CSS px). In an `OffscreenCanvas`, the
    worker crops to their union plus a 48 CSS-px margin (clipped to the viewport, converted to device
@@ -1138,12 +1146,19 @@ written is open.
 
 - Click toggles pick mode (same as ⌥⇧C) on a claimed page. On an unclaimed page there's nothing to
   pick, so it opens the side panel, with the `/tweak <origin>` command to copy. (`sidePanel.open`
-  is called first in the handler, while the gesture lasts.)
+  is called first in the handler, while the gesture lasts.) The worker decides from what it already
+  knows, with no await: a claimed page whose scripts aren't running yet (where only the click's
+  `activeTab` reaches) gets them injected at once, then picks. While the bridge is down, it opens
+  the side panel. Pick mode is ⌥ held for one pick: the pointer outlines, a click or drag picks,
+  and esc, ⌥⇧C again or the pick itself ends it; a hint at the top of the page says so.
 - Context menu: **Open side panel**.
 - Shortcuts are `chrome.commands`: ⌥⇧C pick mode, ⌥⇧N side panel, ⌥⇧H pins (three of Chrome's four
   suggested keys). ⌥-click, ⇧-click and ⌥-drag are handled in the page by the content script.
+  ⌥⇧C does what the click does.
 - Badge: the number of open tweaks on this page, coloured by the most urgent (blue question, amber
-  working, purple sent), or a grey `!` when no session claims a dev-looking page (see Claims).
+  working, purple sent; open is sent, delivered, queued, working or question), or a grey `!` when
+  no session claims a dev-looking page (see Claims; `*.lvh.me` counts too). While the bridge is
+  down, every tab shows the grey `!`.
   Until site access is granted, a single grey `!` shows in every tab instead (see Chrome
   extension). Chrome keeps a tab's badge across navigation, so the worker
   recomputes it on `tabs.onUpdated` and on every event that changes a tweak's status.
@@ -1155,11 +1170,14 @@ Opened from the toolbar button's context menu or **⌥⇧N**. One panel per wind
 active tab: everything in it is about the tab in front.
 
 - **Allow access**, until site access is granted (see Chrome extension)
-- show or hide pins
+- show or hide pins, a switch for the front tab's site while a claim covers it
+- the tweaks whose pin has no element on the page, each with **Show**, which opens its card
 - resolved tweaks, newest first, with what each changed, Undo (or where its undo stands, with the
   `/tweak <origin>` command to copy while it waits for a session) and how long it's kept; only the
   front tab's site's when its URL can be read (with site access), else all of them
-- claim status, with the `/tweak` command to copy
+- claim status, with the `/tweak` command to copy: "No session claims this page" with
+  `/tweak <origin>` on an unclaimed one, once the panel can read the tab's URL (site access, or the
+  toolbar click's `activeTab`)
 - the per-site reload setting
 - connection status, "updated to X.Y.Z" after a self-update, and the "loaded from another folder"
   warning when it can't update itself

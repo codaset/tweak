@@ -9,7 +9,10 @@
 // - ⌥-drag draws a box over any region, empty space included, and picks the
 //   area. esc during the drag cancels it;
 // - while the bridge is down, ⌥ outlines nothing and an ⌥-click opens the
-//   side panel instead (⇧-click still changes an open composer).
+//   side panel instead (⇧-click still changes an open composer);
+// - pick mode (the toolbar button or ⌥⇧C) is ⌥ held for one pick: the
+//   pointer outlines, a click or drag picks, and esc, ⌥⇧C again or the pick
+//   itself ends it.
 // The whole gesture is swallowed (pointer and mouse down and up, the moves
 // of a drag, and the click), so links and buttons don't fire and the page's
 // text selection is left as it was. The listeners go on window in the
@@ -32,6 +35,9 @@
   let press = null; // {x, y}: an ⌥ press, until it's a click or a drag
   let drag = null; // {x, y, to: {x, y}}: the box being dragged
   let enabled = () => true; // set by the page wiring: off while dormant
+  let mode = false; // pick mode: as if ⌥ were held, until one pick
+  // alt says whether a gesture is ⌥'s: the key, or pick mode.
+  const alt = (e) => e.altKey || mode;
 
   const pickable = (el) => el && el.nodeType === 1 && el !== document.documentElement && el !== document.body && el !== ns.overlay.host;
   const el = (...a) => ns.overlay.el(...a);
@@ -124,7 +130,7 @@
   function clear() {
     hovered = null;
     hideHover();
-    setPicking(false);
+    setPicking(mode);
     if (ns.picker.held?.isConnected) draw(ns.picker.held, true);
   }
 
@@ -198,7 +204,7 @@
       drawDrag();
       return;
     }
-    if (!(e.altKey || adds(e)) || !enabled() || ns.overlay.contains(e) || (ns.worker.down() && !adds(e))) {
+    if (!(alt(e) || adds(e)) || !enabled() || ns.overlay.contains(e) || (ns.worker.down() && !adds(e))) {
       if (hovered || (marks && !marks.hidden)) clear();
       return;
     }
@@ -210,6 +216,12 @@
       // esc while a pick is still being captured cancels it: nothing opens.
       stop(e);
       if (e.type === "keydown") cancelPick();
+      return;
+    }
+    if (mode && !drag && e.key === "Escape") {
+      // esc leaves pick mode: the page, and an open card, don't hear it.
+      stop(e);
+      if (e.type === "keydown") setMode(false);
       return;
     }
     if (drag && e.key === "Escape") {
@@ -224,10 +236,10 @@
     }
     if (e.key !== "Alt" && e.key !== "Shift") return;
     if (drag) return;
-    const alt = e.key === "Alt" ? e.type === "keydown" : e.altKey;
+    const held = (e.key === "Alt" ? e.type === "keydown" : e.altKey) || mode;
     const shift = e.key === "Shift" ? e.type === "keydown" : e.shiftKey;
     const adding = shift && ns.panel.canAdd?.();
-    const on = (alt && !ns.worker.down()) || adding;
+    const on = (held && !ns.worker.down()) || adding;
     if (on && pointer && enabled()) hover(pointer.x, pointer.y, shift);
     else if (!on && (hovered || (marks && !marks.hidden))) clear();
   };
@@ -240,14 +252,17 @@
   const onDown = (e) => {
     swallowing = false; // an earlier ⌥ press that never got its click
     press = null;
-    if (e.button !== 0 || !(e.altKey || adds(e)) || !enabled() || ns.overlay.contains(e)) return;
+    if (e.button !== 0 || !(alt(e) || adds(e)) || !enabled() || ns.overlay.contains(e)) return;
     stop(e);
     swallowing = true;
     // While the bridge is down nothing can be sent: an ⌥-click opens the
     // side panel instead, which says how to start it. Asked now, while the
     // press is a user gesture; the rest of the click is swallowed.
-    if (ns.worker.down() && !adds(e)) return ns.worker.openSidePanel();
-    press = { x: e.clientX, y: e.clientY, alt: e.altKey }; // only ⌥ starts a drag
+    if (ns.worker.down() && !adds(e)) {
+      setMode(false);
+      return ns.worker.openSidePanel();
+    }
+    press = { x: e.clientX, y: e.clientY, alt: alt(e) }; // only ⌥ starts a drag
   };
 
   // adds says whether a plain ⇧ press here is ours: a composer of elements
@@ -313,6 +328,7 @@
     ns.picker.release();
   }
   async function pick(p) {
+    setMode(false); // one pick per pick mode
     // One element is outlined as you write about it; more, a selection or
     // an area are drawn by the composer's marks. The held element changes
     // first, so clear() doesn't redraw an earlier pick's outline.
@@ -341,6 +357,28 @@
     if (swallowing) e.preventDefault();
   };
 
+  // setMode turns pick mode on or off: the pins fade and let clicks through
+  // while it's on, and a hint says how to leave it.
+  let hint = null;
+  function setMode(on) {
+    if (on === mode) return;
+    mode = on;
+    if (on && pointer && enabled() && !ns.worker.down()) hover(pointer.x, pointer.y, false);
+    else if (!on) {
+      hovered = null;
+      hideHover();
+      if (ns.picker.held?.isConnected) draw(ns.picker.held, true);
+    }
+    setPicking(on);
+    if (on && !hint && ns.overlay.root) {
+      hint = el("div", "pick-hint");
+      hint.setAttribute("role", "status");
+      hint.append(el("span", "", "Click what you want to tweak"), el("kbd", "", "esc"));
+      ns.overlay.root.append(hint);
+    }
+    hint?.classList.toggle("shown", on);
+  }
+
   const listeners = [
     ["pointermove", onMove],
     ["keydown", onKey],
@@ -363,6 +401,14 @@
     enable(fn) {
       enabled = fn;
     },
+    // mode says whether pick mode is on; toggleMode(on) turns it on, off,
+    // or (with no argument) over. It stays off on a dormant page.
+    get mode() {
+      return mode;
+    },
+    toggleMode(on = !mode) {
+      setMode(on && enabled());
+    },
     // follow keeps the picked outline on its element as the page moves.
     follow() {
       if (this.held?.isConnected && !hovered && !drag) draw(this.held, true);
@@ -374,6 +420,7 @@
     },
     release() {
       this.held = null;
+      setMode(false);
       clear();
     },
   };
@@ -385,5 +432,6 @@
     box?.remove();
     boxTag?.remove();
     marks?.remove();
+    hint?.remove();
   });
 })();

@@ -50,16 +50,16 @@ test("other messages leave the claims as they are", () => {
 });
 
 test("until site access is granted, a grey ! shows; once granted, nothing", () => {
-  assert.deepEqual(badge({ granted: false, connection: "connected" }), { text: "!", color: GREY });
-  assert.deepEqual(badge({ granted: true, connection: "connected" }), { text: "", color: GREY });
+  assert.deepEqual(badge({ granted: false, connection: "connected" }), { text: "!", color: GREY, perTab: false });
+  assert.deepEqual(badge({ granted: true, connection: "connected" }), { text: "", color: GREY, perTab: true });
 });
 
 test("while the bridge is down, the grey ! shows; while a first try is under way, the badge is left as it was", () => {
-  assert.deepEqual(badge({ granted: true, connection: "disconnected" }), { text: "!", color: GREY });
-  assert.deepEqual(badge({ granted: true, connection: "refused" }), { text: "!", color: GREY });
+  assert.deepEqual(badge({ granted: true, connection: "disconnected" }), { text: "!", color: GREY, perTab: false });
+  assert.deepEqual(badge({ granted: true, connection: "refused" }), { text: "!", color: GREY, perTab: false });
   // A worker start: the badge Chrome kept says what was last known.
   assert.equal(badge({ granted: true, connection: "connecting" }), null);
-  assert.deepEqual(badge({ granted: false, connection: "connecting" }), { text: "!", color: GREY });
+  assert.deepEqual(badge({ granted: false, connection: "connecting" }), { text: "!", color: GREY, perTab: false });
 });
 
 // docs/design.md § When the session goes quiet: what the card and the side

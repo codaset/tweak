@@ -23,6 +23,7 @@ const STATUS = {
 let activeTab = null;
 let activeURL = ""; // its URL, which the claim status is about
 let last = null; // the worker's last state, drawn again when the tab changes
+let pinsHidden = {}; // storage.local's, below
 
 function render(state) {
   last = state;
@@ -66,6 +67,21 @@ function render(state) {
   }
 
   renderResolved(state);
+
+  // The tab in front: whether a session claims it, with the command to
+  // claim it when none does (design.md § Claims; a lapsed claim has its own
+  // section, above), its site's pins switch where pins can show, and its
+  // tweaks whose pin has no element on the page.
+  const kind = activeOrigin === null ? "none" : coverOf(state, activeURL).kind;
+  $("unclaimed").hidden = state.connection !== "connected" || activeOrigin === null || kind !== "none";
+  $("unclaimed-command").textContent = `/tweak ${activeOrigin ?? ""}`;
+  $("pins-setting").hidden = kind === "none";
+  $("pins-setting").dataset.origin = activeOrigin ?? "";
+  $("pins-site").textContent = (activeOrigin ?? "").replace(/^https?:\/\//, "");
+  $("pins-shown").checked = !pinsHidden[activeOrigin];
+  const gone = (state.gone ?? []).filter((g) => g.tabId === activeTab);
+  $("gone").hidden = gone.length === 0;
+  renderGone(gone);
 
   const input = $("port");
   if (document.activeElement !== input) input.value = state.port === DEFAULT_PORT ? "" : String(state.port);
@@ -214,6 +230,37 @@ function renderCover(state) {
 }
 setInterval(() => last && renderCover(last), 15_000);
 
+// ---- Pins whose element is gone ----
+
+// Each gone pin's row: the tweak, its request, and Show, which opens its
+// card on the page. Rows are kept by number, so the focus stays put.
+function renderGone(gone) {
+  const list = $("gone-list");
+  const rows = new Map([...list.children].map((li) => [Number(li.dataset.number), li]));
+  const wanted = gone.map((g) => {
+    let li = rows.get(g.number);
+    if (!li) {
+      li = document.createElement("li");
+      li.dataset.number = String(g.number);
+      const head = document.createElement("span");
+      head.className = "gone-title";
+      const request = document.createElement("span");
+      request.className = "gone-request";
+      const show = document.createElement("button");
+      show.type = "button";
+      show.className = "show";
+      show.textContent = "Show";
+      show.addEventListener("click", () => port?.postMessage({ type: "show", tabId: activeTab, number: g.number }));
+      li.append(head, request, show);
+    }
+    li.querySelector(".gone-title").textContent = `Tweak ${g.number}`;
+    li.querySelector(".gone-request").textContent = g.request;
+    li.querySelector(".show").setAttribute("aria-label", `Show tweak ${g.number}'s card`);
+    return li;
+  });
+  if (wanted.length !== list.children.length || wanted.some((li, i) => list.children[i] !== li)) list.replaceChildren(...wanted);
+}
+
 // The worker can restart; reconnect when it does.
 function listen() {
   port = chrome.runtime.connect({ name: "panel" });
@@ -257,6 +304,26 @@ chrome.windows.getCurrent().then(async (win) => {
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     if (tabId === activeTab && "url" in change) showTab(tab);
   });
+});
+
+// Pins are shown unless hidden for a site: storage.local's pinsHidden is
+// {origin: true}, which the tabs read.
+chrome.storage.local.get("pinsHidden").then(({ pinsHidden: h = {} }) => {
+  pinsHidden = h;
+  if (last) render(last);
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !("pinsHidden" in changes)) return;
+  pinsHidden = changes.pinsHidden.newValue ?? {};
+  if (last) render(last);
+});
+$("pins-shown").addEventListener("change", async (e) => {
+  const origin = $("pins-setting").dataset.origin;
+  if (!origin) return;
+  const { pinsHidden: h = {} } = await chrome.storage.local.get("pinsHidden");
+  if (e.target.checked) delete h[origin];
+  else h[origin] = true;
+  await chrome.storage.local.set({ pinsHidden: h });
 });
 
 // Dismissing a suggestion is remembered for its site, in storage.local,

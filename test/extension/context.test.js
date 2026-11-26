@@ -58,6 +58,15 @@ test("HTML is trimmed to the characters that read, at most 1600", () => {
   assert.ok(long.endsWith("…"));
 });
 
+test("a nested rule's selector is made absolute against its parent's", () => {
+  const { nest } = ns.context;
+  assert.equal(nest(".a", null), ".a");
+  assert.equal(nest("& .button", ".container"), ":is(.container) .button");
+  assert.equal(nest("&:hover, .x &", ".b"), ":is(.b):hover, .x :is(.b)");
+  assert.equal(nest(".button", ".container"), ":is(.container) :is(.button)");
+  assert.equal(nest("> .button", ".container"), ":is(.container) > .button");
+});
+
 // el is a stand-in element with attributes.
 const el = (localName, attrs = {}, props = {}) => ({
   localName, ...props,

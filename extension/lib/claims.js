@@ -48,14 +48,6 @@ export function registered(state, now = Date.now()) {
   return [...state.claims.map(({ id, pattern }) => ({ id, pattern })), ...restorable(state, now).map((l) => ({ id: `lapsed-${hash(`${l.session} ${l.pattern}`)}`, pattern: l.pattern }))];
 }
 
-// ago is how long since a time, as the side panel says it: "just now",
-// "3 min ago", "2 h ago".
-export function ago(at, now = Date.now()) {
-  const m = Math.floor(Math.max(0, now - Date.parse(at)) / 60_000);
-  if (m < 1) return "just now";
-  return m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ago`;
-}
-
 // hash is FNV-1a, in hex: a short, stable name for a string.
 function hash(s) {
   let h = 0x811c9dc5;

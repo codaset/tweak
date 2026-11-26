@@ -627,7 +627,8 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
   or claim another page with /tweak <url>`, and its status commands on those
   tweaks are refused with the same message.
 - **Working with no end**: no timeout while the session is alive, since real changes can take long.
-  The card shows the time: "Claude is working on it · 6 min".
+  The card shows the time: "Claude is working on it · 6 min". Every length of time Tweak shows reads
+  this way, in its largest whole unit: "12 s", "6 min", "5 h", then "3 days" from 2 days on.
 - **Withdraw**: the card of any open tweak has **Withdraw**. It sets `withdrawn` and resolves the
   tweak (shown with resolved tweaks, with Undo if edits were recorded). A `sent` tweak is simply
   resolved. One that already reached the session (`delivered`, `queued`, `question`, `working`) also

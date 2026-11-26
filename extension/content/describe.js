@@ -48,13 +48,25 @@
   // SENDING is a card's tweak that the bridge hasn't sent back yet.
   const SENDING = { text: "Sending…", tone: "sent" };
 
-  // elapsed is a duration as the card shows it: 12 s, 6 min, 1 h 5 min.
-  function elapsed(ms) {
-    const s = Math.max(0, Math.floor(ms / 1000));
-    if (s < 60) return `${s} s`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m} min`;
-    return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 60)} h`;
+  // span is a length of time as Tweak says it everywhere (the CLI's
+  // "last seen" too): its largest whole unit, "12 s", "6 min", "5 h", then
+  // "3 days" from 2 days on. A time gone by rounds down; round is Math.ceil
+  // for a time left, so it never says less than there is.
+  function span(ms, round = Math.floor) {
+    const units = [[1000, 60, "s"], [60_000, 60, "min"], [3_600_000, 48, "h"]];
+    const t = Math.max(0, ms);
+    for (const [size, below, unit] of units) {
+      const n = round(t / size);
+      if (n < below) return `${n} ${unit}`;
+    }
+    return `${round(t / 86_400_000)} days`;
+  }
+
+  // ago is how long since a time, as the side panel says it: "just now",
+  // "3 min ago", "2 h ago".
+  function ago(at, now = Date.now()) {
+    const ms = now - Date.parse(at);
+    return ms < 60_000 ? "just now" : `${span(ms)} ago`;
   }
 
   // unanswered says whether Claude hasn't picked up a delivered tweak: the
@@ -94,7 +106,7 @@
     // A reply sends the tweak again: it waits for the same session, not a new one.
     if (tweak.entries?.at(-1)?.kind === "reply" && REPLIED[tweak.status]) return { text: REPLIED[tweak.status], tone };
     if (tweak.status === "working" && tweak.statusAt) {
-      return { text: `${text} · ${elapsed(now - Date.parse(tweak.statusAt))}`, tone };
+      return { text: `${text} · ${span(now - Date.parse(tweak.statusAt))}`, tone };
     }
     return { text, tone };
   }
@@ -192,15 +204,11 @@
     return null;
   }
   // kept is how long a resolved tweak, and its Undo, stays: "Kept for 6
-  // days", or "" once it's due to go.
+  // days", or "" once it's due to go. At least a minute: the side panel
+  // draws it again a minute at a time.
   function kept(tweak, now = Date.now()) {
     const left = Date.parse(tweak?.deleteAt) - now;
-    if (!(left > 0)) return "";
-    const day = 86_400_000;
-    const hour = 3_600_000;
-    const [n, unit] =
-      left >= day ? [Math.round(left / day), "day"] : left >= hour ? [Math.round(left / hour), "hour"] : [Math.max(1, Math.round(left / 60_000)), "minute"];
-    return `Kept for ${n} ${unit}${n === 1 ? "" : "s"}`;
+    return left > 0 ? `Kept for ${span(Math.max(left, 60_000), Math.ceil)}` : "";
   }
   // origin is a page URL's scheme, host and port: what /tweak claims.
   const origin = (url = "") => url.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+/i)?.[0] ?? url;
@@ -266,5 +274,5 @@
     return els[0]?.label ?? "";
   }
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, origin, OPEN, ENDED_BY_CLAUDE, FINAL, UNRECORDED, OUTSIDE, label, text, selector, element, pointedAt };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, span, ago, origin, OPEN, ENDED_BY_CLAUDE, FINAL, UNRECORDED, OUTSIDE, label, text, selector, element, pointedAt };
 })();

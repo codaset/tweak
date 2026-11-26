@@ -28,7 +28,7 @@ const (
 func (b *Bridge) routes() http.Handler {
 	mux := http.NewServeMux()
 	// Exempt from the protocol check, so any CLI can find and replace an older bridge.
-	mux.HandleFunc("GET /bridge", func(w http.ResponseWriter, r *http.Request) { reply(w, 200, b.info()) })
+	mux.HandleFunc("GET /bridge", func(w http.ResponseWriter, r *http.Request) { reply(w, 200, b.liveInfo()) })
 	mux.HandleFunc("POST /shutdown", b.shutdown)
 	// The extension's socket: its protocol is checked in the hello.
 	mux.HandleFunc("GET /ws", b.socket)

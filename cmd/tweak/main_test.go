@@ -11,14 +11,24 @@ import (
 	"github.com/codaset/tweak/internal/version"
 )
 
-func TestVersionPrintsBinaryAndProtocol(t *testing.T) {
-	var out, errOut bytes.Buffer
-	if code := run([]string{"version"}, &out, &errOut); code != 0 {
-		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+// tweak version names the bridge only when one is running, and never
+// starts one to answer.
+func TestVersionPrintsEachPartsVersion(t *testing.T) {
+	s := newSandbox(t)
+	folder := s.folder("ernie")
+	r := s.tweak("", folder, "version")
+	want := fmt.Sprintf("binary dev\nprotocol %d\nbridge not running\nextension not connected\n", version.Protocol)
+	if r.code != 0 || r.stdout != want {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want %q", r.code, r.stdout, r.stderr, want)
 	}
-	want := fmt.Sprintf("binary dev\nprotocol %d\n", version.Protocol)
-	if out.String() != want {
-		t.Fatalf("got %q, want %q", out.String(), want)
+	if _, ok := s.bridgeFile(); ok {
+		t.Fatal("tweak version started a bridge")
+	}
+	s.tweak("s1", folder, "claims") // starts one
+	r = s.tweak("", folder, "version")
+	want = fmt.Sprintf("binary dev\nprotocol %d\nbridge dev\nextension not connected\n", version.Protocol)
+	if r.code != 0 || r.stdout != want {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want %q", r.code, r.stdout, r.stderr, want)
 	}
 }
 
@@ -35,7 +45,9 @@ func TestReleaseVersionIsSetWithLdflags(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	out, err := exec.Command(bin, "version").Output()
+	cmd := exec.Command(bin, "version")
+	cmd.Env = newSandbox(t).env() // never the live bridge
+	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

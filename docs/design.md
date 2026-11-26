@@ -437,7 +437,8 @@ development build reads.
 Decided in [Bridge contract: API, message schema and data model](https://github.com/codaset/tweak/issues/9).
 
 - **Finding the bridge**: fixed default port **47391**, overridable with `TWEAK_PORT`. The CLI reads
-  `~/.local/state/codaset-tweak/bridge.json` (port, PID, version) to find a running bridge. The
+  `~/.local/state/codaset-tweak/bridge.json` (port, PID, version) to find a running bridge, and
+  `GET /bridge` gives the same, plus the connected extension's version from its `hello`. The
   extension tries the default port, with a port field in the side panel.
 - **Extension ↔ bridge**: one WebSocket (`/ws`) from the service worker, kept awake by a keepalive
   every 20 seconds (documented since Chrome 116). Measured in Chrome 158 with no DevTools attached,
@@ -1017,7 +1018,7 @@ to read it from stdin.
 | `tweak queue <n>…` | sets `queued` on one or more tweaks | one line per tweak |
 | `tweak undo <n>` | prints the change to reverse by hand, conflicting files marked; with nothing recorded, Claude's summary and the unrecorded files instead; starts no capture, changes no status | each file's diff |
 | `tweak undone <n> <msg>` | reports a conflicting undo resolved by hand; the change becomes `undone` | `tweak 12: undone` |
-| `tweak version` | | binary, bridge, protocol and extension versions |
+| `tweak version` | asks the running bridge (`GET /bridge`, which names the connected extension's version); starts none | binary, protocol, bridge and extension versions, or `bridge not running` and `extension not connected` |
 
 Internal: `tweak bridge` (the server), `tweak hook pre-edit`, `tweak hook session-end`.
 

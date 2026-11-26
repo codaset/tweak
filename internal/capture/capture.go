@@ -131,7 +131,8 @@ func Changed(base Tree, scratch string) ([]string, error) {
 // had at path, as git sees it: the copy is hashed through the repo's own
 // filters (eol normalization, clean filters), so a CRLF file stored as LF
 // still matches. A file the snapshot lacks matches only an absent copy,
-// unless git ignores it (never snapshotted): then it's unknown, as it is
+// unless git ignores it or it's in a nested repo (never snapshotted): then
+// it's unknown, as it is
 // outside the repo, with no snapshot, or if git fails.
 func Differs(t Tree, path string, f File) (differs, known bool) {
 	rel, inside := Within(t.Repo, path)
@@ -143,8 +144,17 @@ func Differs(t Tree, path string, f File) (differs, known bool) {
 		then = "" // not in the snapshot
 	}
 	if then == "" && !f.Absent {
-		// An ignored file is never in a snapshot: its absence says nothing.
+		// An ignored file is never in a snapshot, nor is a file in a nested
+		// repo (a submodule: the snapshot holds only its gitlink). Either
+		// way its absence says nothing.
 		if _, err := gitOut(t.Repo, nil, "check-ignore", "-q", "--", rel); err == nil {
+			return false, false
+		}
+		dir := filepath.Dir(path)
+		for _, err := os.Stat(dir); err != nil && dir != filepath.Dir(dir); _, err = os.Stat(dir) {
+			dir = filepath.Dir(dir) // the nearest folder that exists
+		}
+		if top, err := gitOut(dir, nil, "rev-parse", "--show-toplevel"); err != nil || Canonical(top) != Canonical(t.Repo) {
 			return false, false
 		}
 	}

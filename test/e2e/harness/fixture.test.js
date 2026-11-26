@@ -48,6 +48,22 @@ test("a fixture runs from a copy on a free port, and stopping it ends its whole 
   assert.ok(!existsSync(app.folder));
 });
 
+test("stopping a fixture kills a child that ignores SIGTERM, even after its parent has gone", async () => {
+  const fixture = fakeFixture(`
+import http from "node:http";
+import { writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });
+writeFileSync("pids", JSON.stringify([process.pid, child.pid]));
+http.createServer((req, res) => res.end("ok")).listen(Number(process.argv[2]), "127.0.0.1");
+`);
+  const app = await startFixture(fixture);
+  const pids = JSON.parse(readFileSync(join(app.folder, "pids"), "utf8"));
+  await app.stop({ grace: 500 });
+  for (let i = 0; i < 50 && pids.some(alive); i++) await sleep(50);
+  assert.deepEqual(pids.map(alive), [false, false]);
+});
+
 test("node_modules is linked into the copy, not copied", async () => {
   const fixture = fakeFixture(SERVER);
   mkdirSync(join(fixture.dir, "node_modules/dep"), { recursive: true });

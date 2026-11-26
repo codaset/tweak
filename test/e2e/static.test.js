@@ -121,4 +121,42 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
       await other.close();
     }
   });
+
+  test("a question opens only in the tab its tweak was sent from; with that tab gone, it's a toast in the others", async () => {
+    await open(env);
+    const page = await env.browser.newPage();
+    await page.setViewport({ width: 1100, height: 800 });
+    const sender = { ...env, page, tab: await contentScript(page) };
+    await open(sender);
+    await page.bringToFront();
+    const send = async (selector, request) => {
+      await pick(sender, { selector });
+      await sender.tab.until(composing, { what: "the composer to open with the focus" });
+      await page.keyboard.type(request);
+      const from = env.watcher.lines.length;
+      await page.keyboard.press("Enter");
+      const { number } = await env.claude.nextTweak(env.watcher, { from });
+      await sender.tab.until(`root.querySelector(".panel .title")?.textContent`, { is: (t) => t === `Tweak ${number}`, what: `the card of tweak ${number}` });
+      await page.keyboard.press("Escape");
+      await sender.tab.until(noCard, { what: "esc to close the card" });
+      return number;
+    };
+    const first = await send("#name", "tweak the name field, then ask");
+    const second = await send("#docs", "tweak the docs link, ask once I've gone");
+
+    await env.claude.tweak("ask", String(first), "Which colour?");
+    await sender.tab.until(`ns.panel.showing()`, { is: (n) => n === first, what: "the question to open its card in the sending tab" });
+    await env.tab.until(`ns.page.tweak(${first})?.status`, { is: (s) => s === "question", what: "the question to reach the other tab" });
+    assert.equal(await env.tab.evaluate(noCard), true, "no card in the other tab");
+    assert.equal(await env.tab.evaluate(`root.querySelector(".toast") === null`), true, "no toast while the sending tab is there");
+
+    await page.close();
+    await env.page.bringToFront();
+    await env.claude.tweak("ask", String(second), "Which shade?");
+    await env.tab.until(`root.querySelector(".toast")?.textContent`, {
+      is: (t) => t === `Claude has a question about tweak ${second}`,
+      what: "a toast once the sending tab has gone",
+    });
+    assert.equal(await env.tab.evaluate(noCard), true, "the toast doesn't open the card");
+  });
 });

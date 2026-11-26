@@ -271,8 +271,10 @@ const bridge = {
     };
     ws.onclose = () => {
       clearInterval(conn.keepalive);
+      // Closed on purpose: close() has dropped its requests already, and
+      // those waiting now belong to the socket that replaced it.
+      if (this.ws !== conn) return;
       this.pending.dropAll(NOT_CONNECTED);
-      if (this.ws !== conn) return; // closed on purpose
       this.ws = null;
       // The claims and registrations stay as they were: pages keep working
       // from the last-known claims until the bridge is back.
@@ -285,6 +287,7 @@ const bridge = {
     const conn = this.ws;
     this.ws = null;
     clearTimeout(this.retryTimer);
+    this.pending.dropAll(NOT_CONNECTED); // now, not on the close event: a new socket may be sending by then
     if (conn) {
       clearInterval(conn.keepalive);
       conn.socket?.close();

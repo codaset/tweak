@@ -60,9 +60,12 @@ export const forPage = (state, page) =>
 // {page, card}: the page it shows and the number of its open card, or null.
 export const reachesTab = (tweak, tab) => tweak.page === tab.page || tweak.number === tab.card;
 
-// forTab lists what a tab hears about, by number.
+// forTab lists what a tab hears about, by number: its open tweaks, and its
+// resolved ones while their undo is with Claude, which a reload waits for.
 export const forTab = (state, tab) =>
-  [...state.tweaks.values()].filter((t) => reachesTab(t, tab)).sort((a, b) => a.number - b.number);
+  [...state.tweaks.values(), ...[...(state.resolved ?? new Map()).values()].filter((t) => t.change?.state === "undo-requested")]
+    .filter((t) => reachesTab(t, tab))
+    .sort((a, b) => a.number - b.number);
 
 // askedIn says where a question Claude has just asked pops up: open in the
 // tab the tweak was sent from (whatever page it now shows, since its card

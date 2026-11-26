@@ -468,6 +468,12 @@ async function walk(seed, { signals }) {
       p.event({ number: 3, page: `${origin}/`, status: "done", change: recorded });
       return (m.owed3 = true);
     },
+    reconnect() {
+      const t1Listed = m.t1 && (!m.t1.resolvedAt || m.t1.change?.state === "undo-requested");
+      const list = [...(t1Listed ? [m.t1] : []), ...(m.t3 ? [{ number: 3, page: `${origin}/`, status: m.t3 === "working" ? "working" : "done", change: m.t3 === "working" ? undefined : recorded }] : [])];
+      p.ns.reload.relisted(list, new Set(list.filter((t) => !t.resolvedAt).map((t) => t.number)));
+      return true;
+    },
     leave() {
       p.ns.reload.left();
       m.owed1 = m.owed3 = false;
@@ -550,7 +556,36 @@ test("after a reconnect, an undo with Claude of a tweak that's gone from the lis
   const resolved = { number: 1, page: "http://localhost:3000/", status: "done", resolvedAt: "2026-11-26T10:00:00Z" };
   p.event({ ...resolved, change: { ...recorded, state: "undo-requested" } });
   assert.equal(p.ns.reload.state(1), "watching");
-  p.ns.reload.relisted([]); // the list after the reconnect has no resolved tweaks
+  p.ns.reload.relisted([], new Set()); // gone from the list: its undo has ended
   await p.advance(2000);
-  assert.equal(p.reloads.length, 1, "the undo may have ended: its decision is made, and nothing holds the page");
+  assert.equal(p.reloads.length, 1, "the undo has ended: its decision is made, and nothing holds the page");
+});
+
+test("after a reconnect, an undo with Claude of a resolved tweak still listed as undoing keeps the reload held", async () => {
+  const p = page();
+  const resolved = { number: 1, page: "http://localhost:3000/", status: "done", resolvedAt: "2026-11-26T10:00:00Z" };
+  const undoing = { ...resolved, change: { ...recorded, state: "undo-requested" } };
+  p.event({ number: 3, page: resolved.page, status: "working" });
+  p.event(undoing);
+  p.event({ number: 3, page: resolved.page, status: "done", change: recorded });
+  await p.advance(2000);
+  assert.equal(p.ns.reload.notice(3)?.why, "tweak 1 is still in progress", "held for the undo");
+  p.ns.reload.relisted([undoing, { number: 3, page: resolved.page, status: "done", change: recorded }], new Set([3]));
+  await p.advance(2000);
+  assert.deepEqual(p.reloads, [], "still undoing: still held");
+  p.ns.reload.relisted([{ ...undoing, change: { ...recorded, state: "undone" } }, { number: 3, page: resolved.page, status: "done", change: recorded }], new Set([3]));
+  await p.advance(2000);
+  assert.equal(p.reloads.length, 1, "undone: the hold ends");
+});
+
+test("a list after a navigation watches the new page's tweaks already under way", async () => {
+  const p = page();
+  p.ns.reload.left();
+  const working = { number: 6, page: "http://localhost:3000/", status: "working" };
+  p.ns.reload.relisted([working], new Set());
+  assert.equal(p.ns.reload.state(6), "watching");
+  p.signal(); // its hot update
+  p.event({ ...working, status: "done", change: recorded });
+  await p.advance(2000);
+  assert.deepEqual(p.reloads, [], "the hot update showed it");
 });

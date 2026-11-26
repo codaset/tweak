@@ -36,6 +36,9 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
 
     await open(env, c.path ?? "/");
     await env.tab.evaluate(`ns.panel.show(${n}, { focus: true })`);
+    // The card takes the focus a frame later. Pressed before that, Undo
+    // loses it to the card, and the Enter does nothing.
+    await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(CARD)})`, { what: "the card to take the focus" });
     const from = env.watcher.lines.length;
     await undoFromCard(env, { note: "Undo needs Claude: 1 of 1 files changed since" });
     assert.equal(readFileSync(path, "utf8"), later, "nothing was written");

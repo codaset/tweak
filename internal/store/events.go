@@ -12,7 +12,8 @@ const (
 	EventClaimMade     = "claim-made"
 	EventClaimReleased = "claim-released"
 	EventTweakCreated  = "tweak-created"
-	EventTweakStatus   = "tweak-status" // its status changed, or an entry was added
+	EventTweakStatus   = "tweak-status"  // its status changed, or an entry was added
+	EventTweakReplied  = "tweak-replied" // the developer answered Claude's question
 )
 
 // Event is one entry in the append-only event log. Seq is monotonic. It

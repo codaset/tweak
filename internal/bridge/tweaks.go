@@ -82,11 +82,23 @@ func newLine(number int64, page, request string, targets json.RawMessage) string
 	return fmt.Sprintf("tweak %d new: %s [on %s, %s]", number, brief.Cut(request, requestCap), brief.Cut(path, pathCap), count)
 }
 
+// replyLine is a tweak's "reply" event line: the developer's answer, on one
+// line and cut at 300 characters.
+func replyLine(number int64, text string) string {
+	return fmt.Sprintf("tweak %d reply: %s", number, brief.Cut(text, requestCap))
+}
+
 // line is an inbox event as the watcher prints it.
 func line(e store.Event) string {
 	switch e.Type {
 	case store.EventTweakCreated:
 		return newLine(e.Tweak.Number, e.Tweak.Page, e.Tweak.Request(), e.Tweak.Targets)
+	case store.EventTweakReplied:
+		for i := len(e.Tweak.Entries) - 1; i >= 0; i-- {
+			if en := e.Tweak.Entries[i]; en.Kind == "reply" {
+				return replyLine(e.Tweak.Number, en.Text)
+			}
+		}
 	case store.EventClaimReleased:
 		return "claim released: " + e.Claim.Pattern
 	}
@@ -173,6 +185,12 @@ func tweakNumber(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
 // setStatus answers a status change's errors, returning the tweak on success.
 func (b *Bridge) setStatus(w http.ResponseWriter, session string, n int64, status string, e *store.Entry) (store.Tweak, bool) {
 	tw, err := b.store.SetStatus(session, n, status, e)
+	return tw, b.refuseChange(w, n, err)
+}
+
+// refuseChange answers a refused change to tweak n, saying what to do. It
+// reports whether there was nothing to refuse.
+func (b *Bridge) refuseChange(w http.ResponseWriter, n int64, err error) bool {
 	var notYours *store.NotYoursError
 	var wrong *store.TransitionError
 	switch {
@@ -185,9 +203,9 @@ func (b *Bridge) setStatus(w http.ResponseWriter, session string, n int64, statu
 	case err != nil:
 		b.internal(w, err)
 	default:
-		return tw, true
+		return true
 	}
-	return tw, false
+	return false
 }
 
 // work is POST /tweaks/:n/work: sets working and returns the brief.
@@ -205,24 +223,65 @@ func (b *Bridge) work(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(brief.Render(tw)))
 }
 
-// status is POST /tweaks/:n/status {status, message}. Only done so far.
+// statusEntries are the statuses Claude sets with POST /tweaks/:n/status,
+// each with the conversation entry its message becomes and the refusal for
+// a missing one. Queued takes no message.
+var statusEntries = map[string]struct{ kind, missing string }{
+	store.StatusDone:     {"summary", "done needs a summary: one sentence on what you changed"},
+	store.StatusQuestion: {"question", "ask needs a question: what you need the developer to decide"},
+	store.StatusDeclined: {"reason", "decline needs a reason: why it can't or shouldn't be done here"},
+	store.StatusQueued:   {},
+}
+
+// status is POST /tweaks/:n/status {status, message}: done, question and
+// declined with Claude's message, or queued.
 func (b *Bridge) status(w http.ResponseWriter, r *http.Request) {
 	session, n, ok := tweakNumber(w, r)
 	if !ok {
 		return
 	}
 	var body struct{ Status, Message string }
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Status != store.StatusDone {
-		refuse(w, 400, "bad-request", `POST /tweaks/:n/status needs {"status": "done", "message": …}`)
+	err := json.NewDecoder(r.Body).Decode(&body)
+	want, known := statusEntries[body.Status]
+	if err != nil || !known {
+		refuse(w, 400, "bad-request", `POST /tweaks/:n/status needs {"status": "done", "question", "declined" or "queued", "message": …}`)
 		return
 	}
-	summary := strings.TrimSpace(body.Message)
-	if summary == "" {
-		refuse(w, 400, "bad-request", "done needs a summary: one sentence on what you changed")
-		return
+	var entry *store.Entry
+	if want.kind != "" {
+		text := strings.TrimSpace(body.Message)
+		if text == "" {
+			refuse(w, 400, "bad-request", want.missing)
+			return
+		}
+		entry = &store.Entry{From: "claude", Kind: want.kind, Text: text}
 	}
-	tw, ok := b.setStatus(w, session, n, store.StatusDone, &store.Entry{From: "claude", Kind: "summary", Text: summary})
+	tw, ok := b.setStatus(w, session, n, body.Status, entry)
 	if !ok {
+		return
+	}
+	reply(w, 200, statusOut{Number: tw.Number, Status: tw.Status})
+}
+
+// entries is POST /tweaks/:n/entries {kind: "plan", text}: Claude's plan,
+// posted while it works. The status stays working.
+func (b *Bridge) entries(w http.ResponseWriter, r *http.Request) {
+	session, n, ok := tweakNumber(w, r)
+	if !ok {
+		return
+	}
+	var body struct{ Kind, Text string }
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Kind != "plan" {
+		refuse(w, 400, "bad-request", `POST /tweaks/:n/entries needs {"kind": "plan", "text": …}`)
+		return
+	}
+	text := strings.TrimSpace(body.Text)
+	if text == "" {
+		refuse(w, 400, "bad-request", "plan needs a message: a short plan naming the file you're editing")
+		return
+	}
+	tw, err := b.store.Plan(session, n, text)
+	if !b.refuseChange(w, n, err) {
 		return
 	}
 	reply(w, 200, statusOut{Number: tw.Number, Status: tw.Status})

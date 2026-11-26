@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// The commands Claude runs on tweaks: watch (the Monitor command), work and
-// done. See docs/design.md, "The tweak CLI".
+// The commands Claude runs on tweaks: watch (the Monitor command), work,
+// plan, ask, done, decline and queue. See docs/design.md, "The tweak CLI".
 
 // inboxTimeout outlasts the bridge's long-poll hold.
 const inboxTimeout = 60 * time.Second
@@ -119,9 +119,72 @@ func work(c *context, args []string) error {
 	return err
 }
 
-// done sets done with Claude's summary.
-func done(c *context, args []string) error {
-	const usage = "usage: tweak done <n> '<what you changed>', or - to read it from stdin"
+// The status commands Claude finishes a step with: one tweak and Claude's
+// message, sent as POST /tweaks/:n/status. Each prints "tweak <n>: <status>".
+var (
+	done    = withMessage("done", "done", "'<what you changed>'")
+	ask     = withMessage("ask", "question", "'<your question>'")
+	decline = withMessage("decline", "declined", "'<why not>'")
+)
+
+func withMessage(name, status, what string) func(*context, []string) error {
+	usage := fmt.Sprintf("usage: tweak %s <n> %s, or - to read it from stdin", name, what)
+	return func(c *context, args []string) error {
+		if len(args) != 2 {
+			return usageError(usage)
+		}
+		n, err := tweakArg(args[0], usage)
+		if err != nil {
+			return err
+		}
+		msg, err := c.message(args[1])
+		if err != nil {
+			return err
+		}
+		cl, err := c.client()
+		if err != nil {
+			return err
+		}
+		return c.setStatus(cl, n, map[string]string{"status": status, "message": msg})
+	}
+}
+
+// queue sets queued on one or more tweaks, one line each. A refused one
+// says why on stderr and the rest still go through; the exit is then 1.
+func queue(c *context, args []string) error {
+	const usage = "usage: tweak queue <n>…, for example tweak queue 12 13"
+	if len(args) == 0 {
+		return usageError(usage)
+	}
+	var numbers []int64
+	for _, a := range args {
+		n, err := tweakArg(a, usage)
+		if err != nil {
+			return err
+		}
+		numbers = append(numbers, n)
+	}
+	cl, err := c.client()
+	if err != nil {
+		return err
+	}
+	var failed error
+	for _, n := range numbers {
+		if err := c.setStatus(cl, n, map[string]string{"status": "queued"}); err != nil {
+			var refused *refusal
+			if !errors.As(err, &refused) {
+				return err // the bridge is gone: the rest would fail the same way
+			}
+			fmt.Fprintln(c.Stderr, err)
+			failed = errShown
+		}
+	}
+	return failed
+}
+
+// plan posts Claude's optional plan on a tweak it's working on.
+func plan(c *context, args []string) error {
+	const usage = "usage: tweak plan <n> '<your plan, naming the file>', or - to read it from stdin"
 	if len(args) != 2 {
 		return usageError(usage)
 	}
@@ -133,18 +196,31 @@ func done(c *context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if c.session == "" {
-		return errNoSession
-	}
-	cl, err := c.connect()
+	cl, err := c.client()
 	if err != nil {
 		return err
 	}
+	if err := cl.call("POST", fmt.Sprintf("/tweaks/%d/entries", n), map[string]string{"kind": "plan", "text": msg}, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.Stdout, "tweak %d: plan posted\n", n)
+	return nil
+}
+
+// client is the session's connection to the bridge.
+func (c *context) client() (*client, error) {
+	if c.session == "" {
+		return nil, errNoSession
+	}
+	return c.connect()
+}
+
+func (c *context) setStatus(cl *client, n int64, body map[string]string) error {
 	var out struct {
 		Number int64
 		Status string
 	}
-	if err := cl.call("POST", fmt.Sprintf("/tweaks/%d/status", n), map[string]string{"status": "done", "message": msg}, &out); err != nil {
+	if err := cl.call("POST", fmt.Sprintf("/tweaks/%d/status", n), body, &out); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.Stdout, "tweak %d: %s\n", out.Number, out.Status)

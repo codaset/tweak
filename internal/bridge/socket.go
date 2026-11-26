@@ -195,7 +195,46 @@ func (b *Bridge) handle(ctx context.Context, c *websocket.Conn, raw []byte) {
 			return // nothing to answer to
 		}
 		write(ctx, c, b.create(in))
+	case "reply":
+		var in replyIn
+		if json.Unmarshal(raw, &in) != nil || in.Ref == "" {
+			return
+		}
+		write(ctx, c, b.reply(in))
 	}
+}
+
+// replyIn is a reply message: the developer's answer to Claude's question,
+// from the card.
+type replyIn struct {
+	Ref    string `json:"ref"`
+	Number int64  `json:"number"`
+	Text   string `json:"text"`
+}
+
+// reply stores the developer's answer; its tweak-replied event reaches the
+// asking session's inbox and every socket through the log.
+func (b *Bridge) reply(in replyIn) resultOut {
+	out := resultOut{Type: "result", Ref: in.Ref}
+	if in.Number < 1 {
+		out.Error, out.Message = "bad-request", "a reply needs the tweak's number"
+		return out
+	}
+	tw, err := b.store.Reply(in.Number, in.Text)
+	switch {
+	case errors.Is(err, store.ErrNoTweak):
+		out.Error, out.Message = "no-tweak", fmt.Sprintf("There's no tweak %d any more", in.Number)
+	case errors.Is(err, store.ErrNotAsked):
+		out.Error, out.Message = "not-asked", "Claude isn't waiting for an answer on this tweak"
+	case errors.Is(err, store.ErrBlankReply):
+		out.Error, out.Message = "bad-request", "Write a reply first"
+	case err != nil:
+		b.log.Print(err)
+		out.Error, out.Message = "internal", "the bridge failed: "+err.Error()
+	default:
+		out.Number = tw.Number
+	}
+	return out
 }
 
 // create stores a new tweak; its tweak-created event reaches every socket

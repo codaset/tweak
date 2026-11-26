@@ -41,7 +41,8 @@ func Render(tw store.Tweak) string {
 	json.Unmarshal(tw.Targets, &t) // a bad targets blob still gets a brief, with no elements
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Tweak %d\n\n", tw.Number)
+	conv := ConversationOf(tw)
+	fmt.Fprintf(&b, "# Tweak %d\n\n%s", tw.Number, conv.Latest)
 	fmt.Fprintf(&b, "**Request:** %s\n\n", tw.Request())
 	fmt.Fprintf(&b, "Page: %s\n\n", Code(tw.URL)) // its query is page text too
 	fmt.Fprintf(&b, "%s\n\n", Notice)
@@ -53,6 +54,7 @@ func Render(tw store.Tweak) string {
 		b.WriteString("\n\n")
 		fmt.Fprintf(&b, "- Selector: %s\n\n", Code(e.Selector))
 	}
+	b.WriteString(conv.Section)
 	fmt.Fprintf(&b, "When finished, run `tweak done %d '…'`.\n", tw.Number)
 	return b.String()
 }

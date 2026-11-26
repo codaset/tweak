@@ -14,9 +14,9 @@ type Inbox struct {
 	Claims int     // how many claims the session holds now
 }
 
-// inboxWhere picks the events a session's watcher hears about: its new tweaks
-// and its released claims.
-const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'claim-released')`
+// inboxWhere picks the events a session's watcher hears about: its new
+// tweaks, the replies to its questions, and its released claims.
+const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-replied', 'claim-released')`
 
 // Inbox acknowledges the session's events up to after, then returns those
 // after it. after < 0 means "where the last watcher left off" and
@@ -83,13 +83,17 @@ func (s *Store) Inbox(sessionID string, after int64) (Inbox, error) {
 }
 
 // deliver moves the session's cursor from acked to upto, marking the new
-// tweaks acknowledged in between delivered if they are still sent to it.
+// tweaks and replies acknowledged in between delivered if they are still
+// sent to it.
 func (t *eventTx) deliver(sessionID string, acked, upto int64) error {
 	if _, err := t.Exec(`UPDATE deliveries SET last_ack = ? WHERE session = ?`, upto, sessionID); err != nil {
 		return err
 	}
-	rows, err := t.Query(`SELECT tweak FROM events WHERE seq > ? AND seq <= ? AND type = 'tweak-created' AND json_extract(payload, '$.session') = ?`,
-		acked, upto, sessionID)
+	// A tweak sent again after upto (a reply since) waits for that line's ack.
+	rows, err := t.Query(`SELECT tweak FROM events e WHERE seq > ? AND seq <= ? AND type IN ('tweak-created', 'tweak-replied')
+		AND json_extract(payload, '$.session') = ?
+		AND NOT EXISTS (SELECT 1 FROM events l WHERE l.tweak = e.tweak AND l.seq > ? AND l.type IN ('tweak-created', 'tweak-replied'))`,
+		acked, upto, sessionID, upto)
 	if err != nil {
 		return err
 	}

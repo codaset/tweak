@@ -5,7 +5,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { inWorker } from "./harness/browser.js";
 import { freePort } from "./harness/fixture.js";
-import { CARD_STATUS, CARD_TITLE, COMPOSER_INPUT, REPLY_INPUT, REPLY_SEND, loadFixture, open, pick, setup, skipReason, until } from "./harness/index.js";
+import { CARD_STATUS, CARD_TITLE, CARD_UNDO, COMPOSER_INPUT, REPLY_INPUT, REPLY_SEND, loadFixture, open, pick, setup, skipReason, tracer, undoFromCard, until } from "./harness/index.js";
 
 const fixture = loadFixture("static");
 
@@ -48,6 +48,20 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
     return number;
   }
   const sidePanel = () => env.browser.targets().find((t) => t.url().endsWith("/panel/panel.html"));
+
+  test("a finished tweak's Undo is refused while down, and works once connected", async () => {
+    const c = fixture.cases.find((x) => x.edit);
+    const n = await tracer(env, c, { undo: false });
+    await env.tab.evaluate(`ns.panel.show(${n}, { focus: true })`);
+    await env.tab.until(`root.querySelector(${JSON.stringify(CARD_UNDO)})?.hidden === false`, { what: "the card's Undo" });
+
+    await down();
+    await env.tab.until(`root.querySelector(${JSON.stringify(CARD_UNDO)}).disabled`, { what: "Undo to be refused" });
+    assert.equal(await env.tab.evaluate(`root.querySelector(".panel .undo .error").textContent`), "Not connected to Tweak");
+
+    await up();
+    await undoFromCard(env); // puts the fixture copy back, too
+  });
 
   test("pins and the card stay, faded and read-only; ⌥-click opens the side panel; a half-written reply survives a reload and is sent once connected", async () => {
     await open(env);
@@ -102,14 +116,14 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
 
   test("a composer's draft survives a reload while down and is sent once connected; esc clears a draft", async () => {
     await open(env);
-    await pick(env, { selector: "#save" });
+    await pick(env, { selector: "#open-profile" });
     await env.tab.until(composing, { what: "the composer to open with the focus" });
-    await env.page.keyboard.type("make the save button green");
+    await env.page.keyboard.type("make the profile button green");
 
     await down();
     await reload();
-    await env.tab.until(`ns.panel.targets()?.elements[0]?.selector`, { is: (s) => s === "#save", what: "the composer to reopen on #save" });
-    await env.tab.until(value(COMPOSER_INPUT), { is: (v) => v === "make the save button green", what: "its text, restored" });
+    await env.tab.until(`ns.panel.targets()?.elements[0]?.selector`, { is: (s) => s === "#open-profile", what: "the composer to reopen on #open-profile" });
+    await env.tab.until(value(COMPOSER_INPUT), { is: (v) => v === "make the profile button green", what: "its text, restored" });
     assert.equal(await env.tab.evaluate(`root.querySelector(".panel .send").disabled`), true, "Send is refused");
     assert.equal(await env.tab.evaluate(`root.querySelector(".panel .error").textContent`), "Not connected to Tweak");
 
@@ -154,4 +168,5 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
     await env.tab.until(`ns.panel.showing()`, { is: (s) => s === n, what: "the question in the snapshot to open its card" });
     assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_STATUS)}).textContent`), "Claude has a question");
   });
+
 });

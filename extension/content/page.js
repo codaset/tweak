@@ -90,12 +90,14 @@
         ns.page.redraw();
         // The drafts kept for this tab come with its first tweaks after a
         // load; a later port (a restarted worker) brings nothing new.
-        if (!draftsAdopted) ns.drafts.adopt(msg.draft);
+        // Only the answer to page carries them (a snapshot's tweaks don't).
+        const adopting = !draftsAdopted && "draft" in msg;
+        if (adopting) ns.drafts.adopt(msg.draft);
         // The card open before a reload; on a dormant page it opens hidden.
         if (msg.card && tweaks.has(msg.card) && !ns.panel.open() && ns.panel.showing() === null) ns.panel.show(msg.card);
         // Or the composer, with what you'd written.
-        if (!draftsAdopted && ns.panel.showing() === null && !ns.panel.open()) ns.panel.restore(ns.drafts.compose());
-        draftsAdopted = true;
+        if (adopting && ns.panel.showing() === null && !ns.panel.open()) ns.panel.restore(ns.drafts.compose());
+        if (adopting) draftsAdopted = true;
         break;
       case "tweak":
         // msg.event is the bridge's event: tweak-undone means a change was

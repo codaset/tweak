@@ -230,11 +230,12 @@
        faded, and the card read-only. The fade waits a moment, so a short
        reconnect doesn't flash it. */
     .pins.offline .pin { opacity: 0.45; filter: saturate(0.35); transition-delay: 0s, 300ms, 300ms; }
-    .pins.offline .pin:hover, .pins.offline .pin.open { opacity: 0.8; }
+    .pins.offline .pin:hover, .pins.offline .pin.open { opacity: 0.8; transition-delay: 0s; }
     .pins.offline.picking .pin { opacity: 0.3; }
-    .panel { transition: opacity 200ms ease; }
-    .panel.offline { opacity: 0.8; }
-    .panel.offline:hover, .panel.offline:focus-within { opacity: 0.94; }
+    /* The card stays opaque, so the page never shows through: what it shows
+       from the snapshot fades, and what you type stays crisp. */
+    .panel > .status, .panel > .request, .panel > .thread, .panel > .change, .panel > .pointed-at { transition: opacity 200ms ease; }
+    .panel.offline > .status, .panel.offline > .request, .panel.offline > .thread, .panel.offline > .change, .panel.offline > .pointed-at { opacity: 0.72; }
     .panel.offline .status .dot { background: var(--tone-ended); animation: none; }
 
     /* The composer and the card share one panel */

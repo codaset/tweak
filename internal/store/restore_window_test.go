@@ -15,7 +15,7 @@ func TestTheRestoreWindowRunsFromTheLapse(t *testing.T) {
 	c.advance(lapseAfter)
 	s.Lapse("s1", lapseAfter) // its last check-in was 10 minutes ago
 	c.advance(restoreFor - time.Second)
-	s.Expire(restoreFor)
+	s.ForgetLapsed(restoreFor)
 	if back, _ := s.Return("s1", restoreFor); len(back.Restored) != 1 {
 		t.Fatalf("not restored a second inside 24 hours of the lapse: %+v", back)
 	}
@@ -51,7 +51,7 @@ func TestDowntimeDoesntCountTowardTheRestoreWindow(t *testing.T) {
 	c.advance(time.Hour)
 	downFor(t, s, c, 30*time.Hour)
 	c.advance(restoreFor - time.Hour - time.Second) // 23:59:59 of up time since the lapse
-	s.Expire(restoreFor)
+	s.ForgetLapsed(restoreFor)
 	if back, _ := s.Return("s1", restoreFor); len(back.Restored) != 1 {
 		t.Fatalf("lost to downtime: %+v", back)
 	}
@@ -65,12 +65,12 @@ func TestDowntimeDoesntCountTowardForgettingALostClaim(t *testing.T) {
 	c.advance(time.Hour)
 	downFor(t, s, c, 30*time.Hour)
 	c.advance(restoreFor - time.Hour - time.Second)
-	s.Expire(restoreFor)
+	s.ForgetLapsed(restoreFor)
 	if _, err := s.SetStatus("s1", tw.Number, StatusQueued, nil); !errors.As(err, new(*LostError)) {
 		t.Fatalf("forgotten through downtime: %v", err)
 	}
 	c.advance(time.Second)
-	s.Expire(restoreFor)
+	s.ForgetLapsed(restoreFor)
 	if _, err := s.SetStatus("s1", tw.Number, StatusQueued, nil); !errors.As(err, new(*NotYoursError)) {
 		t.Fatalf("still lost after 24 hours up: %v", err)
 	}

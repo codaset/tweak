@@ -258,9 +258,9 @@ func lostFor(q querier, session, url string) (*Claim, error) {
 	return nil, nil
 }
 
-// Stale lists the sessions holding claims that haven't checked in for
+// LapsingSessions lists the sessions holding claims that haven't checked in for
 // after: their claims lapse.
-func (s *Store) Stale(after time.Duration) ([]string, error) {
+func (s *Store) LapsingSessions(after time.Duration) ([]string, error) {
 	rows, err := s.db.Query(`SELECT DISTINCT s.id FROM sessions s JOIN claims c ON c.session = s.id
 		WHERE s.last_check_in <= ? ORDER BY s.id`, s.now()-after.Milliseconds())
 	if err != nil {
@@ -279,7 +279,7 @@ func (s *Store) Stale(after time.Duration) ([]string, error) {
 }
 
 // Lapse ends the session's claims, keeping each to come back, if it still
-// hasn't checked in for after (a check-in since Stale cancels it). Its open
+// hasn't checked in for after (a check-in since LapsingSessions cancels it). Its open
 // tweaks and the undos it held go back to waiting for a session. It returns
 // the lapsed claims.
 func (s *Store) Lapse(session string, after time.Duration) ([]Claim, error) {
@@ -357,7 +357,7 @@ func (s *Store) Return(session string, restoreFor time.Duration) (Returned, erro
 	now := s.now()
 	for _, c := range lapsed {
 		if c.LapsedAt.UnixMilli() <= now-restoreFor.Milliseconds() {
-			if err := tx.expire(c); err != nil {
+			if err := tx.forgetLapsed(c); err != nil {
 				return r, err
 			}
 			continue
@@ -467,15 +467,15 @@ func (t *eventTx) restore(c Claim) (Claim, int64, error) {
 	return c, capturing, t.passUndos(c.Session.ID, p)
 }
 
-// expire forgets a lapsed claim: its tweaks stay waiting for a session.
-func (t *eventTx) expire(c Claim) error {
+// forgetLapsed forgets a lapsed claim: its tweaks stay waiting for a session.
+func (t *eventTx) forgetLapsed(c Claim) error {
 	_, err := t.Exec(`DELETE FROM lapsed_claims WHERE id = ?`, c.ID)
 	return err
 }
 
-// Expire forgets the lapsed claims, lost or not, that lapsed restoreFor
+// ForgetLapsed forgets the lapsed claims, lost or not, that lapsed restoreFor
 // ago. Only time the bridge was up counts: see Resume.
-func (s *Store) Expire(restoreFor time.Duration) error {
+func (s *Store) ForgetLapsed(restoreFor time.Duration) error {
 	_, err := s.db.Exec(`DELETE FROM lapsed_claims WHERE lapsed_at <= ?`, s.now()-restoreFor.Milliseconds())
 	return err
 }

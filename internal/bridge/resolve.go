@@ -81,14 +81,14 @@ func (b *Bridge) deleteAt(resolved time.Time) string {
 	return stamp(resolved.Add(b.opts.KeepResolved))
 }
 
-// watchExpire deletes the tweaks resolved more than KeepResolved ago, with
-// their changes and screenshots, every ExpireCheck, and once at start.
-func (b *Bridge) watchExpire() {
+// watchDeleteResolved deletes the tweaks resolved more than KeepResolved ago, with
+// their changes and screenshots, every DeleteResolvedCheck, and once at start.
+func (b *Bridge) watchDeleteResolved() {
 	defer b.loops.Done()
-	t := time.NewTicker(b.opts.ExpireCheck)
+	t := time.NewTicker(b.opts.DeleteResolvedCheck)
 	defer t.Stop()
 	for {
-		b.expire()
+		b.deleteResolved()
 		select {
 		case <-b.stop:
 			return
@@ -99,7 +99,7 @@ func (b *Bridge) watchExpire() {
 	}
 }
 
-func (b *Bridge) expire() {
+func (b *Bridge) deleteResolved() {
 	b.undoMu.Lock() // never mid-undo
 	defer b.undoMu.Unlock()
 	gone, err := b.store.DeleteResolved(b.opts.KeepResolved)

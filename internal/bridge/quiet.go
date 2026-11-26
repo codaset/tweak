@@ -144,16 +144,16 @@ func (b *Bridge) lapse() {
 	if b.browsers.Load() > 0 {
 		b.sawExtension() // so a crash leaves a recent "last seen"
 	}
-	if err := b.store.Expire(b.opts.RestoreFor); err != nil {
+	if err := b.store.ForgetLapsed(b.opts.RestoreFor); err != nil {
 		b.log.Print(err)
 	}
 	b.tellListening()
-	stale, err := b.store.Stale(b.opts.LapseAfter)
+	lapsing, err := b.store.LapsingSessions(b.opts.LapseAfter)
 	if err != nil {
 		b.log.Print(err)
 		return
 	}
-	for _, session := range stale {
+	for _, session := range lapsing {
 		if b.listening(session) {
 			continue
 		}

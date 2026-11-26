@@ -97,6 +97,7 @@
         ns.page.redraw();
         break;
       case "closed": // the worker's port is gone: a send in flight is lost with it
+        ns.reload.closed(); // an Undo's answer too, whatever card is open now
         ns.panel.unsent("Not connected to Tweak");
         break;
       case "tweaks": {
@@ -188,6 +189,7 @@
         ns.panel.resent(msg);
         break;
       case "undid":
+        ns.reload.undid(msg); // refused: the change stands, whatever card is open now
         ns.panel.undid(msg);
         break;
       case "withdrew":

@@ -1222,7 +1222,10 @@ When `done` arrives, it waits about a second. If any signal arrived since `worki
 second), it doesn't reload; otherwise it reloads. An undo is treated the same, its signals recorded
 from **Undo** (or from the undo going to Claude) until about a second after `undone`. A tweak whose
 git check found no files changed reloads nothing. A held-back reload happens by itself once nothing
-holds it; **Reload** on the card reloads at once. With auto-reload off for the site, the card shows
+holds it; **Reload** on the card reloads at once. Each tweak's part in this is one state machine in
+the content script (watching, deciding, held), driven only by what the tab hears (the tweak's
+events, the answer to an Undo pressed there, the page left), never by which card is open; an undo
+that is refused or declined gives back the reload its change was owed. With auto-reload off for the site, the card shows
 "Change saved · Reload" with that as the reason. The setting is `autoReload` in `chrome.storage.local`
 (`{origin: false}`), which the side panel writes and the tab reads. Hot updates that change only JavaScript outside Vite (Next's Fast
 Refresh) go unnoticed and cause one reload too many. That's harmless, and the per-site setting turns

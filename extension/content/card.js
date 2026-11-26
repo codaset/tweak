@@ -712,7 +712,7 @@
     mode.undoing = true;
     mode.undoError = "";
     mode.undoRef = `t${++refs}`;
-    ns.reload?.watch(mode.number); // the files may change before the answer comes
+    ns.reload?.pressed(mode.number, mode.undoRef); // the files may change before the answer comes
     refreshUndo();
     ns.worker.post({ type: "undo", ref: mode.undoRef, number: mode.number });
   }
@@ -720,7 +720,6 @@
   // undoEnded finishes an Undo: under way (the tweak's next event shows
   // where it stands), or refused with why, the button still offered.
   function undoEnded(why) {
-    if (why) ns.reload?.unwatch(mode.number);
     mode.undoing = false;
     mode.undoError = why;
     refreshUndo();

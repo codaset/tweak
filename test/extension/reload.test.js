@@ -21,7 +21,7 @@ test("signals are recorded from working, and from an undo with Claude", () => {
   assert.equal(moment(undefined, { status: "working" }), "watch");
   assert.equal(moment({ status: "working" }, { status: "working" }), null, "a plan posted while working changes nothing");
   const done = { status: "done", change: recorded };
-  assert.equal(moment(done, { ...done, change: { ...recorded, state: "undo-requested" } }), "watch");
+  assert.equal(moment(done, { ...done, change: { ...recorded, state: "undo-requested" } }), "undo");
 });
 
 test("the decision comes once Claude is done, or a change is undone", () => {
@@ -31,7 +31,7 @@ test("the decision comes once Claude is done, or a change is undone", () => {
   assert.equal(moment(done, { ...done, change: { ...recorded, state: "undone" } }), "settle");
   const asked = { ...done, change: { ...recorded, state: "undo-requested" } };
   assert.equal(moment(asked, { ...done, change: { ...recorded, state: "undone" } }), "settle", "Claude's tweak undone");
-  assert.equal(moment(asked, done), "settle", "Claude declined the undo: the change stands");
+  assert.equal(moment(asked, done), "declined", "Claude declined the undo: the change stands");
   // A resolved tweak has left the tab, and an Undo from the side panel's
   // resolved list still reloads it; any other event about one doesn't.
   assert.equal(moment(undefined, { ...done, change: { ...recorded, state: "undone" } }), "settle");
@@ -111,21 +111,36 @@ test("a field the browser gives a value of its own starts on that value, not on 
 
 // The page side, over a stand-in page with timers run by hand: what's
 // waiting for a reload, and when it reloads.
-function page() {
+// onReload, if given, is called as the page reloads (to check what holds).
+function page({ onReload } = {}) {
   const timers = new Map();
   let id = 0;
   let now = 0;
   const reloads = [];
   const settings = { autoReload: {} };
+  let read = null; // what the page last read of the settings
   const tweaks = new Map();
   const ns = { ready: false, teardowns: [], overlay: { host: null } };
   ns.page = { tweaks: () => [...tweaks.values()] };
-  ns.panel = { update() {}, drafting: () => "" };
-  const document = { addEventListener() {}, removeEventListener() {}, querySelector: () => null, querySelectorAll: () => [] };
+  const flags = { drafting: "" };
+  ns.panel = { update() {}, drafting: () => flags.drafting };
+  const listeners = new Map();
+  const document = {
+    addEventListener: (type, fn) => listeners.set(type, fn),
+    removeEventListener() {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
   const context = {
     codasetTweak: ns,
     document,
-    location: { origin: "http://localhost:3000", reload: () => reloads.push(now) },
+    location: {
+      origin: "http://localhost:3000",
+      reload: () => {
+        onReload?.();
+        reloads.push(now);
+      },
+    },
     performance: { now: () => now },
     setTimeout: (fn, ms) => (timers.set(++id, { fn, at: now + ms }), id),
     clearTimeout: (t) => timers.delete(t),
@@ -133,7 +148,7 @@ function page() {
       observe() {}
       disconnect() {}
     },
-    chrome: { storage: { local: { get: async () => structuredClone(settings) } } },
+    chrome: { storage: { local: { get: async () => (read = structuredClone(settings)) } } },
   };
   context.globalThis = context;
   for (const file of ["describe.js", "reload.js"]) runInNewContext(readFileSync(new URL(`../../extension/content/${file}`, import.meta.url), "utf8"), context);
@@ -157,7 +172,9 @@ function page() {
     ns.reload.heard(was, tweak);
     tweaks.set(tweak.number, tweak);
   };
-  return { ns, event, advance, reloads, settings };
+  // signal is the probe's tweak:updated: a hot update landed.
+  const signal = () => listeners.get("tweak:updated")?.();
+  return { ns, event, advance, reloads, settings, flags, signal, read: () => read };
 }
 
 test("a held reload whose undo then goes to Claude waits for the undo, even once auto-reload is on", async () => {
@@ -207,8 +224,8 @@ test("a held reload comes back when the bridge refuses the Undo", async () => {
   p.event({ ...tweak, status: "working" });
   p.event({ ...tweak, status: "done", change: recorded });
   await p.advance(2000);
-  p.ns.reload.watch(1); // Undo pressed
-  p.ns.reload.unwatch(1); // and refused
+  p.ns.reload.pressed(1, "u1"); // Undo pressed
+  p.ns.reload.undid({ ref: "u1", error: "refused" }); // and refused
   await p.advance(100);
   assert.equal(p.ns.reload.notice(1)?.why, "auto-reload is off for this site");
 });
@@ -219,8 +236,8 @@ test("an Undo refused within the second after done leaves done's decision to it"
   p.event({ ...tweak, status: "working" });
   p.event({ ...tweak, status: "done", change: recorded });
   await p.advance(300);
-  p.ns.reload.watch(1); // Undo pressed
-  p.ns.reload.unwatch(1); // and refused
+  p.ns.reload.pressed(1, "u1"); // Undo pressed
+  p.ns.reload.undid({ ref: "u1", error: "refused" }); // and refused
   await p.advance(2000);
   assert.equal(p.reloads.length, 1);
 });
@@ -231,9 +248,9 @@ test("an Undo refused after done's second still gets done its reload", async () 
   p.event({ ...tweak, status: "working" });
   p.event({ ...tweak, status: "done", change: recorded });
   await p.advance(300);
-  p.ns.reload.watch(1); // Undo pressed
+  p.ns.reload.pressed(1, "u1"); // Undo pressed
   await p.advance(1000);
-  p.ns.reload.unwatch(1); // refused, after the second
+  p.ns.reload.undid({ ref: "u1", error: "refused" }); // refused, after the second
   await p.advance(2000);
   assert.equal(p.reloads.length, 1);
 });
@@ -261,4 +278,200 @@ test("an undo started within the second after done takes over that decision", as
   p.event({ ...tweak, status: "done", change: { ...recorded, state: "undone" } });
   await p.advance(2000);
   assert.equal(p.reloads.length, 1, "one reload once the undo is done");
+});
+
+test("an Undo refused after its card has closed still gives the change its reload", async () => {
+  // The card isn't part of this: the refusal reaches reload.js from page.js.
+  const p = page();
+  const origin = "http://localhost:3000";
+  p.settings.autoReload[origin] = false;
+  const tweak = { number: 1, page: `${origin}/` };
+  p.event({ ...tweak, status: "working" });
+  p.event({ ...tweak, status: "done", change: recorded });
+  await p.advance(2000);
+  p.ns.reload.pressed(1, "u1");
+  p.ns.reload.closed(); // the port went before the answer came
+  delete p.settings.autoReload[origin];
+  await p.advance(1000);
+  assert.equal(p.reloads.length, 1);
+});
+
+// The machine as a model: many orderings of the events the tab hears, on
+// a page that never hot-updates (and, with signals, one that may). For
+// each, the page reloads at most once, and never while an undo is under
+// way or a hold reason stands. Without hot updates, a done or undone since
+// the page was last left always gets its reload once nothing holds it, and
+// nothing else reloads.
+function random(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+async function walk(seed, { signals }) {
+  const rand = random(seed);
+  const origin = "http://localhost:3000";
+  // The world as the bridge and the developer have it; owed is a done or
+  // undone since the page was last left.
+  const m = { t1: null, press: null, claude: false, auto: true, other: false, draft: false, owed: false, refs: 0 };
+  const broken = [];
+  const p = page({
+    onReload: () => {
+      if (m.press) broken.push("reloaded while an Undo's answer was on its way");
+      if (m.claude) broken.push("reloaded while the undo was with Claude");
+      // As of the page's last read: the switch can turn while it reads.
+      if (p.read()?.autoReload[origin] === false) broken.push("reloaded with auto-reload off");
+      if (m.other) broken.push("reloaded while another tweak was in progress");
+      if (m.t3 === "working" || m.t1?.status === "working") broken.push("reloaded while Claude was working on a tweak");
+      if (m.draft) broken.push("reloaded while a reply was being written");
+    },
+  });
+  const t1 = (o) => {
+    m.t1 = { number: 1, page: `${origin}/`, ...o };
+    p.event(m.t1);
+  };
+  const changed = (state) => ({ ...recorded, state });
+  const recordedNow = () => m.t1?.change?.state === "recorded" && m.t1.status === "done";
+  const acts = {
+    work() {
+      if (m.t1?.status === "working" || m.press || m.claude) return false;
+      t1({ status: "working" });
+      return true;
+    },
+    done() {
+      if (m.t1?.status !== "working") return false;
+      t1({ status: "done", change: recorded });
+      return (m.owed = true);
+    },
+    press() {
+      if (!recordedNow() || m.press || m.claude) return false;
+      m.press = `u${++m.refs}`;
+      p.ns.reload.pressed(1, m.press);
+      return true;
+    },
+    refuse() {
+      if (!m.press) return false;
+      p.ns.reload.undid({ ref: m.press, error: "no" });
+      m.press = null;
+      return true;
+    },
+    undo() {
+      // The bridge undoes it: its event, then its answer.
+      if (!m.press) return false;
+      const ref = m.press;
+      m.press = null;
+      t1({ status: "done", change: changed("undone") });
+      p.ns.reload.undid({ ref, number: 1 });
+      return (m.owed = true);
+    },
+    conflict() {
+      if (!m.press) return false;
+      const ref = m.press;
+      m.press = null;
+      m.claude = true;
+      t1({ status: "done", change: changed("undo-requested") });
+      p.ns.reload.undid({ ref, number: 1 });
+      return true;
+    },
+    closed() {
+      if (!m.press) return false;
+      m.press = null;
+      p.ns.reload.closed();
+      return true;
+    },
+    ask() {
+      if (!recordedNow() || m.press || m.claude) return false;
+      m.claude = true;
+      t1({ status: "done", change: changed("undo-requested") });
+      return true;
+    },
+    undone() {
+      if (!m.claude) return false;
+      m.claude = false;
+      t1({ status: "done", change: changed("undone") });
+      return (m.owed = true);
+    },
+    decline() {
+      if (!m.claude) return false;
+      m.claude = false;
+      t1({ status: "done", change: recorded });
+      return true;
+    },
+    auto() {
+      m.auto = !m.auto;
+      if (m.auto) delete p.settings.autoReload[origin];
+      else p.settings.autoReload[origin] = false;
+      return true;
+    },
+    other() {
+      m.other = !m.other;
+      p.event({ number: 2, page: `${origin}/`, status: m.other ? "working" : "done", change: { state: "recorded", checked: true, files: [], unrecorded: [] } });
+      return true;
+    },
+    draft() {
+      m.draft = !m.draft;
+      p.flags.drafting = m.draft ? "reply" : "";
+      return true;
+    },
+    // A second tweak that changes the page, so one can be held while the
+    // first is being undone.
+    work3() {
+      if (m.t3 === "working") return false;
+      m.t3 = "working";
+      p.event({ number: 3, page: `${origin}/`, status: "working" });
+      return true;
+    },
+    done3() {
+      if (m.t3 !== "working") return false;
+      m.t3 = "done";
+      p.event({ number: 3, page: `${origin}/`, status: "done", change: recorded });
+      return (m.owed = true);
+    },
+    leave() {
+      p.ns.reload.left();
+      m.owed = false;
+      return true;
+    },
+    signal() {
+      if (!signals) return false;
+      p.signal();
+      return true;
+    },
+    async wait() {
+      await p.advance(Math.floor(rand() * 1500));
+      return true;
+    },
+  };
+  const names = Object.keys(acts);
+  const steps = [];
+  for (let i = 0; i < 20 && !p.reloads.length; i++) {
+    const name = names[Math.floor(rand() * names.length)];
+    if (await acts[name]()) steps.push(name);
+  }
+  if (!p.reloads.length) {
+    // Let everything finish, and nothing hold the reload back.
+    if (m.t1?.status === "working") acts.done();
+    if (m.t3 === "working") acts.done3();
+    if (m.press) acts.undo();
+    if (m.claude) acts.undone();
+    if (!m.auto) acts.auto();
+    if (m.other) acts.other();
+    if (m.draft) acts.draft();
+  }
+  await p.advance(3000);
+  const why = `seed ${seed}: ${steps.join(" ")}`;
+  assert.deepEqual(broken, [], why);
+  assert.ok(p.reloads.length <= 1, `${why}: reloaded ${p.reloads.length} times`);
+  if (!signals) assert.equal(p.reloads.length, m.owed ? 1 : 0, `${why}: ${m.owed ? "a change never got its reload" : "a reload for no change"}`);
+}
+
+test("the reload machine as a model: at most once, never while held, always once nothing holds it", async () => {
+  for (let seed = 1; seed <= 6000; seed++) await walk(seed, { signals: false });
+});
+
+test("the reload machine as a model, with hot updates: at most once, never while held", async () => {
+  for (let seed = 1; seed <= 6000; seed++) await walk(seed, { signals: true });
 });

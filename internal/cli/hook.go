@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,8 +20,31 @@ import (
 // a bridge.
 
 // hookDeadline is how long a hook may take before it gives up: well inside
-// the 2-second timeout hooks.json gives it, leaving the launcher its start.
+// the 2 seconds a hook gets (hooks.json gives pre-edit 5, for a handover),
+// leaving the launcher its start.
 const hookDeadline = time.Second
+
+// handoverWait is how much longer tweak hook pre-edit waits for a bridge
+// while a handover is under way (docs/design.md, "Handing over to a newer
+// bridge"), so an edit made then keeps its before copy. hooks.json gives
+// it 5 seconds for this.
+const handoverWait = 3 * time.Second
+
+// handoverFresh is how old a handover file may be and still count as a
+// handover under way: longer than one takes, so a file left by a command
+// that died slows no edit for long.
+const handoverFresh = 30 * time.Second
+
+// handingOver reports whether a command is handing over to a newer bridge
+// now: its handover file is there, and fresh.
+func handingOver(env Env) bool {
+	cfg, err := config.Resolve(env.Getenv, env.Home)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(cfg.Handover())
+	return err == nil && time.Since(info.ModTime()) < handoverFresh
+}
 
 var hooks = map[string]func(Env, time.Time){
 	"pre-edit":    preEdit,
@@ -33,7 +57,11 @@ func runHook(args []string, env Env) int {
 	if len(args) != 1 || hooks[args[0]] == nil {
 		return 0
 	}
-	deadline := time.Now().Add(hookDeadline)
+	budget := hookDeadline
+	if args[0] == "pre-edit" && handingOver(env) {
+		budget += handoverWait
+	}
+	deadline := time.Now().Add(budget)
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
@@ -89,12 +117,21 @@ func preEdit(env Env, deadline time.Time) {
 		}
 		path = filepath.Join(base, path)
 	}
-	f, err := bridge.ReadBridgeFile(cfg.StateDir)
-	if err != nil {
-		return // no bridge: the edit goes unrecorded
+	// No bridge, or none answering: the edit goes unrecorded. Mid-handover,
+	// the hook tries again until the new bridge answers or the handover ends.
+	for {
+		if f, err := bridge.ReadBridgeFile(cfg.StateDir); err == nil {
+			cl := &client{port: f.Port, session: in.SessionID, http: &http.Client{Timeout: min(time.Until(deadline), hookDeadline)}}
+			var refused *refusal
+			if err := cl.call("POST", "/edits/before", map[string]string{"path": path}, nil); err == nil || errors.As(err, &refused) {
+				return
+			}
+		}
+		if time.Until(deadline) < handoverPoll || !handingOver(env) {
+			return
+		}
+		time.Sleep(handoverPoll)
 	}
-	cl := &client{port: f.Port, session: in.SessionID, http: &http.Client{Timeout: time.Until(deadline)}}
-	cl.call("POST", "/edits/before", map[string]string{"path": path}, nil)
 }
 
 // sessionEnd releases the session's claims and ends its capture as it

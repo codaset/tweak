@@ -93,6 +93,8 @@ type context struct {
 	cfg     config.Config
 	session string
 	warned  map[string]bool
+	// handedOver is whether this command has tried a handover (handover.go).
+	handedOver bool
 
 	// Test seams for tweak watch's backoff: nil is the real clock and
 	// startBridge.

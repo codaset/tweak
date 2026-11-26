@@ -1,0 +1,1 @@
+{"error": "protocol", "message": "tweak speaks protocol 2; the bridge speaks 1: update the plugin, then /reload-plugins", "patterns": [{"pattern": "https://ernie.localhost/*"}]}

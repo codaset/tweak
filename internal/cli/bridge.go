@@ -12,6 +12,11 @@ import (
 	"github.com/codaset/tweak/internal/version"
 )
 
+// testBridge breaks `tweak bridge` in a test build, for the handover's
+// rollback tests: "exit" exits at once, saying nothing, and "hang" never
+// answers. Only those tests set it, with -ldflags -X; a release never does.
+var testBridge string
+
 // runBridge is `tweak bridge`: it runs the bridge in the foreground until it
 // is shut down, idles out, or gets SIGINT or SIGTERM.
 //
@@ -21,6 +26,12 @@ import (
 func runBridge(c *context, args []string) error {
 	if len(args) != 0 {
 		return usageError("usage: tweak bridge")
+	}
+	switch testBridge {
+	case "exit":
+		return nil
+	case "hang":
+		time.Sleep(time.Hour) // killed by the CLI waiting on it
 	}
 	byCLI := c.Getenv(envStartedByCLI) != ""
 	status := func(line string) {

@@ -99,19 +99,41 @@ func (b *Bridge) guard(next http.Handler) http.Handler {
 	})
 }
 
+// checkProtocol refuses a client that speaks another protocol. The refusal
+// names the session's claims (patterns), so its watcher can say what to
+// claim again after /reload-plugins; the claims stay. This refusal's shape
+// is the one every protocol keeps.
 func (b *Bridge) checkProtocol(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := r.Header.Get(HeaderProtocol)
+		if got == strconv.Itoa(version.Protocol) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		out := errorOut{Error: "protocol", Message: fmt.Sprintf("tweak speaks protocol %s; the bridge speaks %d: update the plugin, then /reload-plugins", got, version.Protocol)}
 		if got == "" {
-			refuse(w, 400, "protocol", fmt.Sprintf("no %s header; the bridge speaks protocol %d: update the plugin, then /reload-plugins", HeaderProtocol, version.Protocol))
-			return
+			out.Message = fmt.Sprintf("no %s header; the bridge speaks protocol %d: update the plugin, then /reload-plugins", HeaderProtocol, version.Protocol)
 		}
-		if got != strconv.Itoa(version.Protocol) {
-			refuse(w, 400, "protocol", fmt.Sprintf("tweak speaks protocol %s; the bridge speaks %d: update the plugin, then /reload-plugins", got, version.Protocol))
-			return
+		if id := r.Header.Get(HeaderSession); id != "" {
+			out.Patterns = b.sessionPatterns(id)
 		}
-		next.ServeHTTP(w, r)
+		reply(w, 400, out)
 	})
+}
+
+// sessionPatterns is the patterns a session claims now, oldest first.
+func (b *Bridge) sessionPatterns(id string) []string {
+	claims, err := b.store.Claims()
+	if err != nil {
+		b.log.Print(err)
+	}
+	var patterns []string
+	for _, c := range claims {
+		if c.Session.ID == id {
+			patterns = append(patterns, c.Pattern)
+		}
+	}
+	return patterns
 }
 
 // checkIn counts every request from a registered session as a check-in,
@@ -288,6 +310,8 @@ type errorOut struct {
 	Error   string    `json:"error"`
 	Message string    `json:"message"`
 	Holder  *claimOut `json:"holder,omitempty"`
+	// Patterns is, on a protocol refusal to a session, its claims' patterns.
+	Patterns []string `json:"patterns,omitempty"`
 }
 
 // stamp is RFC 3339 in UTC with milliseconds, the store's precision.

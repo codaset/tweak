@@ -260,6 +260,33 @@ func TestProtocolMismatchIsRefused(t *testing.T) {
 	}
 }
 
+// A session's watcher refused for its protocol is told the session's
+// patterns, to claim again after /reload-plugins; the claims stay.
+func TestAProtocolRefusalNamesTheSessionsClaims(t *testing.T) {
+	h := start(t)
+	h.register("s1", "/dev/ernie")
+	h.claim("s1", "https://ernie.localhost/*")
+	h.claim("s1", "http://localhost:3000")
+	h.register("s2", "/dev/other")
+	h.claim("s2", "https://other.localhost/*")
+
+	other := fmt.Sprint(version.Protocol + 1)
+	resp, body := h.do(as("s1", req{method: "GET", path: "/inbox", header: map[string]string{"x-tweak-protocol": other}}))
+	refused(t, resp, body, 400, "protocol")
+	var e struct{ Patterns []string }
+	json.Unmarshal(body, &e)
+	if want := []string{"https://ernie.localhost/*", "http://localhost:3000/*"}; fmt.Sprint(e.Patterns) != fmt.Sprint(want) {
+		t.Fatalf("patterns %q, want %q", e.Patterns, want)
+	}
+
+	_, body = h.do(req{method: "GET", path: "/claims"})
+	var claims struct{ Claims []any }
+	json.Unmarshal(body, &claims)
+	if len(claims.Claims) != 3 {
+		t.Fatalf("claims after the refusal: %s", body)
+	}
+}
+
 func TestEveryRequestChecksTheSessionIn(t *testing.T) {
 	h := start(t)
 	h.register("s1", "/dev/ernie")

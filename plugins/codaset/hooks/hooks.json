@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/tweak\" hook pre-edit",
-            "timeout": 2
+            "timeout": 5
           }
         ]
       }

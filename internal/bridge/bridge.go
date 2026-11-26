@@ -215,6 +215,8 @@ func Start(o Options) (*Bridge, error) {
 	b.endReleased()
 	// Before bridge.json, so no extension says hello before its folder is written.
 	b.installExtension()
+	// Old versions' binaries, now that this one has started.
+	b.pruneBinaries()
 	if err := b.writeBridgeFile(); err != nil {
 		return fail(fmt.Errorf("can't write %s: %w", o.Config.BridgeFile(), err))
 	}

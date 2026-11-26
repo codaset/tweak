@@ -864,7 +864,7 @@ How it's made (decided in [Extension architecture](https://github.com/codaset/tw
    1600px. The outlines are drawn after the scaling, in its pixels, so they stay 2 CSS px wide. The
    rects are the composer's at Send, so ⇧-clicked elements are outlined too, moved by any scrolling
    of the page since the pick. A pick whose page changed while it was captured (a client-side
-   navigation) opens nothing.
+   navigation) opens nothing, and nor does one cancelled with **esc** before its capture came back.
 4. Uploaded with `PUT /tweaks/:n/screenshot` once the bridge has given the tweak its number. The
    bridge only stores the file. The `create` says `screenshot: true` when one is on its way, and a
    brief fetched before it lands waits for it, at most 5 s after the create (kept in memory only).

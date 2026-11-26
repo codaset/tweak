@@ -204,6 +204,12 @@
   };
 
   const onKey = (e) => {
+    if (capturing && e.key === "Escape") {
+      // esc while a pick is still being captured cancels it: nothing opens.
+      stop(e);
+      if (e.type === "keydown") cancelPick();
+      return;
+    }
     if (drag && e.key === "Escape") {
       // esc cancels the drag only: the page, and an open card, don't hear it.
       stop(e);
@@ -292,6 +298,13 @@
   // the composer opens (a hover menu may close once it has the focus); a
   // later pick made while this one captures wins.
   let picks = 0;
+  let capturing = false; // a pick waiting for its capture
+  function cancelPick() {
+    picks++; // its turn is over: the capture, when it comes, is dropped
+    capturing = false;
+    ns.busy?.set("capture", false);
+    ns.picker.release();
+  }
   async function pick(p) {
     // One element is outlined as you write about it; more, a selection or
     // an area are drawn by the composer's marks. The held element changes
@@ -301,9 +314,11 @@
     if (!ns.panel.canCompose()) return; // a send is on its way
     const turn = ++picks;
     const url = location.href;
+    capturing = true;
     ns.busy?.set("capture", true); // so a self-update can't reload in the gap
     const shot = await ns.screenshot.take().catch(() => null);
-    if (turn !== picks) return ns.screenshot.drop(shot);
+    if (turn !== picks) return ns.screenshot.drop(shot); // a later pick, or esc
+    capturing = false;
     ns.busy?.set("capture", false);
     // The page moved on meanwhile (a client-side navigation): the pick was
     // of the page before, so nothing opens.

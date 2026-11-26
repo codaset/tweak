@@ -300,11 +300,18 @@
     clear();
     if (!ns.panel.canCompose()) return; // a send is on its way
     const turn = ++picks;
+    const url = location.href;
     ns.busy?.set("capture", true); // so a self-update can't reload in the gap
     const shot = await ns.screenshot.take().catch(() => null);
     if (turn !== picks) return ns.screenshot.drop(shot);
-    ns.panel.compose(p, shot);
     ns.busy?.set("capture", false);
+    // The page moved on meanwhile (a client-side navigation): the pick was
+    // of the page before, so nothing opens.
+    if (location.href !== url || !p.elements.every((e) => e.isConnected) || !enabled()) {
+      ns.picker.release();
+      return ns.screenshot.drop(shot);
+    }
+    ns.panel.compose(p, shot);
   }
 
   // While an ⌥ press is held, the page's own text selection and drags don't start.

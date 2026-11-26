@@ -1,0 +1,19 @@
+{
+  "type": "create",
+  "ref": "w4",
+  "url": "https://ernie.localhost/admin/users",
+  "request": "make this button green",
+  "targets": {
+    "elements": [
+      {
+        "label": "button.btn-primary",
+        "selector": "#user-form > button"
+      }
+    ]
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.4
+  },
+  "screenshot": "data:image/png;base64,iVBORw0KGgo="
+}

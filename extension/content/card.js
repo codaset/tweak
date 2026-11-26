@@ -717,10 +717,12 @@
       if (pick.selection) targets.selection = pick.selection;
       if (pick.area) targets.area = pick.area;
       pick = { ...pick, elements: [...pick.elements] };
-      // rects are the numbered outlines for the screenshot, taken now (#38).
+      // rects are the numbered outlines for the screenshot, taken now (#38),
+      // and the page's scroll then: the capture's.
       const rects = ns.pointing.rects(pick);
+      const scrolled = { x: scrollX, y: scrollY };
       const located = ns.context.locate(targets, pick.elements).catch(() => {});
-      mode = { kind: "compose", pick, targets, rects, shot, located, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
+      mode = { kind: "compose", pick, targets, rects, scrolled, shot, located, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
       drawCompose();
       place();
       composing(true);
@@ -887,7 +889,10 @@
         said = `Element ${pick.elements.length} added: ${targets.elements.at(-1).label}.`;
       }
       mode.returnTo = pick.elements[0];
-      mode.rects = ns.pointing.rects(pick);
+      // In the capture's viewport, which the page may have scrolled from since.
+      const dx = scrollX - mode.scrolled.x;
+      const dy = scrollY - mode.scrolled.y;
+      mode.rects = ns.pointing.rects(pick).map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }));
       ns.picker.hold(pick.elements.length === 1 ? pick.elements[0] : null);
       drawPointed();
       parts.heard.textContent = said;

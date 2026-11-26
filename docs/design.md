@@ -408,7 +408,7 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `again`, `resolve`,
   `undo`; from the bridge a snapshot or events, and refusals. A request carries the worker's
   `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
-  socket stays open. `create` is `{ref, url, request, targets, anchor}`; the bridge refuses it with
+  socket stays open. `create` is `{ref, url, request, targets, anchor, screenshot?}`; the bridge refuses it with
   `bad-request` for a malformed one, and `no-claim` for a page no claim covers (so every stored
   tweak has a session). `reply` is `{ref, number, text}`, answered with the number, or `not-asked`
   when Claude isn't waiting on a question, `no-tweak` or `bad-request`. `again` is `{ref, number}`, the card's
@@ -853,7 +853,8 @@ How it's made (decided in [Extension architecture](https://github.com/codaset/tw
    (hover menus may close once the composer takes focus). Held until Send, thrown away on cancel.
 2. The content script hides the overlay host (a `visibility` style, so focus and layering are left
    alone) and waits two animation frames. The worker calls `captureVisibleTab` (PNG; the viewport
-   only, in device pixels) on the sender's tab if it's the one shown; the host comes back when the
+   only, in device pixels) on the sender's tab if it's the one shown, both when the queued call
+   runs and after it (a capture of another tab is never kept); the host comes back when the
    worker answers, or after 1.5 s. Without `<all_urls>` or `activeTab` Chrome refuses, and the tweak
    goes without one.
 3. The content script sends the rects of the elements, text or area, taken at pick time
@@ -861,9 +862,12 @@ How it's made (decided in [Extension architecture](https://github.com/codaset/tw
    worker crops to their union plus a 48 CSS-px margin (clipped to the viewport, converted to device
    pixels, at the capture's width over `innerWidth`, so zoom counts), draws the numbered outlines into the image, and scales so the longest side is at most
    1600px. The outlines are drawn after the scaling, in its pixels, so they stay 2 CSS px wide. The
-   rects are the composer's at Send, so ⇧-clicked elements are outlined too.
+   rects are the composer's at Send, so ⇧-clicked elements are outlined too, moved by any scrolling
+   of the page since the pick. A pick whose page changed while it was captured (a client-side
+   navigation) opens nothing.
 4. Uploaded with `PUT /tweaks/:n/screenshot` once the bridge has given the tweak its number. The
-   bridge only stores the file.
+   bridge only stores the file. The `create` says `screenshot: true` when one is on its way, and a
+   brief fetched before it lands waits for it, at most 5 s after the create (kept in memory only).
 
 Captures queue in the worker to stay within Chrome's limit of two a second: each starts at least
 550 ms after the one before, refused ones included.

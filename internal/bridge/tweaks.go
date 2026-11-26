@@ -303,6 +303,7 @@ func (b *Bridge) work(w http.ResponseWriter, r *http.Request) {
 	if !b.refuseChange(w, n, err) {
 		return
 	}
+	b.awaitScreenshot(r.Context(), n)
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(200)
 	w.Write([]byte(brief.Render(tw, b.briefOptions(tw))))

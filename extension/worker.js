@@ -164,7 +164,8 @@ async function onTabMessage(port, msg) {
       const { shot, ...request } = msg;
       const held = shot && port.shots.get(shot.id);
       const png = held ? render(held, shot.rects ?? []) : null;
-      const ref = bridge.request(request, (answer) => {
+      // screenshot: true has a brief fetched before the upload wait for it.
+      const ref = bridge.request(png ? { ...request, screenshot: true } : request, (answer) => {
         if (msg.type === "create" && answer.number) {
           rememberSender(answer.number, tabId);
           if (png) {
@@ -193,9 +194,21 @@ const HELD = 2; // captures held per tab: the composer's, and a pick replacing i
 async function capture(port, { id, viewport }) {
   let ok = false;
   try {
-    const tab = await chrome.tabs.get(port.tabId);
-    if (!tab.active) throw new Error("the tab isn't the one shown");
-    const dataUrl = await pace(() => chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }));
+    // captureVisibleTab takes whatever tab its window shows, so the sender
+    // must be that tab when the queued call runs, and still after it: a
+    // capture of another tab is never kept.
+    const shown = async () => {
+      const tab = await chrome.tabs.get(port.tabId);
+      if (!tab.active) throw new Error("the tab isn't the one shown");
+      return tab;
+    };
+    const dataUrl = await pace(async () => {
+      const { windowId } = await shown();
+      const url = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+      const [front] = await chrome.tabs.query({ active: true, windowId });
+      if (front?.id !== port.tabId) throw new Error("the tab changed while it was captured");
+      return url;
+    });
     if (port.dropped.delete(id)) return; // too late: the tab went on without it
     port.shots.set(id, { dataUrl, viewport });
     for (const old of [...port.shots.keys()].slice(0, -HELD)) port.shots.delete(old);

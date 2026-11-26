@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -11,6 +10,9 @@ import (
 // The allowlist: each licence's text, word for word, with two markers.
 // <<any>> stands for the copyright holder's name (1 to 12 words), and
 // <<or-end>> is a point where the text may stop (Apache without its appendix).
+// A licence's name is its file name without the extension and anything after
+// "--", so one licence can have several accepted wordings (ISC.txt and
+// ISC--original-wording.txt).
 //
 //go:embed licences/*.txt
 var licenceFiles embed.FS
@@ -34,12 +36,19 @@ func loadTemplates() []template {
 			panic(err)
 		}
 		out = append(out, template{
-			name: strings.TrimSuffix(e.Name(), path.Ext(e.Name())),
+			name: templateLicence(e.Name()),
 			re:   regexp.MustCompile(`^` + templatePattern(withoutPreamble(string(text))) + `$`),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out
+}
+
+// templateLicence is a template file's licence: "Apache-2.0.txt" is Apache-2.0,
+// "ISC--original-wording.txt" is ISC.
+func templateLicence(file string) string {
+	name, _, _ := strings.Cut(strings.TrimSuffix(file, ".txt"), "--")
+	return name
 }
 
 // templatePattern turns a template into a regexp over normalised words.

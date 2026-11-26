@@ -29,6 +29,7 @@ func TestIdentifiesPermissiveLicences(t *testing.T) {
 		"bsd3-uuid":         "BSD-3-Clause",
 		"bsd3-libc":         "BSD-3-Clause",
 		"isc-spew":          "ISC",
+		"isc-websocket":     "ISC", // the original ISC wording: "modify, and distribute"
 		"apache-btree":      "Apache-2.0",
 		"apache-logr":       "Apache-2.0",
 		"apache-jsonschema": "Apache-2.0",

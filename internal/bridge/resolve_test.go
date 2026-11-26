@@ -141,6 +141,53 @@ func TestWorkOnAWithdrawnTweakSaysSkipIt(t *testing.T) {
 	}
 }
 
+// A session that lapses while capturing a tweak the developer withdrew:
+// the lapse ends the capture and keeps the change, and the tweak stays
+// withdrawn and resolved rather than following the page back to sent.
+func TestALapseEndsAWithdrawnTweaksCaptureAndLeavesItWithdrawn(t *testing.T) {
+	folder := project(t, map[string]string{"app.css": appCSS})
+	h, s, c := quietBridge(t, folder)
+	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
+	s.readUntil("result")
+	poll(t, h, poll(t, h, -1).Seq)
+	h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	h.before("s1", filepath.Join(folder, "app.css"))
+	writeFile(t, filepath.Join(folder, "app.css"), "a\nB\nc\nd\ne\nf\ng\n")
+	s.withdraw("w1", 1, "tweak-withdrawn")
+
+	c.advance(10 * time.Minute)
+	s.eventOf("claim-lapsed")
+	eventually(t, "the capture ending", func() bool { return !h.marked("s1") })
+	tw, _ := h.b.store.Tweak(1)
+	if tw.Status != store.StatusWithdrawn || tw.ResolvedAt.IsZero() || tw.Change == nil || tw.Change.Capturing || tw.Change.State != store.ChangeRecorded {
+		t.Fatalf("after the lapse: status %s, resolved %v, change %+v", tw.Status, tw.ResolvedAt, tw.Change)
+	}
+}
+
+// Tweaks follow the page when its claim goes, but not resolved ones: a
+// withdrawn tweak and a resolved one stay as they are, and the session that
+// claims the page next hears of neither.
+func TestAClaimLetGoLeavesResolvedTweaksBehind(t *testing.T) {
+	h, s, _ := finished(t)
+	s.resolve("x1", 1, "tweak-resolved")
+	s.send(createMsg("r2", "https://ernie.localhost/", "and this"))
+	s.readUntil("result")
+	s.withdraw("w2", 2, "tweak-resolved")
+	if resp, body := h.do(as("s1", req{method: "DELETE", path: "/claims"})); resp.StatusCode != 200 {
+		t.Fatalf("release: %d %s", resp.StatusCode, body)
+	}
+	h.register("s2", "/dev/ernie-2")
+	h.claim("s2", "https://ernie.localhost/*")
+	if in, err := h.b.store.Inbox("s2", -1); err != nil || len(in.Events) != 0 {
+		t.Fatalf("the new session's inbox %v, %v: it heard of a resolved tweak", in.Events, err)
+	}
+	for n, want := range map[int64]string{1: store.StatusDone, 2: store.StatusWithdrawn} {
+		if tw, _ := h.b.store.Tweak(n); tw.Status != want || tw.ResolvedAt.IsZero() || tw.Session == "s2" {
+			t.Fatalf("tweak %d: status %s, resolved %v, session %q", n, tw.Status, tw.ResolvedAt, tw.Session)
+		}
+	}
+}
+
 // Skipping a withdrawn tweak ends only that tweak's capture: the session's
 // capture of another tweak goes on.
 func TestSkippingAWithdrawnTweakLeavesAnotherCapture(t *testing.T) {

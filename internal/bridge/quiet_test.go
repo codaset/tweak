@@ -71,6 +71,7 @@ func (h *harness) tweakStatus(n int) map[string]any {
 }
 
 func TestALapseEndsCaptureAndTheSessionGetsItsTweakBack(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": "red", "b.css": "one"})
 	h, s, c := quietBridge(t, folder)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
@@ -135,6 +136,7 @@ func TestALapseEndsCaptureAndTheSessionGetsItsTweakBack(t *testing.T) {
 }
 
 func TestAWatcherHoldingItsLongPollDoesntLapse(t *testing.T) {
+	t.Parallel()
 	// The test sweeps, so the clock jumps only once the long-poll is held.
 	h, _, c := quietBridge(t, "/dev/ernie", func(o *Options) {
 		o.InboxWait = 400 * time.Millisecond
@@ -161,6 +163,7 @@ func TestAWatcherHoldingItsLongPollDoesntLapse(t *testing.T) {
 // before that check-in still finds the session listening. The poll is held
 // past LapseAfter, as across a laptop's sleep.
 func TestASweepAsALongPollEndsDoesntLapseIt(t *testing.T) {
+	t.Parallel()
 	h, _, c := quietBridge(t, "/dev/ernie", func(o *Options) { o.LapseCheck = time.Hour })
 	b := h.b
 	checkIn := b.storeCheckIn
@@ -177,6 +180,7 @@ func TestASweepAsALongPollEndsDoesntLapseIt(t *testing.T) {
 }
 
 func TestAClaimLostMeanwhileIsSaidAndRefused(t *testing.T) {
+	t.Parallel()
 	h, s, c := quietBridge(t, "/dev/ernie")
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -222,6 +226,7 @@ func TestAClaimLostMeanwhileIsSaidAndRefused(t *testing.T) {
 }
 
 func TestCommandsWarnAfterAMinuteWithNoWatcher(t *testing.T) {
+	t.Parallel()
 	h, _, c := quietBridge(t, "/dev/ernie")
 	warned := func() bool {
 		resp, _ := h.do(as("s1", req{method: "GET", path: "/claims"}))
@@ -255,6 +260,7 @@ func TestCommandsWarnAfterAMinuteWithNoWatcher(t *testing.T) {
 }
 
 func TestASessionEndingReleasesItsClaimsAndEndsCapture(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": "red"})
 	h, s, _ := quietBridge(t, folder)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
@@ -276,6 +282,7 @@ func TestASessionEndingReleasesItsClaimsAndEndsCapture(t *testing.T) {
 }
 
 func TestASessionEndedWhileNoBridgeRanIsEndedAtStart(t *testing.T) {
+	t.Parallel()
 	state := t.TempDir()
 	h := start(t, func(o *Options) { o.Config.StateDir = state })
 	h.register("s1", "/dev/ernie")
@@ -298,6 +305,7 @@ func TestASessionEndedWhileNoBridgeRanIsEndedAtStart(t *testing.T) {
 }
 
 func TestAWorkingTweakHandedOverBringsANoticeToTheBrief(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": "red"})
 	h, s, _ := quietBridge(t, folder)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
@@ -321,6 +329,7 @@ func TestAWorkingTweakHandedOverBringsANoticeToTheBrief(t *testing.T) {
 // A question answered after its asker let go reaches the next session as
 // new, and so does its again: line.
 func TestAHandedOverTweaksAgainLineRepeatsNew(t *testing.T) {
+	t.Parallel()
 	h, s, c := quietBridge(t, "/dev/ernie")
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -357,6 +366,7 @@ func TestAHandedOverTweaksAgainLineRepeatsNew(t *testing.T) {
 // tweak work on a lost tweak, while capturing another, is refused with the
 // claim lost line, and the capture carries on.
 func TestWorkOnALostTweakWhileCapturingIsRefusedAsLost(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": "red"})
 	h, s, c := quietBridge(t, folder)
 	h.claim("s1", "https://ernie.test/*")
@@ -386,6 +396,7 @@ func TestWorkOnALostTweakWhileCapturingIsRefusedAsLost(t *testing.T) {
 // held in the git check) gets its tweak back capturing: the teardown
 // doesn't end the restored capture.
 func TestAReturnDuringTheLapsesTeardownKeepsItsCapture(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": "red"})
 	h, s, c := quietBridge(t, folder)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
@@ -418,6 +429,7 @@ func TestAReturnDuringTheLapsesTeardownKeepsItsCapture(t *testing.T) {
 // lapse's teardown is still in the git check: it's told to try again, and
 // can once the old capture has ended.
 func TestWorkWaitsForALapsesTeardown(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": "red"})
 	h, s, c := quietBridge(t, folder)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
@@ -447,6 +459,7 @@ func TestWorkWaitsForALapsesTeardown(t *testing.T) {
 // claim's session is listening, the lapsed claims in the snapshot, and the
 // session a waiting tweak was left by.
 func TestTheWireSaysWhoIsListeningAndWhatLapsed(t *testing.T) {
+	t.Parallel()
 	h, s, c := quietBridge(t, "/dev/ernie")
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -529,6 +542,7 @@ func TestTheSocketShowsFoldersFromHomeAndSaysWhenALapseIsLost(t *testing.T) {
 // A lapsed session that ends can't come back: the socket says so, so the
 // side panel stops offering it back.
 func TestALapsedSessionEndingForgetsItsLapsedClaimsOnTheSocket(t *testing.T) {
+	t.Parallel()
 	h, s, c := quietBridge(t, "/dev/ernie")
 	c.advance(10 * time.Minute)
 	s.eventOf("claim-lapsed")
@@ -543,6 +557,7 @@ func TestALapsedSessionEndingForgetsItsLapsedClaimsOnTheSocket(t *testing.T) {
 // A marker half-written by a hook that was cut off is a temporary file:
 // the bridge leaves it out, and removes it.
 func TestAHalfWrittenReleasedMarkerIsIgnored(t *testing.T) {
+	t.Parallel()
 	state := t.TempDir()
 	dir := filepath.Join(state, "released")
 	os.MkdirAll(dir, 0o700)
@@ -558,6 +573,7 @@ func TestAHalfWrittenReleasedMarkerIsIgnored(t *testing.T) {
 // A session that comes back with only its other claim, its capturing
 // tweak's page now another session's, doesn't keep that capture.
 func TestAPartReturnDoesntKeepAHandedOverCapture(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": "red"})
 	h, s, c := quietBridge(t, folder)
 	h.claim("s1", "https://ernie.test/*")

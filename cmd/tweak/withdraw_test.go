@@ -9,6 +9,7 @@ import (
 // the built binary: the withdrawn line, Claude's decline (exit 0, the change
 // kept), and tweak work, which says to skip it.
 func TestAWithdrawnTweakIsHandledFromTheCLI(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")

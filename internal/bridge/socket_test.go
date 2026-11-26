@@ -16,6 +16,7 @@ import (
 
 // Any write to the event log wakes the sockets, not only the HTTP handlers'.
 func TestAnEventFromOutsideTheHTTPHandlersReachesTheSocket(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	h.register("s1", "/dev/a")
 	s := h.connect()
@@ -116,6 +117,7 @@ func (s *socket) closed() websocket.StatusCode {
 }
 
 func TestSocketOnlyFromTheExtensionsExactOrigin(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	port := h.b.Port()
 	for _, c := range []struct{ name, origin, host string }{
@@ -148,6 +150,7 @@ func TestSocketOnlyFromTheExtensionsExactOrigin(t *testing.T) {
 }
 
 func TestHelloGetsTheSnapshotThenClaimEvents(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	h.register("s1", "/dev/a")
 	h.claim("s1", "https://a.localhost")
@@ -175,6 +178,7 @@ func TestHelloGetsTheSnapshotThenClaimEvents(t *testing.T) {
 }
 
 func TestEveryConnectionGetsItsOwnSnapshot(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	h.register("s1", "/dev/a")
 	h.claim("s1", "https://a.localhost/*")
@@ -193,6 +197,7 @@ func TestEveryConnectionGetsItsOwnSnapshot(t *testing.T) {
 }
 
 func TestSocketProtocolMismatchIsRefused(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	other := version.Protocol + 1
 	s := h.connect()
@@ -208,6 +213,7 @@ func TestSocketProtocolMismatchIsRefused(t *testing.T) {
 }
 
 func TestSocketMustStartWithHello(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	s := h.connect()
 	s.send(map[string]any{"type": "keepalive"})
@@ -218,6 +224,7 @@ func TestSocketMustStartWithHello(t *testing.T) {
 }
 
 func TestAConnectedExtensionCountsAsABrowser(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	s := h.connect()
 	s.hello(version.Protocol)
@@ -230,6 +237,7 @@ func TestAConnectedExtensionCountsAsABrowser(t *testing.T) {
 }
 
 func TestKeepalivesHoldTheSocketAndSilenceDropsIt(t *testing.T) {
+	t.Parallel()
 	// Keepalives come four times per idle window, so a slow runner's late
 	// write still lands in time.
 	h := start(t, func(o *Options) { o.SocketIdle = 600 * time.Millisecond })
@@ -248,6 +256,7 @@ func TestKeepalivesHoldTheSocketAndSilenceDropsIt(t *testing.T) {
 }
 
 func TestShutdownClosesSocketsAsRestarting(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	s := h.connect()
 	s.hello(version.Protocol)

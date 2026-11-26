@@ -55,6 +55,7 @@ func tracer(t *testing.T, opts ...func(*Options)) (*harness, *socket) {
 }
 
 func TestCreateGivesTheTweakABridgeWideNumber(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t)
 	s.send(createMsg("r1", "https://ernie.localhost/admin?tab=2", "make it green"))
 	result := s.readUntil("result")
@@ -78,6 +79,7 @@ func TestCreateGivesTheTweakABridgeWideNumber(t *testing.T) {
 
 // A page no claim covers gets no tweak: the composer shows why.
 func TestCreateOnAnUnclaimedPageIsRefused(t *testing.T) {
+	t.Parallel()
 	_, s := tracer(t)
 	s.send(createMsg("r1", "http://localhost:3000/", "make it green"))
 	r := s.readUntil("result")
@@ -87,6 +89,7 @@ func TestCreateOnAnUnclaimedPageIsRefused(t *testing.T) {
 }
 
 func TestABadCreateIsRefusedWithItsRef(t *testing.T) {
+	t.Parallel()
 	_, s := tracer(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "  "))
 	r := s.readUntil("result")
@@ -114,6 +117,7 @@ func TestABadCreateIsRefusedWithItsRef(t *testing.T) {
 }
 
 func TestTheRoundTrip(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t, func(o *Options) { o.InboxWait = 500 * time.Millisecond })
 	resp, body := h.do(as("s1", req{method: "GET", path: "/inbox"}))
 	if resp.StatusCode != 200 {
@@ -182,6 +186,7 @@ func TestTheRoundTrip(t *testing.T) {
 // The brief places the page's paths in the folder of the session working
 // on the tweak, and names the screenshot once there is one.
 func TestTheBriefUsesTheSessionsFolderAndTheScreenshot(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	folder := t.TempDir()
 	os.MkdirAll(filepath.Join(folder, "src"), 0o755)
@@ -214,6 +219,7 @@ func TestTheBriefUsesTheSessionsFolderAndTheScreenshot(t *testing.T) {
 // Targets grow with styles, HTML and locations: a create bigger than the
 // WebSocket library's 32 KiB default still arrives.
 func TestALargeCreateArrives(t *testing.T) {
+	t.Parallel()
 	_, s := tracer(t)
 	m := createMsg("r1", "https://ernie.localhost/", "make it green")
 	var els []any
@@ -234,6 +240,7 @@ func TestALargeCreateArrives(t *testing.T) {
 }
 
 func TestStatusRefusals(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t)
 	h.register("s2", "/dev/bert")
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
@@ -267,6 +274,7 @@ func TestStatusRefusals(t *testing.T) {
 }
 
 func TestADoneTweakIsntWorkedOrDoneAgain(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -282,6 +290,7 @@ func TestADoneTweakIsntWorkedOrDoneAgain(t *testing.T) {
 }
 
 func TestTheInboxLongPollEndsAtShutdown(t *testing.T) {
+	t.Parallel()
 	h, _ := tracer(t)
 	done := make(chan struct{})
 	go func() {
@@ -298,6 +307,7 @@ func TestTheInboxLongPollEndsAtShutdown(t *testing.T) {
 }
 
 func TestEventLines(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("é", 400)
 	for _, c := range []struct{ request, elements, want string }{
 		{"make it green", `[{}]`, "tweak 7 new: make it green [on /a/b, 1 element]"},
@@ -318,6 +328,7 @@ func (s *socket) readUntilAfter(msg map[string]any) map[string]any {
 }
 
 func TestALongPathStaysInsideTheLineCap(t *testing.T) {
+	t.Parallel()
 	got := newLine(7, "https://x.localhost/"+strings.Repeat("a", 600), strings.Repeat("b", 400), json.RawMessage(`{"elements":[{}]}`))
 	if n := len([]rune(got)); n > 500 {
 		t.Fatalf("line of %d characters", n)

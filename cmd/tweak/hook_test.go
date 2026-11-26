@@ -56,6 +56,7 @@ func (s *sandbox) hook(folder, stdin string, args ...string) {
 }
 
 func TestTheEditHookRecordsBeforeCopiesWhileCapturing(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -102,6 +103,7 @@ func TestTheEditHookRecordsBeforeCopiesWhileCapturing(t *testing.T) {
 // Without a marker the hook stops before contacting any bridge, and it never
 // starts one. Whatever its input, it's silent and exits 0.
 func TestTheEditHookIsAQuietNoOpOtherwise(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	edit := hookJSON("s1", ernie, "Edit", map[string]any{"file_path": filepath.Join(ernie, "a.css")})
@@ -126,6 +128,7 @@ func TestTheEditHookIsAQuietNoOpOtherwise(t *testing.T) {
 // before copy. A handover file left behind by a command that died is old,
 // and the hook gives up in its usual time.
 func TestTheEditHookWaitsForABridgeMidHandover(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -185,6 +188,7 @@ func TestTheEditHookWaitsForABridgeMidHandover(t *testing.T) {
 
 // A hook whose stdin never closes still exits in time.
 func TestTheEditHookNeverHangs(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	cmd := exec.Command(tweakBin, "hook", "pre-edit")
 	cmd.Env = s.env()

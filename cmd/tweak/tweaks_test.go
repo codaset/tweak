@@ -147,6 +147,7 @@ func (w *watcher) exited() int {
 }
 
 func TestWatchWorkDone(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	if r := s.tweak("s1", ernie, "claim", "https://ernie.localhost/*"); r.code != 0 {
@@ -187,6 +188,7 @@ func TestWatchWorkDone(t *testing.T) {
 // 2, TWEAK_TEST_WATCH_START_AFTER) it starts one itself, says nothing about
 // it, and carries on.
 func TestTheWatcherStartsAGoneBridge(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	const startAfter = 2 * time.Second
 	s.extra = append(s.extra, "TWEAK_TEST_WATCH_START_AFTER="+startAfter.String())
@@ -221,6 +223,7 @@ func TestTheWatcherStartsAGoneBridge(t *testing.T) {
 // A watcher started after a release and a new claim doesn't stop on the old
 // release: its first line is the next tweak.
 func TestANewWatcherSkipsAnOldRelease(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -241,6 +244,7 @@ func TestANewWatcherSkipsAnOldRelease(t *testing.T) {
 // its lapsed claim lost to another session) and acknowledges it before it
 // exits, so the next watcher doesn't print it again.
 func TestAWatcherAcknowledgesWhatItPrintedBeforeExiting(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	s.extra = append(s.extra, "TWEAK_TEST_LAPSE_AFTER=300ms")
 	ernie := s.folder("ernie")
@@ -265,6 +269,7 @@ func TestAWatcherAcknowledgesWhatItPrintedBeforeExiting(t *testing.T) {
 }
 
 func TestWatchExitsAtOnceWithNoClaims(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -276,6 +281,7 @@ func TestWatchExitsAtOnceWithNoClaims(t *testing.T) {
 }
 
 func TestADashReadsTheMessageFromStdin(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -298,6 +304,7 @@ func TestADashReadsTheMessageFromStdin(t *testing.T) {
 }
 
 func TestWorkAndDoneNeedATweakNumber(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	for _, args := range [][]string{{"work"}, {"work", "x"}, {"done", "1"}, {"done", "1", "a", "b"}} {
@@ -326,6 +333,7 @@ func (s *sandbox) tweakIn(stdin io.Reader, session, folder string, args ...strin
 // A tweak the session never picks up comes back as again: lines, twice. A
 // development bridge takes its wait from TWEAK_TEST_AGAIN_AFTER.
 func TestAnUnconfirmedTweakComesBackAgain(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	s.extra = []string{"TWEAK_TEST_AGAIN_AFTER=300ms"}
 	ernie := s.folder("ernie")
@@ -345,6 +353,7 @@ func TestAnUnconfirmedTweakComesBackAgain(t *testing.T) {
 // A burst of tweaks reaches the Monitor one line at a time, outside its
 // 200 ms batching window.
 func TestWatchPacesABurst(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")

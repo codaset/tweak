@@ -70,6 +70,7 @@ func (s *socket) tweakEvent(event string) map[string]any {
 }
 
 func TestAnUnconfirmedTweakComesBackAsAgainAtMostTwice(t *testing.T) {
+	t.Parallel()
 	h, s, c := againBridge(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -113,6 +114,7 @@ func TestAnUnconfirmedTweakComesBackAsAgainAtMostTwice(t *testing.T) {
 }
 
 func TestWorkConfirmsATweak(t *testing.T) {
+	t.Parallel()
 	h, s, c := againBridge(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -126,6 +128,7 @@ func TestWorkConfirmsATweak(t *testing.T) {
 }
 
 func TestAnAgainLineRepeatsTheReply(t *testing.T) {
+	t.Parallel()
 	h, s, c := againBridge(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -142,6 +145,7 @@ func TestAnAgainLineRepeatsTheReply(t *testing.T) {
 }
 
 func TestSendAgainFromTheCard(t *testing.T) {
+	t.Parallel()
 	h, s, _ := againBridge(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")

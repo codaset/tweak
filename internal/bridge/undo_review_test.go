@@ -23,6 +23,7 @@ func leftovers(t *testing.T, dir string) []string {
 
 // An undo, kept or taken back, leaves no backup or temporary file.
 func TestAnUndoLeavesNoBackups(t *testing.T) {
+	t.Parallel()
 	_, s, dir := finished(t)
 	s.undo("u1", 1, "tweak-undone")
 	if got := leftovers(t, dir); len(got) != 0 {
@@ -33,6 +34,7 @@ func TestAnUndoLeavesNoBackups(t *testing.T) {
 // Claude can't be handed an undo to make by hand while it's capturing
 // another tweak: its edits would land in that tweak's change.
 func TestTweakUndoWaitsForTheSessionsOtherCaptureToEnd(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
 	s.undo("u1", 1, "tweak-undo-conflict")
@@ -54,6 +56,7 @@ func TestTweakUndoWaitsForTheSessionsOtherCaptureToEnd(t *testing.T) {
 // A recorded file replaced by a symlink since, even to the after contents,
 // conflicts: writing it back would replace the link.
 func TestAFileNowASymlinkConflicts(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	app := filepath.Join(dir, "app.css")
 	target := filepath.Join(dir, "shared.css")
@@ -76,6 +79,7 @@ func TestAFileNowASymlinkConflicts(t *testing.T) {
 // that tweak's change would record the reversal, and undoing it later
 // would put the undone edit back.
 func TestUndoWaitsWhileAnotherCaptureHasItsFile(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	s.send(createMsg("r2", "https://ernie.localhost/", "another"))
 	s.readUntil("result")
@@ -98,6 +102,7 @@ func TestUndoWaitsWhileAnotherCaptureHasItsFile(t *testing.T) {
 // A folder on a recorded path replaced by a symlink since conflicts too:
 // Undo would write, or delete, through the link into another folder.
 func TestAFolderNowASymlinkConflicts(t *testing.T) {
+	t.Parallel()
 	_, s, dir := finished(t)
 	other := t.TempDir()
 	writeFile(t, filepath.Join(other, "new.js"), "go()\n") // what Claude's new file holds

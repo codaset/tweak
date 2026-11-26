@@ -148,6 +148,7 @@ func TestATweaksChangeIsRecordedAndListed(t *testing.T) {
 }
 
 func TestWithoutACaptureTheHooksPostRecordsNothing(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "a\n"})
 	h, _ := capturing(t, dir)
 	h.register("s2", dir)
@@ -181,6 +182,7 @@ func TestOutsideARepoNothingRecordedIsNoEditsRecorded(t *testing.T) {
 // Asking ends capture; working again after the reply extends the same
 // change; releasing ends it too. Queueing another tweak doesn't.
 func TestCaptureEndsAtAQuestionAndARelease(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n"})
 	h, s := capturing(t, dir)
 	h.before("s1", filepath.Join(dir, "app.css"))
@@ -221,6 +223,7 @@ func TestCaptureEndsAtAQuestionAndARelease(t *testing.T) {
 // Working on another tweak ends the first tweak's capture properly (its
 // after contents read, its change recorded) before the second's starts.
 func TestWorkingOnAnotherTweakEndsTheFirstsCapture(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n", "b.css": "b\n"})
 	h, s := capturing(t, dir)
 	h.before("s1", filepath.Join(dir, "app.css"))
@@ -244,6 +247,7 @@ func TestWorkingOnAnotherTweakEndsTheFirstsCapture(t *testing.T) {
 // before copy already holds the shell edit, so the file is dropped as
 // unchanged, and the git check must still list it as unrecorded.
 func TestAShellEditThenADeniedEditIsUnrecorded(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n"})
 	h, _ := capturing(t, dir)
 	writeFile(t, filepath.Join(dir, "app.css"), "sed green\n")
@@ -258,6 +262,7 @@ func TestAShellEditThenADeniedEditIsUnrecorded(t *testing.T) {
 // A hook request that waited past the hook's deadline (the edit has run by
 // then) records nothing: its file is no longer the before copy.
 func TestAnExpiredHookRequestRecordsNothing(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n"})
 	h, _ := capturing(t, dir)
 	h.b.captureMu.Lock() // another capture, busy
@@ -280,6 +285,7 @@ func TestAnExpiredHookRequestRecordsNothing(t *testing.T) {
 
 // A tweak declined after partial edits keeps them as an undoable change.
 func TestADeclineAfterEditsKeepsTheChange(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n"})
 	h, _ := capturing(t, dir)
 	h.before("s1", filepath.Join(dir, "app.css"))
@@ -296,6 +302,7 @@ func TestADeclineAfterEditsKeepsTheChange(t *testing.T) {
 // A capture survives a bridge restart, and a crashed bridge's stale marker
 // goes when the next one starts.
 func TestMarkersFollowTheStoreAtStart(t *testing.T) {
+	t.Parallel()
 	state := t.TempDir()
 	dir := project(t, map[string]string{"app.css": "a\n"})
 	h := start(t, func(o *Options) { o.Config.StateDir = state })
@@ -330,6 +337,7 @@ func TestMarkersFollowTheStoreAtStart(t *testing.T) {
 // tweak's page, or no claim is left: releasing another page's claim leaves
 // the tweak capturing, so its later edits are still recorded.
 func TestReleaseEndsCaptureOnlyForItsOwnPage(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n"})
 	h, _ := capturing(t, dir) // tweak 1 on https://ernie.localhost/
 	h.claim("s1", "http://localhost:3000")
@@ -359,6 +367,7 @@ func TestReleaseEndsCaptureOnlyForItsOwnPage(t *testing.T) {
 // do, and changes nothing: the old capture and its marker stay, and the new
 // tweak isn't started, so its edits can't land in the old tweak's change.
 func TestAWorkThatCantEndThePreviousCaptureIsRefused(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n"})
 	h, s := capturing(t, dir)
 	h.before("s1", filepath.Join(dir, "app.css"))
@@ -391,6 +400,7 @@ func TestAWorkThatCantEndThePreviousCaptureIsRefused(t *testing.T) {
 // the shell edit, so Undo can't fully reverse it. It's listed as recorded,
 // and also as changed without being recorded.
 func TestAShellEditBeforeTheHookIsListedBothWays(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n", "b.css": "b\n"})
 	h, _ := capturing(t, dir)
 	writeFile(t, filepath.Join(dir, "app.css"), "sed red\n")
@@ -415,6 +425,7 @@ func TestAShellEditBeforeTheHookIsListedBothWays(t *testing.T) {
 // The hook's post never waits on git: not on the snapshot of a work in
 // progress, nor on the git check of an end in progress.
 func TestTheHookNeverWaitsOnGit(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": "red\n", "b.css": "b\n"})
 	h, s := capturing(t, dir)
 	s.send(createMsg("r2", "https://ernie.localhost/other", "and this"))
@@ -469,6 +480,7 @@ func (l *lockedBuffer) String() string {
 // A tweak's first edit is logged once to bridge.log, for the open
 // measurement; the store times it (store.FirstEdit).
 func TestATweaksFirstEditIsLoggedOnce(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": ".a { color: red }\n", "b.css": ""})
 	var logged lockedBuffer
 	h, _ := capturing(t, dir, func(o *Options) { o.Log = &logged })
@@ -480,6 +492,7 @@ func TestATweaksFirstEditIsLoggedOnce(t *testing.T) {
 }
 
 func TestTheFirstEditLine(t *testing.T) {
+	t.Parallel()
 	if got := firstEditLine(store.FirstEdit{Tweak: 12, Delivered: true, After: 34*time.Second + 600*time.Millisecond}); got != "tweak 12: first edit 34s after delivery" {
 		t.Errorf("got %q", got)
 	}

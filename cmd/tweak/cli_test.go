@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -60,14 +61,34 @@ func (s *sandbox) exe() string {
 	return tweakBin
 }
 
+var (
+	portsMu sync.Mutex
+	ports   = map[int]bool{} // handed out to a sandbox in this run
+)
+
+// freePort is a port free now for a sandbox's bridge, which binds it later.
+// The tests run in parallel, so it is one no other sandbox has had, and
+// below the kernel's ephemeral range (from 32768 on Linux, 49152 on macOS),
+// so a bridge on port 0 or an outgoing connection can't take it meanwhile.
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	portsMu.Lock()
+	defer portsMu.Unlock()
+	for range 1000 {
+		p := 20000 + rand.IntN(12000)
+		if ports[p] {
+			continue
+		}
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+		if err != nil {
+			continue
+		}
+		l.Close()
+		ports[p] = true
+		return p
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatal("no free port")
+	return 0
 }
 
 func newSandbox(t *testing.T) *sandbox {
@@ -176,6 +197,7 @@ func (s *sandbox) stopBridge() {
 // file in CLAUDE_CONFIG_DIR. Without the rule, the warning comes before "now
 // run tweak watch", and the claim still succeeds.
 func TestClaimWarnsWhenTheAllowRuleIsMissing(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	config := filepath.Join(s.home, "claude-config")
 	s.extra = append(s.extra, "CLAUDE_CONFIG_DIR="+config)
@@ -207,6 +229,7 @@ func allowRuleMissing(file string) string {
 
 // Without CLAUDE_CONFIG_DIR, the file is ~/.claude/settings.json, shown from ~.
 func TestTheAllowRuleWarningNamesTheUsersSettingsFile(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	os.Remove(filepath.Join(s.home, ".claude", "settings.json"))
 	r := s.tweak("s1", s.folder("ernie"), "claim", "https://ernie.localhost")
@@ -216,6 +239,7 @@ func TestTheAllowRuleWarningNamesTheUsersSettingsFile(t *testing.T) {
 }
 
 func TestClaimStartsTheBridgeAndClaims(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	r := s.tweak("s1", ernie, "claim", "https://ernie.localhost")
@@ -239,6 +263,7 @@ func TestClaimStartsTheBridgeAndClaims(t *testing.T) {
 }
 
 func TestAnOverlappingClaimIsRefusedWithItsHolder(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie, ernie2 := s.folder("ernie"), s.folder("ernie-2")
 	if r := s.tweak("s1", ernie, "claim", "https://ernie.localhost/*"); r.code != 0 {
@@ -253,6 +278,7 @@ func TestAnOverlappingClaimIsRefusedWithItsHolder(t *testing.T) {
 }
 
 func TestReleaseOneOrAll(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -276,6 +302,7 @@ func TestReleaseOneOrAll(t *testing.T) {
 }
 
 func TestAnyCommandStartsTheBridge(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	r := s.tweak("", s.folder("x"), "claims")
 	if r.code != 0 || r.stdout != "no claims\n" {
@@ -287,6 +314,7 @@ func TestAnyCommandStartsTheBridge(t *testing.T) {
 }
 
 func TestTwoCommandsStartingAtOnceShareOneBridge(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	var wg sync.WaitGroup
 	results := make([]result, 3)
@@ -302,6 +330,7 @@ func TestTwoCommandsStartingAtOnceShareOneBridge(t *testing.T) {
 }
 
 func TestPortInUseByAnotherProgram(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", s.port))
 	if err != nil {
@@ -325,6 +354,7 @@ func TestPortInUseByAnotherProgram(t *testing.T) {
 }
 
 func TestClaimNeedsASessionID(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	r := s.tweak("", s.folder("ernie"), "claim", "https://ernie.localhost/*")
 	if r.code != 1 || !strings.Contains(r.stderr, "--session") {
@@ -333,6 +363,7 @@ func TestClaimNeedsASessionID(t *testing.T) {
 }
 
 func TestABadPatternSaysWhy(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	r := s.tweak("s1", s.folder("ernie"), "claim", "ernie.localhost")
 	if r.code != 1 || !strings.Contains(r.stderr, "https://ernie.localhost/*") {
@@ -390,6 +421,7 @@ func (s *sandbox) polling(session, folder, pattern string) *watcher {
 }
 
 func TestDevelopmentBuildRefusesTheLiveStateFolder(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	cmd := exec.Command(tweakBin, "claims")
 	// Our own port, but the default state folder (under a fake HOME).

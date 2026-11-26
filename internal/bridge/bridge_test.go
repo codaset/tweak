@@ -147,6 +147,7 @@ func (h *harness) claim(session, pattern string) (*http.Response, []byte) {
 }
 
 func TestBridgeFileNamesThePortPIDAndVersion(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	raw, err := os.ReadFile(h.cfg.BridgeFile())
 	if err != nil {
@@ -170,6 +171,7 @@ func TestBridgeFileNamesThePortPIDAndVersion(t *testing.T) {
 }
 
 func TestListensOnLoopbackOnly(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	if addr := h.b.Addr(); !strings.HasPrefix(addr, "127.0.0.1:") {
 		t.Fatalf("listening on %s", addr)
@@ -177,6 +179,7 @@ func TestListensOnLoopbackOnly(t *testing.T) {
 }
 
 func TestBridgeInfo(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	resp, body := h.do(req{method: "GET", path: "/bridge"})
 	if resp.StatusCode != 200 {
@@ -191,6 +194,7 @@ func TestBridgeInfo(t *testing.T) {
 // tweak version asks the bridge for the extension's version: the one
 // connected now, from its hello, or none.
 func TestBridgeInfoNamesTheConnectedExtension(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	extension := func() string {
 		_, body := h.do(req{method: "GET", path: "/bridge"})
@@ -215,6 +219,7 @@ func TestBridgeInfoNamesTheConnectedExtension(t *testing.T) {
 }
 
 func TestSecurityRefusals(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	port := h.b.Port()
 	cases := []struct {
@@ -252,6 +257,7 @@ func TestSecurityRefusals(t *testing.T) {
 }
 
 func TestAcceptedOrigins(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	port := h.b.Port()
 	for _, r := range []req{
@@ -266,6 +272,7 @@ func TestAcceptedOrigins(t *testing.T) {
 }
 
 func TestProtocolMismatchIsRefused(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	other := fmt.Sprint(version.Protocol + 1)
 	resp, body := h.do(req{method: "GET", path: "/claims", header: map[string]string{"x-tweak-protocol": other}})
@@ -289,6 +296,7 @@ func TestProtocolMismatchIsRefused(t *testing.T) {
 // A session's watcher refused for its protocol is told the session's
 // patterns, to claim again after /reload-plugins; the claims stay.
 func TestAProtocolRefusalNamesTheSessionsClaims(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	h.register("s1", "/dev/ernie")
 	h.claim("s1", "https://ernie.localhost/*")
@@ -314,6 +322,7 @@ func TestAProtocolRefusalNamesTheSessionsClaims(t *testing.T) {
 }
 
 func TestEveryRequestChecksTheSessionIn(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	h.register("s1", "/dev/ernie")
 	h.claim("s1", "https://ernie.localhost/*")
@@ -334,6 +343,7 @@ func TestEveryRequestChecksTheSessionIn(t *testing.T) {
 }
 
 func TestRegisteringNeedsASessionIDAgentAndFolder(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	resp, body := h.do(req{method: "POST", path: "/sessions", body: map[string]string{"agent": "claude-code", "folder": "/x"}})
 	refused(t, resp, body, 400, "no-session-id")
@@ -342,6 +352,7 @@ func TestRegisteringNeedsASessionIDAgentAndFolder(t *testing.T) {
 }
 
 func TestClaimsOverHTTP(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	h.register("s1", "/dev/ernie")
 	h.register("s2", "/dev/ernie-2")
@@ -396,6 +407,7 @@ func TestClaimsOverHTTP(t *testing.T) {
 }
 
 func TestShutdownOverHTTP(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	resp, _ := h.do(req{method: "POST", path: "/shutdown"})
 	if resp.StatusCode != 202 {
@@ -412,6 +424,7 @@ func TestShutdownOverHTTP(t *testing.T) {
 // A handover's shutdown names the PID it found, so it can't stop a bridge
 // another command's handover has started since.
 func TestAShutdownForAnotherPIDIsRefused(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	resp, body := h.do(req{method: "POST", path: fmt.Sprintf("/shutdown?pid=%d", os.Getpid()+1)})
 	refused(t, resp, body, 409, "not-this-bridge")
@@ -435,6 +448,7 @@ func idle(d time.Duration) func(*Options) {
 }
 
 func TestQuitsWhenIdle(t *testing.T) {
+	t.Parallel()
 	h := start(t, idle(150*time.Millisecond))
 	select {
 	case err := <-h.done:
@@ -451,6 +465,7 @@ func TestQuitsWhenIdle(t *testing.T) {
 }
 
 func TestStaysUpWhileAClaimIsHeld(t *testing.T) {
+	t.Parallel()
 	// The claim is made over HTTP after the bridge starts, so the idle time
 	// must comfortably outlast two requests on a slow -race runner.
 	h := start(t, idle(time.Second))
@@ -471,6 +486,7 @@ func TestStaysUpWhileAClaimIsHeld(t *testing.T) {
 }
 
 func TestStaysUpWhileABrowserIsConnected(t *testing.T) {
+	t.Parallel()
 	h := start(t, idle(150*time.Millisecond))
 	h.b.BrowserConnected()
 	select {
@@ -488,6 +504,7 @@ func TestStaysUpWhileABrowserIsConnected(t *testing.T) {
 }
 
 func TestPortInUseByAnotherProgram(t *testing.T) {
+	t.Parallel()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -512,6 +529,7 @@ func TestPortInUseByAnotherProgram(t *testing.T) {
 }
 
 func TestASecondBridgeOnThePortStepsAside(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	_, err := Start(Options{Config: config.Config{Port: h.b.Port(), StateDir: t.TempDir()}, Version: "1.2.3", Log: io.Discard})
 	if !errors.Is(err, ErrAlreadyRunning) {

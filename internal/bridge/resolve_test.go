@@ -16,6 +16,7 @@ import (
 // A withdraw that lands while tweak work on the same capturing tweak runs
 // its git check still ends the capture: Claude is told to skip it.
 func TestAWithdrawDuringWorksGitCheckStillEndsTheCapture(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": appCSS})
 	h, s := capturing(t, dir)
 	inGit, release := make(chan struct{}, 1), make(chan struct{})
@@ -87,6 +88,7 @@ func (s *socket) request(msg map[string]any, ref, event string) (result, tweak m
 // capture goes on until Claude's next command, which keeps the change and
 // leaves it withdrawn; the change can then be undone.
 func TestAWithdrawWhileWorkingReachesClaudeAndKeepsTheChange(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": appCSS})
 	h, s := capturing(t, dir)
 	from := poll(t, h, -1).Seq // the new line
@@ -126,6 +128,7 @@ func TestAWithdrawWhileWorkingReachesClaudeAndKeepsTheChange(t *testing.T) {
 // tweak work on a withdrawn tweak says to skip it, exits cleanly and starts
 // no capture; one that was capturing ends.
 func TestWorkOnAWithdrawnTweakSaysSkipIt(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": appCSS})
 	h, s := capturing(t, dir)
 	s.withdraw("w1", 1, "tweak-withdrawn")
@@ -145,6 +148,7 @@ func TestWorkOnAWithdrawnTweakSaysSkipIt(t *testing.T) {
 // the lapse ends the capture and keeps the change, and the tweak stays
 // withdrawn and resolved rather than following the page back to sent.
 func TestALapseEndsAWithdrawnTweaksCaptureAndLeavesItWithdrawn(t *testing.T) {
+	t.Parallel()
 	folder := project(t, map[string]string{"app.css": appCSS})
 	h, s, c := quietBridge(t, folder)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
@@ -168,6 +172,7 @@ func TestALapseEndsAWithdrawnTweaksCaptureAndLeavesItWithdrawn(t *testing.T) {
 // withdrawn tweak and a resolved one stay as they are, and the session that
 // claims the page next hears of neither.
 func TestAClaimLetGoLeavesResolvedTweaksBehind(t *testing.T) {
+	t.Parallel()
 	h, s, _ := finished(t)
 	s.resolve("x1", 1, "tweak-resolved")
 	s.send(createMsg("r2", "https://ernie.localhost/", "and this"))
@@ -191,6 +196,7 @@ func TestAClaimLetGoLeavesResolvedTweaksBehind(t *testing.T) {
 // Skipping a withdrawn tweak ends only that tweak's capture: the session's
 // capture of another tweak goes on.
 func TestSkippingAWithdrawnTweakLeavesAnotherCapture(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": appCSS})
 	h, s := capturing(t, dir)
 	s.withdraw("w1", 1, "tweak-withdrawn")
@@ -208,6 +214,7 @@ func TestSkippingAWithdrawnTweakLeavesAnotherCapture(t *testing.T) {
 }
 
 func TestOnlyAnOpenTweakIsWithdrawnAndOnlyAFinishedOneResolved(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t, func(o *Options) { o.InboxWait = 100 * time.Millisecond })
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -233,6 +240,7 @@ func TestOnlyAnOpenTweakIsWithdrawnAndOnlyAFinishedOneResolved(t *testing.T) {
 // Resolve takes the pin off the page: a new snapshot lists the tweak among
 // the resolved ones, not the open ones.
 func TestAResolvedTweakIsListedApart(t *testing.T) {
+	t.Parallel()
 	h, s, _ := finished(t)
 	result, tw := s.resolve("x1", 1, "tweak-resolved")
 	if result["number"] != 1.0 || tw["status"] != "done" || tw["resolvedAt"] == nil {
@@ -249,6 +257,7 @@ func TestAResolvedTweakIsListedApart(t *testing.T) {
 // Resolved tweaks, their changes and screenshots go 7 days after
 // resolution; open ones stay.
 func TestResolvedTweaksAreDeletedAfterAWeek(t *testing.T) {
+	t.Parallel()
 	c := &fakeClock{t: time.Now().Add(time.Hour).Truncate(time.Millisecond)}
 	h, s := tracer(t, func(o *Options) {
 		o.Clock = c.now

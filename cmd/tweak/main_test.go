@@ -14,6 +14,7 @@ import (
 // tweak version names the bridge only when one is running, and never
 // starts one to answer.
 func TestVersionPrintsEachPartsVersion(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	folder := s.folder("ernie")
 	r := s.tweak("", folder, "version")
@@ -35,6 +36,7 @@ func TestVersionPrintsEachPartsVersion(t *testing.T) {
 // The release workflow stamps the version with -ldflags -X; this guards the
 // variable path it uses.
 func TestReleaseVersionIsSetWithLdflags(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("builds the binary")
 	}
@@ -57,6 +59,7 @@ func TestReleaseVersionIsSetWithLdflags(t *testing.T) {
 }
 
 func TestUnknownCommandFailsWithHint(t *testing.T) {
+	t.Parallel()
 	var out, errOut bytes.Buffer
 	if code := run([]string{"nope"}, &out, &errOut); code != 2 {
 		t.Fatalf("exit %d, want 2", code)

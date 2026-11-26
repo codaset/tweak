@@ -11,6 +11,7 @@ import (
 // An empty file is a file: one Claude filled is emptied again, not
 // deleted, and one Claude emptied gets its contents back.
 func TestUndoKeepsEmptyFilesApartFromAbsentOnes(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"empty.txt": "", "full.txt": "full\n"})
 	h, s := capturing(t, dir)
 	h.before("s1", filepath.Join(dir, "empty.txt"))
@@ -34,6 +35,7 @@ func TestUndoKeepsEmptyFilesApartFromAbsentOnes(t *testing.T) {
 // tweak undo shows paths from the folder of the session reading it, which
 // may not be the one that made the change.
 func TestTweakUndoShowsPathsFromTheReadersFolder(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
 	h.do(as("s1", req{method: "DELETE", path: "/claims"}))

@@ -11,6 +11,7 @@ import (
 // recorded here (the folder isn't a git repo, and no edit passed the
 // hook), so the card's Ask Claude to undo is what sends it.
 func TestAnUndoConflictIsHandledFromTheCLI(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -53,6 +54,7 @@ func TestAnUndoConflictIsHandledFromTheCLI(t *testing.T) {
 }
 
 func TestUndoCommandsNeedTheirArguments(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	for _, args := range [][]string{{"undo"}, {"undo", "x"}, {"undone", "1"}, {"undone", "x", "y"}} {

@@ -129,6 +129,7 @@ func claimed(folder string) string {
 // A command finding a bridge older than itself shuts it down, starts its
 // own and carries on: the claims are still there, and nothing is said.
 func TestANewerCommandHandsOverFromAnOlderBridge(t *testing.T) {
+	t.Parallel()
 	s := releaseSandbox(t)
 	ernie := s.folder("ernie")
 	s.bin = s.install(oldVersion)
@@ -161,6 +162,7 @@ func TestANewerCommandHandsOverFromAnOlderBridge(t *testing.T) {
 // and the old watcher carries on against it. The wait is 5 seconds; here 1
 // (TWEAK_TEST_HANDOVER_STOP), shorter than the socket's 5 s close.
 func TestAHandoverWaitsOutASlowOldBridge(t *testing.T) {
+	t.Parallel()
 	s := releaseSandbox(t)
 	const stop = time.Second
 	s.extra = append(s.extra, "TWEAK_TEST_HANDOVER_STOP="+stop.String())
@@ -195,6 +197,7 @@ func TestAHandoverWaitsOutASlowOldBridge(t *testing.T) {
 // SIGTERM to a bridge already shutting down (the handover's, after POST
 // /shutdown has had 5 seconds) ends it at once.
 func TestSIGTERMEndsABridgeAlreadyShuttingDown(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	s.tweak("s1", s.folder("ernie"), "claim", "https://ernie.localhost")
 	f, _ := s.bridgeFile()
@@ -225,6 +228,7 @@ func TestSIGTERMEndsABridgeAlreadyShuttingDown(t *testing.T) {
 // previous version starts again, the command says so and carries on against
 // it, and the next command tries again.
 func TestAHandoverThatFailsKeepsTheOldBridge(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ build, why string }{
 		{newVersion + "-exit", "the bridge exited as it started"},
 		{newVersion + "-hang", "the bridge didn't start within 1 second"},
@@ -256,6 +260,7 @@ func TestAHandoverThatFailsKeepsTheOldBridge(t *testing.T) {
 // When the previous version won't start again either, the command fails
 // with both errors, naming the database backup.
 func TestAHandoverWithNoBridgeToKeepFailsWithBothErrors(t *testing.T) {
+	t.Parallel()
 	s := releaseSandbox(t)
 	ernie := s.folder("ernie")
 	s.bin = s.install(oldVersion)
@@ -279,6 +284,7 @@ func TestAHandoverWithNoBridgeToKeepFailsWithBothErrors(t *testing.T) {
 // Two sessions upgrading at once race on the port: the losing bridge exits
 // quietly, and both commands carry on against the one that won.
 func TestTwoCommandsHandingOverAtOnceShareTheWinner(t *testing.T) {
+	t.Parallel()
 	s := releaseSandbox(t)
 	ernie := s.folder("ernie")
 	s.bin = s.install(oldVersion)

@@ -76,6 +76,7 @@ func change(ev map[string]any) map[string]any {
 // Undo puts every recorded file back: the edit reversed, the new file
 // deleted, the deleted one written again. The unrecorded file is left.
 func TestUndoPutsEveryRecordedFileBack(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	r, ev := s.undo("u1", 1, "tweak-undone")
 	if r["number"] != float64(1) || r["error"] != nil {
@@ -111,6 +112,7 @@ func TestUndoPutsEveryRecordedFileBack(t *testing.T) {
 // Later edits that don't touch the change are kept; a file already back
 // to before is left as it is.
 func TestUndoKeepsLaterEditsAndFilesAlreadyBack(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED\nc\nd\ne\nf\ng later\n")
 	writeFile(t, filepath.Join(dir, "gone.rb"), "old\n") // put back by hand
@@ -129,6 +131,7 @@ func TestUndoKeepsLaterEditsAndFilesAlreadyBack(t *testing.T) {
 // Any conflicting file means nothing is written: the undo goes to the
 // session claiming the page, as an undo-conflict line.
 func TestAnyConflictWritesNothing(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		later func(dir string)
@@ -171,6 +174,7 @@ func TestAnyConflictWritesNothing(t *testing.T) {
 // A write that fails part-way puts back the files already written, so
 // the undo is still all or nothing.
 func TestAFailedWriteRestoresWhatWasWritten(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" || os.Getuid() == 0 {
 		t.Skip("needs a folder this user can't write")
 	}
@@ -198,6 +202,7 @@ func TestAFailedWriteRestoresWhatWasWritten(t *testing.T) {
 }
 
 func TestOnlyAFinishedTweakCanBeUndone(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"app.css": appCSS})
 	h, s := capturing(t, dir)
 	r := s.readUntilAfter(undoMsg("u1", 1))
@@ -216,6 +221,7 @@ func TestOnlyAFinishedTweakCanBeUndone(t *testing.T) {
 // tweak undo shows the change to reverse by hand, conflicting files marked,
 // without starting capture; tweak undone finishes it.
 func TestAConflictIsResolvedByHand(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
 	s.undo("u1", 1, "tweak-undo-conflict")
@@ -261,6 +267,7 @@ func TestAConflictIsResolvedByHand(t *testing.T) {
 }
 
 func TestUndoneNeedsAMessage(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
 	s.readUntilAfter(undoMsg("u1", 1))
@@ -270,6 +277,7 @@ func TestUndoneNeedsAMessage(t *testing.T) {
 
 // Declining the undo keeps the change, and says so.
 func TestDecliningAConflictKeepsTheChange(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
 	s.undo("u1", 1, "tweak-undo-conflict")
@@ -286,6 +294,7 @@ func TestDecliningAConflictKeepsTheChange(t *testing.T) {
 // With nothing recorded, Ask Claude to undo goes to the session, and tweak
 // undo gives Claude its summary and the files that changed.
 func TestAskClaudeToUndo(t *testing.T) {
+	t.Parallel()
 	dir := project(t, map[string]string{"sed.rb": "x = 1\n"})
 	h, s := capturing(t, dir)
 	writeFile(t, filepath.Join(dir, "sed.rb"), "x = 2\n")
@@ -312,6 +321,7 @@ func TestAskClaudeToUndo(t *testing.T) {
 
 // An undo waiting for a session goes to the next one to claim the page.
 func TestAConflictWithNoClaimWaitsForOne(t *testing.T) {
+	t.Parallel()
 	h, s, dir := finished(t)
 	writeFile(t, filepath.Join(dir, "app.css"), "a\nB CHANGED AGAIN\nc\nd\ne\nf\ng\n")
 	h.do(as("s1", req{method: "DELETE", path: "/claims"}))

@@ -24,6 +24,7 @@ func binFolders(t *testing.T, state string) []string {
 // number: 1.10.0 is newer than 1.9.0), leaves anything that isn't a
 // version, and clears launcher downloads left behind an hour ago or more.
 func TestAStartingBridgeKeepsTheTwoNewestBinaries(t *testing.T) {
+	t.Parallel()
 	state := t.TempDir()
 	for _, v := range []string{"1.2.0", "1.9.0", "1.10.0", "1.2.3", "notes"} {
 		os.MkdirAll(filepath.Join(state, "bin", v), 0o700)
@@ -52,6 +53,7 @@ func TestAStartingBridgeKeepsTheTwoNewestBinaries(t *testing.T) {
 // A bridge started again after a failed handover is older than the newest
 // two: it keeps its own folder, the one it runs from, as well.
 func TestAnOlderBridgeKeepsItsOwnBinary(t *testing.T) {
+	t.Parallel()
 	state := t.TempDir()
 	for _, v := range []string{"1.2.0", "1.3.0", "1.4.0"} {
 		os.MkdirAll(filepath.Join(state, "bin", v), 0o700)
@@ -64,6 +66,7 @@ func TestAnOlderBridgeKeepsItsOwnBinary(t *testing.T) {
 
 // Nothing to prune is no failure: no bin/ folder at all.
 func TestABridgeStartsWithNoBinFolder(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	if _, err := os.Stat(filepath.Join(h.cfg.StateDir, "bin")); err == nil {
 		t.Fatal("bin/ was created")

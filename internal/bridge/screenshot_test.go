@@ -50,6 +50,7 @@ func created(t *testing.T) *harness {
 
 // The worker's upload lands beside the database, where the brief names it.
 func TestAScreenshotIsStoredAndTheBriefNamesIt(t *testing.T) {
+	t.Parallel()
 	h := created(t)
 	resp, body := h.put("/tweaks/1/screenshot", png, extension)
 	if resp.StatusCode != 204 {
@@ -71,6 +72,7 @@ func TestAScreenshotIsStoredAndTheBriefNamesIt(t *testing.T) {
 }
 
 func TestAScreenshotIsRefusedForNoTweakOrNoPNG(t *testing.T) {
+	t.Parallel()
 	h := created(t)
 	for name, c := range map[string]struct {
 		path   string
@@ -104,6 +106,7 @@ func TestAScreenshotIsRefusedForNoTweakOrNoPNG(t *testing.T) {
 // Without a host grant for 127.0.0.1, the worker's PUT is preflighted. The
 // bridge approves exactly that: this path, the extension's own origin.
 func TestOnlyTheExtensionsScreenshotPreflightIsApproved(t *testing.T) {
+	t.Parallel()
 	h := start(t)
 	preflight := func(path, origin string) req {
 		return req{method: "OPTIONS", path: path, header: map[string]string{
@@ -148,6 +151,7 @@ func TestOnlyTheExtensionsScreenshotPreflightIsApproved(t *testing.T) {
 
 // The PUT itself still needs x-tweak, like every request.
 func TestAScreenshotStillNeedsXTweak(t *testing.T) {
+	t.Parallel()
 	h := created(t)
 	resp, body := h.put("/tweaks/1/screenshot", png, map[string]string{"Origin": extension["Origin"], "x-tweak": "no"})
 	if resp.StatusCode != 403 || !strings.Contains(string(body), "forbidden") {
@@ -159,6 +163,7 @@ func TestAScreenshotStillNeedsXTweak(t *testing.T) {
 // lands wait for it, a while at most: Claude can pick a tweak up faster than
 // the worker crops and uploads.
 func TestTheBriefWaitsForAScreenshotThatsOnItsWay(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t)
 	m := createMsg("r1", "https://ernie.localhost/", "make it green")
 	m["screenshot"] = true
@@ -189,6 +194,7 @@ func TestTheBriefWaitsForAScreenshotThatsOnItsWay(t *testing.T) {
 }
 
 func TestAScreenshotThatNeverComesIsWaitedForOnlyAWhile(t *testing.T) {
+	t.Parallel()
 	// A wait well above a loaded runner's request time (with -race), so a
 	// second fetch that doesn't wait is told apart from one that does.
 	h, s := tracer(t, func(o *Options) { o.ScreenshotWait = time.Second })

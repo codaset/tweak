@@ -9,6 +9,7 @@ import (
 // Claude asks; the developer's reply comes back to the watcher; work again
 // carries the conversation; done finishes it.
 func TestAskReplyDone(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -38,6 +39,7 @@ func TestAskReplyDone(t *testing.T) {
 }
 
 func TestQueueAndDecline(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -61,6 +63,7 @@ func TestQueueAndDecline(t *testing.T) {
 }
 
 func TestConversationCommandsNeedTheirArguments(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	for _, args := range [][]string{{"plan", "1"}, {"ask", "x", "y"}, {"decline", "1"}, {"queue"}, {"queue", "1", "x"}} {

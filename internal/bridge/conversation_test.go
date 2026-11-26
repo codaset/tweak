@@ -21,6 +21,7 @@ func status(h *harness, n, status, message string) (int, []byte) {
 // Claude asks, the developer replies from the card, the reply reaches the
 // watcher, and the next brief carries the conversation.
 func TestAQuestionAndItsReply(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t, func(o *Options) { o.InboxWait = 300 * time.Millisecond })
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -78,6 +79,7 @@ func TestAQuestionAndItsReply(t *testing.T) {
 }
 
 func TestReplyRefusals(t *testing.T) {
+	t.Parallel()
 	_, s := tracer(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -100,6 +102,7 @@ func TestReplyRefusals(t *testing.T) {
 
 // A blank reply is refused once Claude has asked.
 func TestABlankReplyIsRefused(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -112,6 +115,7 @@ func TestABlankReplyIsRefused(t *testing.T) {
 }
 
 func TestPlanQueueAndDecline(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t)
 	for _, r := range []string{"r1", "r2"} {
 		s.send(createMsg(r, "https://ernie.localhost/", "make it green"))
@@ -150,6 +154,7 @@ func TestPlanQueueAndDecline(t *testing.T) {
 }
 
 func TestConversationRefusals(t *testing.T) {
+	t.Parallel()
 	h, s := tracer(t)
 	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
 	s.readUntil("result")
@@ -181,6 +186,7 @@ func TestConversationRefusals(t *testing.T) {
 // The handler and the schema agree: every request the schema refuses, the
 // bridge refuses too, and changes nothing.
 func TestEveryInvalidStatusRequestIsRefused(t *testing.T) {
+	t.Parallel()
 	examples, _ := filepath.Glob(filepath.Join("..", "..", "schema", "examples", "invalid", "status-request.*.json"))
 	if len(examples) == 0 {
 		t.Fatal("no invalid status-request examples")
@@ -205,6 +211,7 @@ func TestEveryInvalidStatusRequestIsRefused(t *testing.T) {
 }
 
 func TestReplyLines(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("é", 400)
 	for _, c := range []struct{ text, want string }{
 		{"the outline one", "tweak 7 reply: the outline one"},

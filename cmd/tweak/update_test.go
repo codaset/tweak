@@ -53,6 +53,7 @@ func claimAfterHello(t *testing.T, s *sandbox) result {
 }
 
 func TestClaimRelaysTheAnotherFolderWarning(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	s.installed = true
 	r := claimAfterHello(t, s)
@@ -65,6 +66,7 @@ func TestClaimRelaysTheAnotherFolderWarning(t *testing.T) {
 // A development bridge (TWEAK_BIN) never asks the extension to update, so it
 // has nothing to warn about.
 func TestADevelopmentClaimGivesNoFolderWarning(t *testing.T) {
+	t.Parallel()
 	r := claimAfterHello(t, newSandbox(t))
 	if strings.Contains(r.stdout, "another folder") {
 		t.Fatalf("stdout = %q", r.stdout)

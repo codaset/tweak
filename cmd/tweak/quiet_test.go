@@ -22,6 +22,7 @@ func sessionEndJSON(session, cwd, reason string) string {
 }
 
 func TestTheSessionEndHookReleasesTheSessionsClaims(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -34,6 +35,7 @@ func TestTheSessionEndHookReleasesTheSessionsClaims(t *testing.T) {
 // With no bridge running, the hook leaves a released marker and starts no
 // bridge; the next bridge to start ends the session.
 func TestTheSessionEndHookWithNoBridgeLeavesAMarker(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
@@ -51,6 +53,7 @@ func TestTheSessionEndHookWithNoBridgeLeavesAMarker(t *testing.T) {
 }
 
 func TestCommandsWarnOnStderrWithNoWatcher(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	s.extra = append(s.extra, "TWEAK_TEST_UNWATCHED_AFTER=200ms")
 	ernie := s.folder("ernie")
@@ -67,6 +70,7 @@ func TestCommandsWarnOnStderrWithNoWatcher(t *testing.T) {
 // The marker is written to a temporary file and renamed into place, so a
 // hook cut off mid-write never leaves an empty one.
 func TestTheReleasedMarkerIsWrittenWhole(t *testing.T) {
+	t.Parallel()
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.hook(ernie, sessionEndJSON("s1", ernie, "other"), "hook", "session-end")

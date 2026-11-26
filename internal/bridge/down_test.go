@@ -50,6 +50,7 @@ func (s *socket) leaves(h *harness) {
 }
 
 func TestAClaimWithNoExtensionEverConnectedSaysHowToInstallIt(t *testing.T) {
+	t.Parallel()
 	h, _ := downBridge(t)
 	w := claimWarnings(t, h)
 	folder := tilde(filepath.Join(h.cfg.StateDir, "extension"))
@@ -61,6 +62,7 @@ func TestAClaimWithNoExtensionEverConnectedSaysHowToInstallIt(t *testing.T) {
 
 // On macOS the folder picker hides dot-folders such as ~/.local.
 func TestTheInstallStepsSayHowToReachAHiddenFolder(t *testing.T) {
+	t.Parallel()
 	got := notInstalled("~/.local/state/codaset-tweak/extension")
 	want := "extension not connected: to install it, open chrome://extensions, turn on Developer mode, click Load unpacked and choose ~/.local/state/codaset-tweak/extension (on macOS the file picker hides ~/.local: press ⌘⇧G and paste the path)"
 	if got != want {
@@ -69,6 +71,7 @@ func TestTheInstallStepsSayHowToReachAHiddenFolder(t *testing.T) {
 }
 
 func TestAClaimSaysWhenTheExtensionWasLastSeen(t *testing.T) {
+	t.Parallel()
 	h, c := downBridge(t)
 	h.extensionConnects().leaves(h)
 	c.advance(2 * time.Hour)
@@ -80,6 +83,7 @@ func TestAClaimSaysWhenTheExtensionWasLastSeen(t *testing.T) {
 }
 
 func TestAgo(t *testing.T) {
+	t.Parallel()
 	for d, want := range map[time.Duration]string{
 		45 * time.Second:             "45 s",
 		90 * time.Second:             "1 min",
@@ -95,6 +99,7 @@ func TestAgo(t *testing.T) {
 }
 
 func TestAClaimWhileTheExtensionIsConnectedHasNoWarning(t *testing.T) {
+	t.Parallel()
 	h, c := downBridge(t)
 	h.extensionConnects(map[string]any{"version": embeddedVersion(t)})
 	c.advance(2 * time.Hour)
@@ -106,6 +111,7 @@ func TestAClaimWhileTheExtensionIsConnectedHasNoWarning(t *testing.T) {
 // A connection that dropped a moment ago is a worker restarting, a
 // self-update reloading or a handover: it is back within seconds.
 func TestAClaimJustAfterTheExtensionLeftHasNoWarning(t *testing.T) {
+	t.Parallel()
 	h, c := downBridge(t)
 	h.extensionConnects().leaves(h)
 	c.advance(10 * time.Second)
@@ -118,6 +124,7 @@ func TestAClaimJustAfterTheExtensionLeftHasNoWarning(t *testing.T) {
 // extension was never installed. A bridge crashing with it connected leaves
 // the sweep's last mark.
 func TestWhenTheExtensionWasLastSeenOutlivesARestart(t *testing.T) {
+	t.Parallel()
 	state := t.TempDir()
 	h, c := downBridge(t, func(o *Options) { o.Config.StateDir = state })
 	// Still connected at shutdown, and answering the bridge's close frame as
@@ -146,6 +153,7 @@ func TestWhenTheExtensionWasLastSeenOutlivesARestart(t *testing.T) {
 // done and its version still differs is it loaded from another folder. A
 // busy tab holding the reload back, or the reload under way, isn't.
 func TestTheFolderWarningWaitsForTheExtensionsOwnUpdate(t *testing.T) {
+	t.Parallel()
 	h, _ := downBridge(t)
 	want := embeddedVersion(t)
 	s := h.extensionConnects(map[string]any{"version": "0.0.1", "reloadedFor": ""})
@@ -163,6 +171,7 @@ func TestTheFolderWarningWaitsForTheExtensionsOwnUpdate(t *testing.T) {
 // The watcher's line: each session with claims hears the extension connect
 // after it was away, once.
 func TestEachWatcherHearsTheExtensionConnect(t *testing.T) {
+	t.Parallel()
 	h, c := downBridge(t)
 	h.register("s1", "/dev/ernie")
 	h.claim("s1", "https://ernie.localhost/*")
@@ -199,6 +208,7 @@ func TestEachWatcherHearsTheExtensionConnect(t *testing.T) {
 
 // A watcher already waiting hears it at once, not at the end of its long-poll.
 func TestAWaitingWatcherHearsTheExtensionConnectAtOnce(t *testing.T) {
+	t.Parallel()
 	h, _ := downBridge(t, func(o *Options) { o.InboxWait = 10 * time.Second })
 	h.register("s1", "/dev/ernie")
 	h.claim("s1", "https://ernie.localhost/*")
@@ -226,6 +236,7 @@ func TestAWaitingWatcherHearsTheExtensionConnectAtOnce(t *testing.T) {
 // that checked in just before the bridge went down for half an hour still
 // has 10 minutes of the new bridge's time.
 func TestDowntimeDoesntCountTowardALapse(t *testing.T) {
+	t.Parallel()
 	state := t.TempDir()
 	h, c := downBridge(t, func(o *Options) { o.Config.StateDir = state })
 	h.register("s1", "/dev/ernie")
@@ -257,6 +268,7 @@ func TestDowntimeDoesntCountTowardALapse(t *testing.T) {
 // hello and again when access changes, and tweak claim relays it. An older
 // extension that doesn't say gets no warning.
 func TestAClaimWithoutSiteAccessSaysHowToAllowIt(t *testing.T) {
+	t.Parallel()
 	h, _ := downBridge(t)
 	s := h.extensionConnects(map[string]any{"version": embeddedVersion(t), "granted": false})
 	want := "site access not granted: open the Codaset Tweak side panel and click Allow access, or ⌥-click won't work"
@@ -272,6 +284,7 @@ func TestAClaimWithoutSiteAccessSaysHowToAllowIt(t *testing.T) {
 // Each connected extension (one per Chrome profile) has its own access:
 // one with access is enough for ⌥-click, until it goes.
 func TestTheAccessWarningCountsEachConnectedExtension(t *testing.T) {
+	t.Parallel()
 	h, _ := downBridge(t)
 	h.extensionConnects(map[string]any{"version": embeddedVersion(t), "granted": false})
 	with := h.extensionConnects(map[string]any{"version": embeddedVersion(t), "granted": true})

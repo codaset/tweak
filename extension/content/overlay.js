@@ -326,6 +326,8 @@
     /* Claude hasn't picked it up: two lines, the dot on the first */
     .status.unanswered { align-items: flex-start; text-wrap: pretty; }
     .status.unanswered .dot { margin-top: 0.42em; }
+    /* The session has gone quiet: its folder as code */
+    .status code { font: 500 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
     .retry { display: flex; align-items: center; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }    .request {
       margin: 0;
       padding-left: 10px;
@@ -353,6 +355,9 @@
     .entry.kind-reply { padding-left: 10px; border-left: 2px solid var(--line); }
     .entry.kind-reply .entry-text, .entry.kind-plan .entry-text { color: var(--muted); }
     .entry.kind-reason .entry-label { color: var(--tone-ended); }
+    /* Tweak's own word, such as a handover: set apart from the conversation */
+    .entry.kind-notice { padding: 6px 8px; border-radius: 6px; background: var(--surface); }
+    .entry.kind-notice .entry-text { color: var(--muted); font-size: 12px; }
     /* What the tweak changed */
     .change { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); max-height: 200px; overflow: auto; overscroll-behavior: contain; }
     .change:focus-visible { outline: 2px solid var(--outline); outline-offset: 2px; }

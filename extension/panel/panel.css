@@ -395,3 +395,23 @@ input[aria-invalid="true"] {
 [hidden] {
   display: none !important;
 }
+
+/* The page's session stopped responding: it counts as unclaimed, so the
+   idle grey of the toolbar's ! */
+.lapsed {
+  border: 1px solid color-mix(in srgb, var(--idle) 40%, transparent);
+}
+
+.lapsed p code {
+  overflow-wrap: anywhere;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

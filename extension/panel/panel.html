@@ -67,6 +67,19 @@
         <button type="button" class="dismiss" data-dismiss="rails-annotations">Don't suggest this for this site</button>
       </section>
 
+      <section class="lapsed" id="lapsed" hidden aria-labelledby="lapsed-title">
+        <h2 id="lapsed-title">The session stopped responding</h2>
+        <p>
+          The session in <code id="lapsed-folder"></code> stopped responding <span id="lapsed-ago"></span>. It gets
+          this page back if it returns, or claim it from another session with:
+        </p>
+        <div class="command">
+          <code id="lapsed-command"></code>
+          <button type="button" class="copy" data-copy="lapsed-command" aria-label="Copy the command">Copy</button>
+        </div>
+      </section>
+      <p class="sr-only" id="page-said" role="status" aria-live="polite"></p>
+
       <section class="claims" id="claims" hidden aria-labelledby="claims-title">
         <h2 id="claims-title">Claimed pages</h2>
         <ul id="claim-list"></ul>

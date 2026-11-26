@@ -18,6 +18,10 @@
   };
   // How sent and delivered read once the developer has replied to a question.
   const REPLIED = { sent: "Reply sent", delivered: "Claude has your reply" };
+  // The statuses that wait on the session to hear of the tweak: these need
+  // its watcher.
+  const WAITS = { sent: true, delivered: true };
+  const LAPSED = "The session stopped responding";
   // The conversation's vocabulary (schema/event.json's entry kinds and
   // senders), the one place the card reads it from: how each kind is
   // labelled, and whether a sender's new entries are read out. A new kind
@@ -66,9 +70,18 @@
   // status is how a tweak's status reads now: while working, with the time
   // since it started (the bridge's statusAt, so a reload keeps the count).
   // No tweak yet is a card still sending.
+  // While the session goes quiet (design.md § When the session goes quiet),
+  // a tweak waiting on it says so: its watcher is gone (heldBy, from the
+  // worker), or its claim lapsed (left, from the bridge). code is the part
+  // of text the card shows as code.
   function status(tweak, now = Date.now()) {
     if (!tweak) return SENDING;
     const { text, tone } = STATUS[tweak.status] ?? { text: tweak.status, tone: "sent" };
+    if (tweak.status === "sent" && tweak.left?.why === "lapsed") return { text: `${LAPSED} · ${text}`, tone, quiet: true };
+    if (WAITS[tweak.status] && tweak.heldBy?.listening === false) {
+      const folder = tweak.heldBy.folder;
+      return { text: `Waiting for the session in ${folder}, which isn't listening right now`, tone, quiet: true, code: folder };
+    }
     if (unanswered(tweak, now)) return { text: UNANSWERED, tone };
     // A reply sends the tweak again: it waits for the same session, not a new one.
     if (tweak.entries?.at(-1)?.kind === "reply" && REPLIED[tweak.status]) return { text: REPLIED[tweak.status], tone };
@@ -108,8 +121,11 @@
   //   but no edit was recorded;
   // - "No files changed": the git check ran and found nothing.
   // announce is what a screen reader hears when it appears.
+  // - "Files already changed": no session has the tweak (its claim lapsed,
+  //   say) part-way through, and these files changed meanwhile; no Undo,
+  //   as the tweak isn't finished.
   function change(tweak) {
-    const c = described(tweak);
+    const c = described(tweak) ?? partial(tweak);
     if (!c) return null;
     const count = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
     const announce = c.files.length
@@ -126,6 +142,13 @@
     if (unrecorded.length || !c.checked) return { kind: "nothing-recorded", title: "No edits recorded", files, unrecorded };
     if (tweak.status !== "done") return null; // declined or withdrawn before changing anything: nothing to say
     return { kind: "unchanged", title: "No files changed", files, unrecorded };
+  }
+  function partial(tweak) {
+    const c = tweak?.change;
+    if (!c || !tweak.left || tweak.status !== "sent") return null;
+    const files = c.files ?? [];
+    const unrecorded = c.unrecorded ?? [];
+    return files.length || unrecorded.length ? { kind: "partial", title: "Files already changed", files, unrecorded } : null;
   }
   // undo is what the card offers to undo a finished change, or where its
   // undo is (design.md § On the card), or null for nothing:

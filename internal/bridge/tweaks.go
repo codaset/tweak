@@ -94,7 +94,7 @@ func (b *Bridge) tweakJSON(t store.Tweak) tweakOut {
 	out := tweakOut{Number: t.Number, Page: t.Page, URL: t.URL, Status: t.Status, StatusAt: stamp(t.StatusAt),
 		Created: stamp(t.Created), Updated: stamp(t.Updated), Targets: t.Targets, Anchor: t.Anchor, Entries: []entryOut{}, Change: changeJSON(t.Change)}
 	if t.Session == "" && t.LeftWhy != "" && t.LeftFolder != "" {
-		out.Left = &leftOut{Folder: t.LeftFolder, Why: t.LeftWhy}
+		out.Left = &leftOut{Folder: b.store.Shown(t.LeftFolder), Why: t.LeftWhy}
 	}
 	if t.Status == store.StatusDelivered {
 		out.Resends = t.Resends

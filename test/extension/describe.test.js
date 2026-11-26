@@ -128,6 +128,41 @@ test("a delivered tweak Claude hasn't picked up after two resends says so, from 
   assert.equal(status(replied, at(waiting.againAt, 0)).text, busy);
 });
 
+// docs/design.md § When the session goes quiet. The worker gives each tweak
+// heldBy: the session holding its page, and whether it's listening.
+test("a tweak waiting on a session that isn't listening says so, naming its folder", () => {
+  const deaf = { folder: "~/dev/ernie", listening: false };
+  const quiet = "Waiting for the session in ~/dev/ernie, which isn't listening right now";
+  assert.deepEqual({ ...status({ status: "sent", heldBy: deaf }) }, { text: quiet, tone: "sent", quiet: true, code: "~/dev/ernie" });
+  assert.equal(status({ status: "delivered", heldBy: deaf }).text, quiet);
+  // #31's case: no watcher, so one again: only, and the card would stay on "Claude has it".
+  assert.equal(status({ status: "delivered", resends: 1, heldBy: deaf }).text, quiet);
+  // Ahead of the unanswered text and a reply's.
+  const waiting = { status: "delivered", resends: 2, againAt: "2026-11-26T10:09:00.000Z", heldBy: deaf };
+  assert.equal(status(waiting, at(waiting.againAt, 0)).text, quiet);
+  assert.equal(status({ ...waiting, entries: [{ kind: "request" }, { kind: "question" }, { kind: "reply" }] }).text, quiet);
+  // Listening, or no longer waiting on the session: as before.
+  assert.equal(status({ status: "sent", heldBy: { ...deaf, listening: true } }).text, "Waiting for a session");
+  assert.equal(status({ status: "queued", heldBy: deaf }).text, "Queued");
+  assert.equal(status({ status: "question", heldBy: deaf }).text, "Claude has a question");
+});
+
+test("a lapsed session's tweak says it stopped responding, and lists the files it already changed, with no Undo", () => {
+  const { change, undo } = ns.describe;
+  const file = (path, outside = false) => ({ path, outside });
+  const left = { folder: "~/dev/ernie", why: "lapsed" };
+  const tweak = { status: "sent", url: "http://localhost/", left, change: { state: "recorded", checked: true, files: [file("public/index.html")], unrecorded: [file("b.css")] } };
+  assert.deepEqual({ ...status(tweak) }, { text: "The session stopped responding · Waiting for a session", tone: "sent", quiet: true });
+  const c = change(tweak);
+  assert.deepEqual([c.kind, c.title, c.files.map((f) => f.path), c.unrecorded.map((f) => f.path)], ["partial", "Files already changed", ["public/index.html"], ["b.css"]]);
+  assert.equal(undo(tweak), null);
+  // Nothing changed yet: nothing to list.
+  assert.equal(change({ status: "sent", left }), null);
+  assert.equal(change({ ...tweak, change: { ...tweak.change, files: [], unrecorded: [] } }), null);
+  // Released or ended: the page is unclaimed, and the tweak simply waits.
+  assert.equal(status({ status: "sent", left: { ...left, why: "released" } }).text, "Waiting for a session");
+});
+
 test("a finished tweak's card says what it changed", () => {
   const { change } = ns.describe;
   const file = (path, outside = false) => ({ path, outside });

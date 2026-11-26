@@ -305,10 +305,18 @@ func claimJSON(c store.Claim) claimOut {
 	return out
 }
 
+// shownClaimJSON is a claim for the extension, which names its session's
+// folder from ~ and can't know the home folder itself.
+func (b *Bridge) shownClaimJSON(c store.Claim) claimOut {
+	out := claimJSON(c)
+	out.Session.Folder = b.store.Shown(c.Session.Folder)
+	return out
+}
+
 // heldClaimJSON is a held claim for the extension, saying whether its
 // session is listening now.
 func (b *Bridge) heldClaimJSON(c store.Claim) claimOut {
-	out := claimJSON(c)
+	out := b.shownClaimJSON(c)
 	listening := !b.unwatched(c.Session.ID)
 	out.Listening = &listening
 	return out

@@ -5,14 +5,51 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/codaset/tweak/internal/pattern"
 )
 
+var (
+	templateOnce sync.Once
+	template     []byte // a database Open made and migrated, closed
+	templateErr  error
+)
+
+// open opens a fresh database for a test: a copy of one Open created and
+// migrated once (migration is slow under -race, and every test pays it
+// otherwise). Open, finding it up to date, migrates nothing; the migration
+// tests call openWith themselves.
 func open(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "tweak.db"), "1.0.0")
+	templateOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "store-template")
+		if err != nil {
+			templateErr = err
+			return
+		}
+		defer os.RemoveAll(dir)
+		path := filepath.Join(dir, "tweak.db")
+		s, err := Open(path, "1.0.0")
+		if err != nil {
+			templateErr = err
+			return
+		}
+		// Closing the last connection checkpoints the WAL into the file.
+		if templateErr = s.Close(); templateErr != nil {
+			return
+		}
+		template, templateErr = os.ReadFile(path)
+	})
+	if templateErr != nil {
+		t.Fatal(templateErr)
+	}
+	path := filepath.Join(t.TempDir(), "tweak.db")
+	if err := os.WriteFile(path, template, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path, "1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}

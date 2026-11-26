@@ -149,6 +149,10 @@
       box-shadow: var(--shadow);
       pointer-events: auto;
       animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      /* A card taller than the viewport scrolls inside it, never off it. */
+      max-height: calc(100vh - 16px);
+      overflow: auto;
+      overscroll-behavior: contain;
     }
     .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .title { font-weight: 650; font-size: 13px; }
@@ -245,6 +249,24 @@
     .entry.kind-reply { padding-left: 10px; border-left: 2px solid var(--line); }
     .entry.kind-reply .entry-text, .entry.kind-plan .entry-text { color: var(--muted); }
     .entry.kind-reason .entry-label { color: var(--tone-ended); }
+    /* What the tweak changed */
+    .change { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); max-height: 200px; overflow: auto; overscroll-behavior: contain; }
+    .change:focus-visible { outline: 2px solid var(--outline); outline-offset: 2px; }
+    .change .files { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+    .change .file { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+    .change .path { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; min-width: 0; }
+    .change .where {
+      padding: 0 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
+    .change .unrecorded { display: grid; gap: 3px; padding: 6px 8px; border-radius: 6px; background: var(--surface); }
+    .change .note { margin: 0; color: var(--muted); font-size: 12px; }
+    .change-unchanged .entry-label, .change-nothing-recorded .entry-label { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 550; }
     .answer { display: grid; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
     .answer textarea { min-height: 52px; }
 

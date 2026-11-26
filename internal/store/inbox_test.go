@@ -31,6 +31,48 @@ func TestUpgradingStartsEachInboxAtTheEnd(t *testing.T) {
 	}
 }
 
+// A v2 database (the tracer's) upgrades to undo capture: its rows keep
+// their data, none is capturing, and a tweak can then be worked and captured.
+func TestUpgradingAddsUndoCapture(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tweak.db")
+	old, err := openWith(path, "0.1.0", migrations[:2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO sessions (id, agent, folder, last_check_in) VALUES ('s1', 'claude-code', '/dev/ernie', 0)`,
+		`INSERT INTO tweaks (number, session, page, page_url, status, status_at, created, updated, targets) VALUES (1, 's1', 'https://a.localhost/', 'https://a.localhost/', 'done', 0, 0, 0, '{}')`,
+		`INSERT INTO changes (id, tweak, state) VALUES (1, 1, 'recorded')`,
+		`INSERT INTO change_files (change, path, before, after) VALUES (1, '/dev/ernie/a.css', 'red', 'green')`,
+	} {
+		if _, err := old.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	old.Close()
+
+	s, err := Open(path, "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	tw, err := s.Tweak(1)
+	if err != nil || tw.Change == nil || tw.Change.Capturing || tw.Change.State != ChangeRecorded || len(tw.Change.Files) != 1 || tw.Change.Files[0].Path != "/dev/ernie/a.css" {
+		t.Fatalf("change %+v %v", tw.Change, err)
+	}
+	if sessions, _ := s.CapturingSessions(); len(sessions) != 0 {
+		t.Fatalf("capturing after the upgrade: %v", sessions)
+	}
+	s.Claim("s1", mustParse(t, "https://b.localhost/*"))
+	tw2, _ := s.CreateTweak(newTweak("https://b.localhost/", "second"))
+	if _, err := s.Work("s1", tw2.Number, nil, CaptureStart{Folder: "/dev/ernie"}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.RecordBefore("s1", Before{ChangeFile: ChangeFile{Path: "/dev/ernie/a.css", Shown: "a.css"}, Text: true, Data: []byte("x")}); !ok || err != nil {
+		t.Fatalf("record %v %v", ok, err)
+	}
+}
+
 func types(events []Event) []string {
 	var out []string
 	for _, e := range events {

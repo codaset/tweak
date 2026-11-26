@@ -99,6 +99,7 @@ type tweakRecord struct {
 	Entries  []entryRecord   `json:"entries"`
 	Resends  int             `json:"resends,omitempty"`
 	WaitFrom int64           `json:"waitFrom,omitempty"`
+	Change   *Change         `json:"change,omitempty"`
 }
 
 type entryRecord struct {
@@ -111,7 +112,7 @@ type entryRecord struct {
 func (t *eventTx) logTweak(typ string, tw Tweak) error {
 	r := tweakRecord{Number: tw.Number, Session: tw.Session, Page: tw.Page, URL: tw.URL, Status: tw.Status,
 		StatusAt: tw.StatusAt.UnixMilli(), Created: tw.Created.UnixMilli(), Updated: tw.Updated.UnixMilli(),
-		Targets: tw.Targets, Anchor: tw.Anchor, Entries: []entryRecord{}, Resends: tw.Resends}
+		Targets: tw.Targets, Anchor: tw.Anchor, Entries: []entryRecord{}, Resends: tw.Resends, Change: tw.Change}
 	if !tw.WaitFrom.IsZero() {
 		r.WaitFrom = tw.WaitFrom.UnixMilli()
 	}
@@ -127,7 +128,7 @@ func (t *eventTx) logTweak(typ string, tw Tweak) error {
 func (r tweakRecord) tweak() *Tweak {
 	tw := &Tweak{Number: r.Number, Session: r.Session, Page: r.Page, URL: r.URL, Status: r.Status,
 		StatusAt: fromMillis(r.StatusAt), Created: fromMillis(r.Created), Updated: fromMillis(r.Updated),
-		Targets: r.Targets, Anchor: r.Anchor, Resends: r.Resends}
+		Targets: r.Targets, Anchor: r.Anchor, Resends: r.Resends, Change: r.Change}
 	if r.WaitFrom != 0 {
 		tw.WaitFrom = fromMillis(r.WaitFrom)
 	}

@@ -20,12 +20,15 @@ const contrast = (a, b) => {
 };
 
 // Text in the card's conversation, on what it sits on: the question's
-// label and text in its tinted box, the reason's label, and muted text.
+// label and text in its tinted box, the reason's label, and muted text; the
+// unrecorded files and their note in their box.
 const TEXT = [
   ["question-text", "question-surface"],
   ["text", "question-surface"],
   ["tone-ended", "bg"],
   ["muted", "bg"],
+  ["text", "surface"],
+  ["muted", "surface"],
 ];
 for (const [theme, t] of Object.entries(themes)) {
   for (const [fg, bg] of TEXT) {

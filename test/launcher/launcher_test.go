@@ -265,6 +265,30 @@ func TestKeptBinaryRunsWithoutTheNetwork(t *testing.T) {
 	}
 }
 
+// A hook before the first download exits 0 at once, silent, with no
+// download (nothing can be capturing yet); once the binary is kept, hooks
+// run it like any other command.
+func TestAHookBeforeTheFirstDownloadDoesNothing(t *testing.T) {
+	target := hostTarget(t)
+	for _, shell := range shells(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			bin := []byte(fakeBinary)
+			rel := newRelease(t, map[string][]byte{"tweak-" + target: bin})
+			in := newInstall(t, sum(bin)+"  tweak-"+target+"\n", rel.srv.URL)
+			if res := in.run(t, shell, nil, "hook", "pre-edit"); res.code != 0 || res.stdout != "" || res.stderr != "" {
+				t.Fatalf("got %+v", res)
+			}
+			if n := rel.downloads.Load(); n != 0 {
+				t.Fatalf("a hook downloaded the binary (%d downloads)", n)
+			}
+			in.run(t, shell, nil, "version")
+			if res := in.run(t, shell, nil, "hook", "pre-edit"); res.stdout != "fake tweak: hook pre-edit\n" {
+				t.Fatalf("with the binary kept: %+v", res)
+			}
+		})
+	}
+}
+
 func TestChecksumMismatchDeletesTheDownload(t *testing.T) {
 	target := hostTarget(t)
 	for _, shell := range shells(t) {

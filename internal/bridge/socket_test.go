@@ -230,7 +230,9 @@ func TestAConnectedExtensionCountsAsABrowser(t *testing.T) {
 }
 
 func TestKeepalivesHoldTheSocketAndSilenceDropsIt(t *testing.T) {
-	h := start(t, func(o *Options) { o.SocketIdle = 300 * time.Millisecond })
+	// Keepalives come four times per idle window, so a slow runner's late
+	// write still lands in time.
+	h := start(t, func(o *Options) { o.SocketIdle = 600 * time.Millisecond })
 	s := h.connect()
 	s.hello(version.Protocol)
 	s.next("snapshot")

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // DefaultPort is the live bridge's port.
@@ -53,12 +54,13 @@ func Resolve(getenv func(string) string, home string) (Config, error) {
 // sameFolder reports whether a and b name the same folder once symlinks are
 // followed, so no alias for the live state folder gets past the guard.
 func sameFolder(a, b string) bool {
-	return canonical(a) == canonical(b)
+	return Canonical(a) == Canonical(b)
 }
 
-// canonical resolves symlinks in the longest part of path that exists, and
-// keeps the rest as written (the folder may not have been created yet).
-func canonical(path string) string {
+// Canonical resolves symlinks in the longest part of path that exists, and
+// keeps the rest as written (the folder, or a file about to be created, may
+// not exist yet).
+func Canonical(path string) string {
 	path = filepath.Clean(path)
 	var rest []string
 	for {
@@ -89,6 +91,32 @@ func (c Config) Database() string { return filepath.Join(c.StateDir, "tweak.db")
 // ExtensionDir is the folder the bridge writes the extension to, for Chrome
 // to load unpacked.
 func (c Config) ExtensionDir() string { return filepath.Join(c.StateDir, "extension") }
+
+// Marker is the file that says a session is capturing: while it exists,
+// tweak hook pre-edit tells the bridge about each file before it's edited.
+// The session ID is encoded so it can only ever name a file in capturing/.
+func (c Config) Marker(session string) string {
+	return filepath.Join(c.MarkerDir(), markerName(session))
+}
+
+// MarkerDir is the folder of capture markers.
+func (c Config) MarkerDir() string { return filepath.Join(c.StateDir, "capturing") }
+
+// markerName keeps letters, digits, - and _ (a UUID is unchanged) and
+// writes every other byte as %XX, so no two IDs share a name and none can
+// be . or .. or hold a separator.
+func markerName(session string) string {
+	var b strings.Builder
+	for i := 0; i < len(session); i++ {
+		switch ch := session[i]; {
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9', ch == '-', ch == '_':
+			b.WriteByte(ch)
+		default:
+			fmt.Fprintf(&b, "%%%02X", ch)
+		}
+	}
+	return b.String()
+}
 
 // Log is where a bridge started by the CLI writes its output.
 func (c Config) Log() string { return filepath.Join(c.StateDir, "bridge.log") }

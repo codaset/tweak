@@ -113,7 +113,7 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
       await other.goto(env.app.url("/"));
       await tab2.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the second tab to connect" });
       await env.page.bringToFront();
-      const n = await tracer(env, fixture.cases[0], { request: "tweak the save button from the first tab" });
+      const n = await tracer(env, fixture.cases[0], { request: "tweak the save button from the first tab", edit: null });
       await tab2.until(`ns.page.tweak(${n})?.status`, { is: (s) => s === "done", what: `tweak ${n} to reach the second tab as done` });
       await tab2.until(`ns.pins.point(${n}) !== null`, { what: "the second tab's pin" });
       assert.equal(await tab2.evaluate(noCard), true, "no card in the second tab");

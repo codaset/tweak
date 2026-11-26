@@ -40,6 +40,7 @@ func (b *Bridge) routes() http.Handler {
 	api.HandleFunc("POST /tweaks/{n}/work", b.work)
 	api.HandleFunc("POST /tweaks/{n}/status", b.status)
 	api.HandleFunc("POST /tweaks/{n}/entries", b.entries)
+	api.HandleFunc("POST /edits/before", b.editBefore)
 	api.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		refuse(w, 404, "not-found", fmt.Sprintf("no such endpoint: %s %s", r.Method, r.URL.Path))
 	})
@@ -207,6 +208,12 @@ func (b *Bridge) release(w http.ResponseWriter, r *http.Request) {
 		want = p.String()
 	}
 	released, err := b.store.Release(id, want)
+	if err == nil {
+		// Releasing ends undo capture (docs/design.md, "Capture").
+		if cerr := b.endCapture(id); cerr != nil {
+			b.log.Printf("release: ending capture for %s: %v", id, cerr)
+		}
+	}
 	switch {
 	case errors.Is(err, store.ErrNotClaimed):
 		refuse(w, 404, "not-claimed", fmt.Sprintf("%s isn't claimed by this session: run tweak claims", want))

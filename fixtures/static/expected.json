@@ -3,7 +3,8 @@
     "name": "save button",
     "pick": { "selector": "#save" },
     "locations": [],
-    "clues": []
+    "clues": [],
+    "edit": { "file": "public/index.html", "find": ">Save<", "replace": ">Save draft<" }
   },
   {
     "name": "save button in a modal dialog",

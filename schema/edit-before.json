@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/edit-before.json",
+  "title": "edit-before",
+  "description": "POST /edits/before from tweak hook pre-edit: the absolute path of a file an agent is about to edit. If the session is capturing, the bridge saves the file's contents as its before copy, the first time it is touched in the tweak. The bridge answers 204 with no body either way.",
+  "type": "object",
+  "properties": {
+    "path": {
+      "description": "Absolute: the hook resolves a relative path against its cwd.",
+      "type": "string",
+      "pattern": "^(/|[A-Za-z]:[\\\\/]|\\\\\\\\)"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "additionalProperties": false
+}

@@ -97,6 +97,28 @@
       };
     });
 
+  // change is what a finished tweak's card says it changed (design.md § On
+  // the card), or null for nothing to say: shown once Claude is done, or has
+  // declined after changing something; never while it works or asks. Each
+  // list is files as {path, outside}.
+  // - title "Files changed", with the recorded files; unrecorded is the
+  //   "Also changed while Claude worked, not recorded" list;
+  // - "No edits recorded": something changed, or there's no repo to check,
+  //   but no edit was recorded;
+  // - "No files changed": the git check ran and found nothing.
+  function change(tweak) {
+    const c = tweak?.change;
+    if (!c || (tweak.status !== "done" && tweak.status !== "declined")) return null;
+    const files = c.files ?? [];
+    const unrecorded = c.unrecorded ?? [];
+    if (files.length) return { kind: "recorded", title: "Files changed", files, unrecorded };
+    if (unrecorded.length || !c.checked) return { kind: "nothing-recorded", title: "No edits recorded", files, unrecorded };
+    if (tweak.status === "declined") return null; // declined before changing anything: nothing to say
+    return { kind: "unchanged", title: "No files changed", files, unrecorded };
+  }
+  const UNRECORDED = "Also changed while Claude worked, not recorded:";
+  const OUTSIDE = "outside this project";
+
   const classes = (tweak) => `tone-${status(tweak).tone}${tweak?.status === "working" ? " working" : ""}`;
 
   // label is the tag plus an ID or up to two classes: button.btn-primary.
@@ -142,5 +164,5 @@
   // element is one element as a tweak's targets carry it (schema/create.json).
   const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, elapsed, label, text, selector, element };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element };
 })();

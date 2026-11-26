@@ -58,6 +58,7 @@ type Tweak struct {
 	// no longer delivered). See docs/design.md, "No lost tweaks".
 	Resends  int
 	WaitFrom time.Time
+	Change   *Change // nil until capture starts for it
 }
 
 // Entry is one turn of a tweak's conversation.
@@ -242,9 +243,17 @@ func (s *Store) Tweak(number int64) (Tweak, error) { return getTweak(s.db, numbe
 // is returned unchanged and nothing is logged.
 //
 // Undo capture (docs/design.md, "Capture") hangs off these moves: it starts
-// when a session's tweak becomes working, and ends when the session asks,
-// finishes, declines or queues.
+// when a session's tweak becomes working (Work), and ends when the session
+// asks about, finishes or declines it (SetStatusEnding). A capturing tweak
+// is working, which queue can't leave, so queue never ends one.
 func (s *Store) SetStatus(sessionID string, number int64, status string, entry *Entry) (Tweak, error) {
+	return s.SetStatusEnding(sessionID, number, status, entry, nil)
+}
+
+// SetStatusEnding is SetStatus that also ends the session's capture of the
+// tweak with end, when given, in the same change: the tweak is logged once,
+// with its status and its change together.
+func (s *Store) SetStatusEnding(sessionID string, number int64, status string, entry *Entry, end *CaptureEnd) (Tweak, error) {
 	tx, err := s.begin()
 	if err != nil {
 		return Tweak{}, err
@@ -257,8 +266,16 @@ func (s *Store) SetStatus(sessionID string, number int64, status string, entry *
 	if !canMove(tw.Status, status) {
 		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: status}
 	}
-	if tw.Status == status && entry == nil {
+	if tw.Status == status && entry == nil && end == nil {
 		return tw, nil
+	}
+	if end != nil {
+		if end.Tweak != number {
+			return Tweak{}, ErrNotCapturing
+		}
+		if err := tx.endCapture(sessionID, *end); err != nil {
+			return Tweak{}, err
+		}
 	}
 	if tw, err = tx.change(number, status, entry, EventTweakStatus); err != nil {
 		return Tweak{}, err
@@ -392,7 +409,10 @@ func getTweak(q queryRower, number int64) (Tweak, error) {
 	if err != nil {
 		return Tweak{}, err
 	}
-	tw.Entries, err = entriesOf(q, number)
+	if tw.Entries, err = entriesOf(q, number); err != nil {
+		return Tweak{}, err
+	}
+	tw.Change, err = changeOf(q, number)
 	return tw, err
 }
 
@@ -417,6 +437,9 @@ func openTweaks(q queryRower) ([]Tweak, error) {
 	}
 	for i := range out {
 		if out[i].Entries, err = entriesOf(q, out[i].Number); err != nil {
+			return nil, err
+		}
+		if out[i].Change, err = changeOf(q, out[i].Number); err != nil {
 			return nil, err
 		}
 	}

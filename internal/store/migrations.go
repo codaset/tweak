@@ -105,4 +105,28 @@ ALTER TABLE tweaks ADD COLUMN resends INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tweaks ADD COLUMN wait_from INTEGER;
 UPDATE tweaks SET wait_from = status_at WHERE status = 'delivered';
 `,
+	// 4: undo capture. A tweak has one change. capturing is the session
+	// whose edits it records, while it does (one change per session);
+	// folder is that session's project; repo and base_tree are the git
+	// check's working tree from tweak work ('' outside a repo); checked says
+	// the last check ran. A file is recorded once per change, the first
+	// time it's touched; shown is its path as the card lists it (project-
+	// relative, or absolute outside the project); recordable is 0 for a
+	// binary or oversized file, which counts as unrecorded; base_tree is the
+	// git snapshot of the round it was recorded in, which its before copy
+	// is checked against.
+	`
+CREATE UNIQUE INDEX changes_tweak ON changes (tweak);
+ALTER TABLE changes ADD COLUMN capturing TEXT REFERENCES sessions (id);
+ALTER TABLE changes ADD COLUMN folder TEXT NOT NULL DEFAULT '';
+ALTER TABLE changes ADD COLUMN repo TEXT NOT NULL DEFAULT '';
+ALTER TABLE changes ADD COLUMN base_tree TEXT NOT NULL DEFAULT '';
+ALTER TABLE changes ADD COLUMN checked INTEGER NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX changes_capturing ON changes (capturing);
+CREATE UNIQUE INDEX change_files_path ON change_files (change, path);
+ALTER TABLE change_files ADD COLUMN shown TEXT NOT NULL DEFAULT '';
+ALTER TABLE change_files ADD COLUMN outside INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE change_files ADD COLUMN recordable INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE change_files ADD COLUMN base_tree TEXT NOT NULL DEFAULT '';
+`,
 }

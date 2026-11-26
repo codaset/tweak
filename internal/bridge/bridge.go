@@ -69,6 +69,7 @@ type Bridge struct {
 	stopSockets context.CancelFunc
 	sockets     sync.WaitGroup
 	loops       sync.WaitGroup // the background loops that use the store
+	captureMu   sync.Mutex     // undo capture: see capture.go
 	changeMu    sync.Mutex
 	change      chan struct{} // closed and replaced on each event-log change
 
@@ -135,6 +136,10 @@ func Start(o Options) (*Bridge, error) {
 	b.store.SetClock(o.Clock)
 	// Every commit that writes to the event log wakes the sockets.
 	b.store.OnEvent(b.notify)
+	// A capture outlives a restart; a crashed bridge's stale markers don't.
+	if err := b.syncMarkers(); err != nil {
+		return fail(fmt.Errorf("can't write the capture markers: %w", err))
+	}
 	// Time the bridge was down doesn't count toward a lapse.
 	if err := b.store.CheckInAll(); err != nil {
 		return fail(err)

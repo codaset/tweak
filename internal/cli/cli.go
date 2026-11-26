@@ -42,6 +42,9 @@ func Run(args []string, env Env) int {
 		session = env.Getenv("CLAUDE_CODE_SESSION_ID")
 	}
 	cmd := args[0]
+	if cmd == "hook" {
+		return runHook(rest, env)
+	}
 	if cmd == "version" {
 		fmt.Fprintf(env.Stdout, "binary %s\nprotocol %d\n", version.Version, version.Protocol)
 		return 0

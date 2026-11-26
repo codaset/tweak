@@ -41,13 +41,42 @@ type tweakOut struct {
 	// Resends and AgainAt are how the card tells a tweak Claude hasn't
 	// picked up: the again: lines sent so far, and when the current wait
 	// for Claude ends (none while an again: line waits to be printed).
-	Resends int    `json:"resends,omitempty"`
-	AgainAt string `json:"againAt,omitempty"`
+	Resends int        `json:"resends,omitempty"`
+	AgainAt string     `json:"againAt,omitempty"`
+	Change  *changeOut `json:"change,omitempty"`
+}
+
+// changeOut is a tweak's change as its card lists it: paths and labels
+// only, never contents. It's left out while the tweak is capturing.
+type changeOut struct {
+	State      string    `json:"state"`
+	Checked    bool      `json:"checked"`
+	Files      []fileOut `json:"files"`
+	Unrecorded []fileOut `json:"unrecorded"`
+}
+
+type fileOut struct {
+	Path    string `json:"path"`
+	Outside bool   `json:"outside"`
+}
+
+func changeJSON(c *store.Change) *changeOut {
+	if c == nil || c.Capturing {
+		return nil
+	}
+	out := &changeOut{State: c.State, Checked: c.Checked, Files: []fileOut{}, Unrecorded: []fileOut{}}
+	for _, f := range c.Files {
+		out.Files = append(out.Files, fileOut{Path: f.Shown, Outside: f.Outside})
+	}
+	for _, f := range c.Unrecorded {
+		out.Unrecorded = append(out.Unrecorded, fileOut{Path: f.Shown, Outside: f.Outside})
+	}
+	return out
 }
 
 func (b *Bridge) tweakJSON(t store.Tweak) tweakOut {
 	out := tweakOut{Number: t.Number, Page: t.Page, URL: t.URL, Status: t.Status, StatusAt: stamp(t.StatusAt),
-		Created: stamp(t.Created), Updated: stamp(t.Updated), Targets: t.Targets, Anchor: t.Anchor, Entries: []entryOut{}}
+		Created: stamp(t.Created), Updated: stamp(t.Updated), Targets: t.Targets, Anchor: t.Anchor, Entries: []entryOut{}, Change: changeJSON(t.Change)}
 	if t.Status == store.StatusDelivered {
 		out.Resends = t.Resends
 		if !t.WaitFrom.IsZero() {
@@ -207,9 +236,10 @@ func tweakNumber(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
 	return id, n, true
 }
 
-// setStatus answers a status change's errors, returning the tweak on success.
+// setStatus answers a status change's errors, returning the tweak on
+// success. A change away from working ends the tweak's undo capture.
 func (b *Bridge) setStatus(w http.ResponseWriter, session string, n int64, status string, e *store.Entry) (store.Tweak, bool) {
-	tw, err := b.store.SetStatus(session, n, status, e)
+	tw, err := b.setStatusEnding(session, n, status, e)
 	return tw, b.refuseChange(w, n, err)
 }
 
@@ -248,15 +278,20 @@ func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string
 	return 500, "internal", "the bridge failed: " + err.Error()
 }
 
-// work is POST /tweaks/:n/work: sets working and returns the brief.
+// work is POST /tweaks/:n/work: sets working, starts the session's undo
+// capture of the tweak, and returns the brief. A capture that can't start
+// is logged: the work goes on, unrecorded.
 func (b *Bridge) work(w http.ResponseWriter, r *http.Request) {
 	session, n, ok := tweakNumber(w, r)
 	if !ok {
 		return
 	}
-	tw, ok := b.setStatus(w, session, n, store.StatusWorking, nil)
-	if !ok {
+	tw, err := b.store.SetStatus(session, n, store.StatusWorking, nil)
+	if !b.refuseChange(w, n, err) {
 		return
+	}
+	if err := b.startCapture(session, n); err != nil {
+		b.log.Printf("tweak %d: undo capture didn't start: %v", n, err)
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(200)

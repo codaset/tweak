@@ -17,6 +17,10 @@ if defined TWEAK_STATE_DIR set "TWEAK_LAUNCH_STATE=%TWEAK_STATE_DIR%"
 set "TWEAK_LAUNCH_KEPT=%TWEAK_LAUNCH_STATE%\bin\%VERSION%\tweak.exe"
 if exist "%TWEAK_LAUNCH_KEPT%" goto run
 
+rem A hook before the first download has nothing to do: no bridge has run,
+rem so nothing is capturing. It never downloads, prints or fails an edit.
+if /i "%~1"=="hook" exit /b 0
+
 set "TWEAK_LAUNCH_SELF=%~f0"
 set "TWEAK_LAUNCH_HERE=%~dp0"
 set "TWEAK_LAUNCH_VERSION=%VERSION%"

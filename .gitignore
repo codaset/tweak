@@ -2,3 +2,8 @@ node_modules/
 /dist/
 *.pem
 .DS_Store
+# The rails fixture's installed gems and what it writes when it runs
+/fixtures/rails/vendor/
+/fixtures/rails/.bundle/
+/fixtures/rails/tmp/
+/fixtures/rails/log/

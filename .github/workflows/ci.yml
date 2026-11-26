@@ -78,6 +78,13 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      # The rails fixture's Ruby and gems (.ruby-version, Gemfile.lock), the
+      # gems installed in fixtures/rails/vendor, which the runner links into
+      # each copy of the fixture.
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: fixtures/rails
+          bundler-cache: true
       # The browser comes from the cache, or on a miss from the install step,
       # never from npm ci.
       - name: Chrome for Testing version

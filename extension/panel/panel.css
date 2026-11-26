@@ -213,6 +213,27 @@ button.copy {
   overflow-wrap: anywhere;
 }
 
+.suggestion {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.suggestion .command {
+  margin-top: 10px;
+}
+
+button.dismiss {
+  margin-top: 12px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+button.dismiss:hover {
+  color: var(--text);
+}
+
 #refusal {
   color: var(--warn-text);
 }

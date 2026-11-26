@@ -22,3 +22,10 @@ updates:
     groups:
       static:
         patterns: ["*"]
+  - package-ecosystem: bundler
+    directory: /fixtures/rails
+    schedule:
+      interval: monthly
+    groups:
+      rails:
+        patterns: ["*"]

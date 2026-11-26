@@ -1,0 +1,21 @@
+[
+  {
+    "name": "signup button, in a partial",
+    "pick": { "selector": "[data-testid=signup]" },
+    "locations": [{ "file": "app/views/pages/_signup.html.erb", "role": "component", "via": "rails" }],
+    "clues": ["data-testid=signup", "text Start free trial", "class signup-submit"]
+  },
+  {
+    "name": "second plan row, in a collection partial",
+    "pick": { "selector": ".plan-row:nth-child(2)" },
+    "locations": [{ "file": "app/views/pages/_plan.html.erb", "role": "component", "via": "rails" }],
+    "clues": ["text Team, $29 a month", "class plan-row"]
+  },
+  {
+    "name": "signup button, without annotations: search clues only",
+    "annotations": false,
+    "pick": { "selector": "[data-testid=signup]" },
+    "locations": [],
+    "clues": ["data-testid=signup", "text Start free trial", "class signup-submit"]
+  }
+]

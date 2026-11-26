@@ -10,6 +10,7 @@ import { alive, sleep } from "./util.js";
 
 export const FIXTURES = resolve(import.meta.dirname, "../../../fixtures");
 export const LIVE_PORT = 47391; // the developer's own bridge: never used here
+const LINKED = ["node_modules", "vendor"]; // a fixture's installed dependencies
 
 // A free port: listen on port 0, read it, close. Never the live bridge's.
 export async function freePort() {
@@ -53,10 +54,14 @@ export function skipReason(fixture, { ci = Boolean(process.env.CI), path } = {})
 // host, bootMs, url(path), output() and stop().
 export async function startFixture(fixture, { readyTimeout = 60_000, host = "localhost" } = {}) {
   const folder = mkdtempSync(join(tmpdir(), `tweak-e2e-${fixture.name}-`));
-  // Round trips edit files, so the app runs from a copy. node_modules is
-  // linked, not copied, and may not exist (static has no dependencies).
-  cpSync(fixture.dir, folder, { recursive: true, filter: (src) => basename(src) !== "node_modules" });
-  if (existsSync(join(fixture.dir, "node_modules"))) symlinkSync(join(fixture.dir, "node_modules"), join(folder, "node_modules"));
+  // Round trips edit files, so the app runs from a copy. Installed
+  // dependencies (node_modules, and vendor/ for gems) are linked, not
+  // copied, and may not exist (static has none).
+  const linked = new Set(LINKED.map((name) => join(fixture.dir, name)));
+  cpSync(fixture.dir, folder, { recursive: true, filter: (src) => basename(src) !== "node_modules" && !linked.has(src) });
+  for (const name of LINKED) {
+    if (existsSync(join(fixture.dir, name))) symlinkSync(join(fixture.dir, name), join(folder, name));
+  }
 
   const port = await freePort();
   const [cmd, ...args] = fixture.start.map((a) => a.replaceAll("{port}", String(port)));

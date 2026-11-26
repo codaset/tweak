@@ -12,7 +12,12 @@ const STATUS = {
   refused: "Tweak refused this extension",
 };
 
+// The panel follows its window's active tab: suggestions are about it.
+let activeTab = null;
+let last = null; // the worker's last state, drawn again when the tab changes
+
 function render(state) {
+  last = state;
   $("status").dataset.connection = state.connection;
   $("status-text").textContent = STATUS[state.connection] ?? STATUS.disconnected;
   $("access").hidden = state.granted;
@@ -41,6 +46,14 @@ function render(state) {
   $("update-note").hidden = !note;
   $("update-note").textContent = note ?? "";
 
+  // Optional improvements for the tab in front; each kind has its section.
+  const here = (state.suggestions ?? []).filter((s) => s.tabId === activeTab);
+  for (const section of document.querySelectorAll(".suggestion")) {
+    const suggestion = here.find((s) => s.kind === section.id);
+    section.hidden = !suggestion;
+    section.dataset.origin = suggestion?.origin ?? "";
+  }
+
   const input = $("port");
   if (document.activeElement !== input) input.value = state.port === DEFAULT_PORT ? "" : String(state.port);
 }
@@ -52,6 +65,38 @@ function listen() {
   port.onDisconnect.addListener(() => setTimeout(listen, 100));
 }
 listen();
+
+chrome.windows.getCurrent().then(async (win) => {
+  const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
+  activeTab = tab?.id ?? null;
+  if (last) render(last);
+  chrome.tabs.onActivated.addListener((info) => {
+    if (info.windowId !== win.id) return;
+    activeTab = info.tabId;
+    if (last) render(last);
+  });
+});
+
+// Dismissing a suggestion is remembered for its site, in storage.local,
+// which the worker watches.
+for (const button of document.querySelectorAll("[data-dismiss]")) {
+  button.addEventListener("click", async () => {
+    const kind = button.dataset.dismiss;
+    const origin = $(kind).dataset.origin;
+    if (!origin) return;
+    const { dismissed = {} } = await chrome.storage.local.get("dismissed");
+    dismissed[origin] = [...new Set([...(dismissed[origin] ?? []), kind])];
+    await chrome.storage.local.set({ dismissed });
+  });
+}
+
+for (const button of document.querySelectorAll("[data-copy]")) {
+  button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText($(button.dataset.copy).textContent);
+    button.textContent = "Copied";
+    setTimeout(() => (button.textContent = "Copy"), 1500);
+  });
+}
 
 $("allow").addEventListener("click", () => {
   // First thing in the handler, while the click's gesture lasts.

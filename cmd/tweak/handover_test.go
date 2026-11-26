@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +153,67 @@ func TestANewerCommandHandsOverFromAnOlderBridge(t *testing.T) {
 	if f := s.bridgeIs(newVersion); f.PID != now.PID {
 		t.Fatalf("the newer bridge was replaced: %d, then %d", now.PID, f.PID)
 	}
+}
+
+// An old bridge slow to leave (an extension socket that doesn't answer its
+// close, a watcher's long-poll) is waited out: the new bridge takes over,
+// and the old watcher carries on against it.
+func TestAHandoverWaitsOutASlowOldBridge(t *testing.T) {
+	s := releaseSandbox(t)
+	ernie := s.folder("ernie")
+	s.bin = s.install(oldVersion)
+	s.tweak("s1", ernie, "claim", "https://ernie.localhost")
+	old := s.bridgeIs(oldVersion)
+	w := s.watch("s1", ernie)
+	stale := s.extension() // never read again
+	time.Sleep(500 * time.Millisecond)
+
+	s.bin = s.install(newVersion)
+	began := time.Now()
+	r := s.tweak("s1", ernie, "claims")
+	if r.code != 0 || r.stdout != claimed(ernie) || r.stderr != "" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+	// 5 seconds for the port, then SIGTERM ends a bridge already stopping.
+	if took := time.Since(began); took > 6*time.Second {
+		t.Fatalf("the handover took %s", took)
+	}
+	gone(t, old.PID)
+	s.bridgeIs(newVersion)
+	stale.c.CloseNow()
+
+	n := s.extension().create("https://ernie.localhost/", "make it green")
+	if got := w.line(); !strings.HasPrefix(got, fmt.Sprintf("tweak %d new:", n)) {
+		t.Fatalf("line %q", got)
+	}
+}
+
+// SIGTERM to a bridge already shutting down (the handover's, after POST
+// /shutdown has had 5 seconds) ends it at once.
+func TestSIGTERMEndsABridgeAlreadyShuttingDown(t *testing.T) {
+	s := newSandbox(t)
+	s.tweak("s1", s.folder("ernie"), "claim", "https://ernie.localhost")
+	f, _ := s.bridgeFile()
+	stale := s.extension() // never answers the bridge's close
+	defer stale.c.CloseNow()
+	r, _ := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%d/shutdown", s.port), nil)
+	r.Header.Set("x-tweak", "1")
+	if resp, err := http.DefaultClient.Do(r); err == nil {
+		resp.Body.Close()
+	}
+	time.Sleep(200 * time.Millisecond)
+	if !running(f.PID) {
+		t.Skip("the bridge stopped without waiting on the socket")
+	}
+	syscall.Kill(f.PID, syscall.SIGTERM)
+	for range 10 {
+		if !running(f.PID) {
+			os.Remove(filepath.Join(s.state, "bridge.json")) // left behind, for the next bridge to replace
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("the bridge was still running a second after SIGTERM")
 }
 
 // A new bridge that can't start (it exits at once, or doesn't answer

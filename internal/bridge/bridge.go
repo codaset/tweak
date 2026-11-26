@@ -290,6 +290,16 @@ func (b *Bridge) Serve() error {
 // Shutdown asks Serve to stop.
 func (b *Bridge) Shutdown() { b.stopOnce.Do(func() { close(b.stop) }) }
 
+// Stopping reports whether Shutdown has been asked for.
+func (b *Bridge) Stopping() bool {
+	select {
+	case <-b.stop:
+		return true
+	default:
+		return false
+	}
+}
+
 func (b *Bridge) watchIdle() {
 	busy := time.Now()
 	t := time.NewTicker(b.opts.IdleCheck)

@@ -97,8 +97,9 @@ func (e *errUndoFailed) Error() string {
 	return fmt.Sprintf("Undo couldn't write the files (%v), so nothing was changed", e.err)
 }
 
-// apply writes every plan, all or nothing: if one write fails, the files
-// already written are put back as they were.
+// apply writes every plan, all or nothing: if one write fails, or a file
+// changed since it was checked, the files already written are put back as
+// they were.
 func apply(plans []filePlan) error {
 	var written []filePlan
 	for _, p := range plans {
@@ -106,7 +107,9 @@ func apply(plans []filePlan) error {
 			continue
 		}
 		var err error
-		if p.remove {
+		if now := capture.Read(p.file.Path); now.Absent != p.now.Absent || now.Text != p.now.Text || !bytes.Equal(now.Data, p.now.Data) {
+			err = fmt.Errorf("%s changed while undoing", p.file.Shown)
+		} else if p.remove {
 			err = os.Remove(p.file.Path)
 		} else {
 			err = writeAtomic(p.file.Path, p.write)
@@ -251,6 +254,16 @@ func (b *Bridge) undoText(w http.ResponseWriter, r *http.Request) {
 	files, err := b.store.ChangeFiles(n)
 	if !b.refuseChange(w, n, err) {
 		return
+	}
+	// Paths as the reader sees them: the change may be another session's.
+	reader, _ := b.store.Session(session)
+	for i := range files {
+		files[i].ChangeFile = fileIn(reader.Folder, files[i].Path)
+	}
+	if tw.Change != nil {
+		for i, f := range tw.Change.Unrecorded {
+			tw.Change.Unrecorded[i] = fileIn(reader.Folder, f.Path)
+		}
 	}
 	plans, conflicts := planUndo(files)
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")

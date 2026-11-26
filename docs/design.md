@@ -1192,8 +1192,10 @@ before writing any:
   reverses the change around the later edits. A clean merge counts as clean. The merge is
   `internal/merge`, a small diff3 over lines written for Tweak: lines keep their endings (CRLF, a
   last line with no newline), and changes on both sides that overlap or touch conflict unless
-  they're the same. (The Go diff3 libraries either drop line endings or match repeated lines wrongly,
-  and `tweak undo` needs a unified diff from the same code.)
+  they're the same. (Chosen over a library: the maintained candidate, `epiclabs-io/diff3`, has no
+  tagged release and its reader drops line endings, so it would mean a pseudo-version dependency, a
+  third-party notice and our own line handling anyway; `tweak undo` needs a unified diff from the same
+  line diff.)
 - **Conflicting merge, or the file deleted or recreated since, edited since Claude created it, or now
   binary or over 2 MB**: the file conflicts.
 

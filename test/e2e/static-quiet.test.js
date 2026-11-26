@@ -40,11 +40,11 @@ import { composing, noCard, hit, text, sendTweak, storedScreenshot, expectedCrop
 const fixture = loadFixture("static");
 
 // When the session goes quiet (design.md): a bridge whose claims lapse after
-// 2 s without a check-in instead of 10 minutes, and whose commands warn after
-// 1 s without a watcher instead of a minute. The tests run in order: the
+// 1.5 s without a check-in instead of 10 minutes, and whose commands warn
+// after 400 ms without a watcher instead of a minute. The tests run in order: the
 // stand-in's claim lapses and comes back, then is lost to a second session.
 describe("static, when the session goes quiet", { skip: skipReason(fixture) ?? false }, () => {
-  const env = setup(fixture, { lapseAfter: "2s", unwatchedAfter: "1s" });
+  const env = setup(fixture, { lapseAfter: "1.5s", unwatchedAfter: "400ms" });
   const pattern = () => `${env.app.url("")}/*`;
   const escaped = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const statusOf = (n) => `ns.page.tweak(${n})?.status`;
@@ -160,8 +160,8 @@ describe("static, when the session goes quiet", { skip: skipReason(fixture) ?? f
     try {
       await third.claim("http://elsewhere.localhost/*");
       const watcher = third.watch();
-      // Once a second has passed since the claim, no warning means its watcher is listening.
-      await sleep(1100);
+      // Once unwatchedAfter has passed since the claim, no warning means its watcher is listening.
+      await sleep(500);
       await until(async () => (await third.tweakBoth("claims")).stderr === "", { what: "the third session's watcher to listen" });
       await third.end("clear");
       await watcher.line(/^claim released: http:\/\/elsewhere\.localhost\/\*$/);

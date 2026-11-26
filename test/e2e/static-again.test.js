@@ -41,10 +41,10 @@ const fixture = loadFixture("static");
 
 
 // No lost tweaks (design.md): a stand-in that watches but never runs tweak
-// work. Its own bridge waits 1 s instead of 3 minutes before an again: line,
+// work. Its own bridge waits 500 ms instead of 3 minutes before an again: line,
 // so no other test sees them.
 describe("static, when Claude doesn't pick a tweak up", { skip: skipReason(fixture) ?? false }, () => {
-  const env = setup(fixture, { againAfter: "1s" });
+  const env = setup(fixture, { againAfter: "500ms" });
   const status = `root.querySelector(${JSON.stringify(CARD_STATUS)})?.textContent`;
   const offered = `(() => { const b = root.querySelector(${JSON.stringify(CARD_RESEND)}); return Boolean(b) && !b.closest(".retry").hidden; })()`;
   const busy = "Claude hasn't picked this up. The session may be busy.";

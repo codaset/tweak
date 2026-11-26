@@ -148,10 +148,10 @@ describe("static, a resolved tweak's undo with no session", { skip: skipReason(f
   });
 });
 
-// Retention (design.md § Storage): its bridge keeps a resolved tweak 3 s
+// Retention (design.md § Storage): its bridge keeps a resolved tweak 1.5 s
 // instead of 7 days (TWEAK_TEST_KEEP_RESOLVED).
 describe("static, resolved tweaks are deleted after they're kept", { skip: skipReason(fixture) ?? false }, () => {
-  const env = setup(fixture, { keepResolved: "3s" });
+  const env = setup(fixture, { keepResolved: "1.5s" });
 
   test("a withdrawn tweak, its change and its screenshot go, and the side panel drops it", async () => {
     await open(env);

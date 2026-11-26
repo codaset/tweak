@@ -46,7 +46,7 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
   // <all_urls>, so the badge is clear while connected: the grey ! then means down.
   const env = setup(fixture, { allUrls: true });
 
-  const RECONNECT = 25_000; // the worker's retries reach every 10 s
+  const RECONNECT = 5_000; // the test copy's retries reach every second (harness/extension.js)
   const composing = `Boolean(root.activeElement) && root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`;
   const value = (selector) => `root.querySelector(${JSON.stringify(selector)})?.value`;
   const badge = () => inWorker(env.browser, `chrome.action.getBadgeText({})`);
@@ -297,7 +297,8 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
       const id = await inWorker(env.browser, `chrome.runtime.id`);
       await open(env);
       await down();
-      await sleep(4000); // the worker's first two tries (backoff.js: 1 s, then 2 s)
+      // The close, then two tries refused (each would have been an error).
+      await until(() => inWorker(env.browser, `e2eRetries()`), { is: (n) => n >= 3, what: "two tries at the bridge refused" });
       await up();
       const { runtimeErrors } = await extensions.evaluate((id) => chrome.developerPrivate.getExtensionInfo(id), id);
       assert.deepEqual(runtimeErrors.map((e) => e.message).filter((m) => /WebSocket|ERR_CONNECTION_REFUSED/.test(m)), []);

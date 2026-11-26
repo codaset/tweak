@@ -92,8 +92,10 @@ type Bridge struct {
 	// capture.Changed); tests slow them down.
 	gitSnapshot func(folder, scratch string) (capture.Tree, error)
 	gitChanged  func(base capture.Tree, scratch string) ([]string, error)
-	changeMu    sync.Mutex
-	change      chan struct{} // closed and replaced on each event-log change
+	// storeCheckIn is the store's CheckIn; tests sweep just before it.
+	storeCheckIn func(session string) (bool, error)
+	changeMu     sync.Mutex
+	change       chan struct{} // closed and replaced on each event-log change
 
 	extensionVersion string     // the embedded extension's version
 	heardMu          sync.Mutex // guards heard and settled
@@ -191,6 +193,7 @@ func Start(o Options) (*Bridge, error) {
 		return fail(err)
 	}
 	b.store.SetClock(o.Clock)
+	b.storeCheckIn = b.store.CheckIn
 	if home, err := os.UserHomeDir(); err == nil {
 		b.store.SetHome(home) // lines show folders from ~
 	}

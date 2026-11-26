@@ -30,8 +30,12 @@ const noWatcher = "no watcher running: start a Monitor with tweak watch"
 
 // watching records a watcher's long-poll starting (on) or ending. A held
 // long-poll is a check-in for its whole length, so one ending checks in
-// again.
+// again, while it still counts as listening: a sweep in between would see
+// neither, and lapse a poll held past LapseAfter.
 func (b *Bridge) watching(session string, on bool) {
+	if !on {
+		b.checkedIn(session)
+	}
 	b.watchMu.Lock()
 	if on {
 		b.polls[session]++
@@ -43,14 +47,11 @@ func (b *Bridge) watching(session string, on bool) {
 	}
 	b.polled[session] = b.opts.Clock()
 	b.watchMu.Unlock()
-	if !on {
-		b.checkedIn(session)
-	}
 }
 
 // checkedIn checks the session in, logging a failure.
 func (b *Bridge) checkedIn(session string) {
-	if _, err := b.store.CheckIn(session); err != nil {
+	if _, err := b.storeCheckIn(session); err != nil {
 		b.log.Printf("check-in %s: %v", session, err)
 	}
 }

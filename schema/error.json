@@ -24,6 +24,7 @@
         "not-undo-requested",
         "still-capturing",
         "too-large",
+        "not-this-bridge",
         "internal"
       ]
     },

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -162,7 +163,14 @@ func (b *Bridge) checkIn(next http.Handler) http.Handler {
 	})
 }
 
+// shutdown stops the bridge. ?pid=<n> stops it only if it is that process:
+// a handover names the bridge it found, so it can't stop one another
+// command's handover has started since.
 func (b *Bridge) shutdown(w http.ResponseWriter, r *http.Request) {
+	if pid := r.URL.Query().Get("pid"); pid != "" && pid != strconv.Itoa(os.Getpid()) {
+		refuse(w, 409, "not-this-bridge", fmt.Sprintf("this bridge is process %d, not %s", os.Getpid(), pid))
+		return
+	}
 	reply(w, 202, map[string]string{"status": "stopping"})
 	b.Shutdown()
 }

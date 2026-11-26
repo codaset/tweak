@@ -142,8 +142,30 @@ func TestConversationPartsHaveTheirPlace(t *testing.T) {
 	if !strings.HasPrefix(got, "# Tweak 12\n\n**Latest:** LATEST\n\n**Request:** ") {
 		t.Errorf("Latest isn't straight after the title:\n%s", got)
 	}
-	if !strings.Contains(got, "- Selector: `p`\n\n## Conversation\n\n1. CONVERSATION\n\nWhen finished, run ") {
-		t.Errorf("Conversation isn't between the elements and the footer:\n%s", got)
+	if !strings.Contains(got, "- Selector: `p`\n\n"+End+"\n\n## Conversation\n\n1. CONVERSATION\n\nWhen finished, run ") {
+		t.Errorf("Conversation isn't after the page data and before the footer:\n%s", got)
+	}
+}
+
+// The page data sits between the notice and its end, so the request, the
+// conversation and the finishing commands are all outside it
+// (docs/design.md, Security).
+func TestOnlyThePageDataIsMarkedAsData(t *testing.T) {
+	got := Render(asked(
+		store.Entry{From: "claude", Kind: "question", Text: "Solid or outline?"},
+		store.Entry{From: "you", Kind: "reply", Text: "outline"},
+	), Options{})
+	start, end := strings.Index(got, "\n"+Notice+"\n"), strings.Index(got, "\n"+End+"\n")
+	if start < 0 || end < start {
+		t.Fatalf("no page-data region:\n%s", got)
+	}
+	for _, own := range []string{"**Latest:**", "**Request:**", "## Conversation", "When finished"} {
+		if i := strings.Index(got, own); i > start && i < end {
+			t.Errorf("%q is inside the page data:\n%s", own, got)
+		}
+	}
+	if i := strings.Index(got, "## Element 1"); i < start || i > end {
+		t.Errorf("the element isn't inside the page data:\n%s", got)
 	}
 }
 

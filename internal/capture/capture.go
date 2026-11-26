@@ -130,8 +130,9 @@ func Changed(base Tree, scratch string) ([]string, error) {
 // Differs reports whether a before copy differs from what the snapshot t
 // had at path, as git sees it: the copy is hashed through the repo's own
 // filters (eol normalization, clean filters), so a CRLF file stored as LF
-// still matches. A file the snapshot lacks matches only an absent copy.
-// known is false outside the repo, with no snapshot, or if git fails.
+// still matches. A file the snapshot lacks matches only an absent copy,
+// unless git ignores it (never snapshotted): then it's unknown, as it is
+// outside the repo, with no snapshot, or if git fails.
 func Differs(t Tree, path string, f File) (differs, known bool) {
 	rel, inside := Within(t.Repo, path)
 	if t.Hash == "" || !inside || strings.ContainsAny(rel, "\n\r") {
@@ -140,6 +141,12 @@ func Differs(t Tree, path string, f File) (differs, known bool) {
 	then, err := gitOut(t.Repo, nil, "rev-parse", "--verify", "--quiet", t.Hash+":"+rel)
 	if err != nil {
 		then = "" // not in the snapshot
+	}
+	if then == "" && !f.Absent {
+		// An ignored file is never in a snapshot: its absence says nothing.
+		if _, err := gitOut(t.Repo, nil, "check-ignore", "-q", "--", rel); err == nil {
+			return false, false
+		}
 	}
 	if f.Absent || then == "" {
 		return f.Absent != (then == ""), true

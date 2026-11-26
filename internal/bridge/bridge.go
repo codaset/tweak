@@ -33,7 +33,10 @@ type Options struct {
 	// SocketIdle is how long an extension socket may stay silent before the
 	// bridge drops it (60 seconds when zero: three missed keepalives).
 	SocketIdle time.Duration
-	Log        io.Writer
+	// Development is a TWEAK_BIN build: its hello reply carries no version,
+	// so the extension never updates itself from it.
+	Development bool
+	Log         io.Writer
 }
 
 // ErrAlreadyRunning means another bridge holds the port: the caller should
@@ -57,6 +60,10 @@ type Bridge struct {
 	sockets     sync.WaitGroup
 	changeMu    sync.Mutex
 	change      chan struct{} // closed and replaced on each event-log change
+
+	extensionVersion string     // the embedded extension's version
+	heardMu          sync.Mutex // guards heard
+	heard            string     // the version of the extension that last said hello
 }
 
 // Info is bridge.json, and the body of GET /bridge.
@@ -108,6 +115,8 @@ func Start(o Options) (*Bridge, error) {
 	if err := b.store.CheckInAll(); err != nil {
 		return fail(err)
 	}
+	// Before bridge.json, so no extension says hello before its folder is written.
+	b.installExtension()
 	if err := b.writeBridgeFile(); err != nil {
 		return fail(fmt.Errorf("can't write %s: %w", o.Config.BridgeFile(), err))
 	}

@@ -40,6 +40,9 @@ type sandbox struct {
 	port  int
 	state string
 	home  string
+	// installed runs the binary as an installed one, without TWEAK_BIN (still
+	// on the sandbox's own port and state folder).
+	installed bool
 }
 
 func freePort(t *testing.T) int {
@@ -62,13 +65,16 @@ func newSandbox(t *testing.T) *sandbox {
 }
 
 func (s *sandbox) env(extra ...string) []string {
-	return append([]string{
+	env := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + s.home,
-		"TWEAK_BIN=" + tweakBin,
 		fmt.Sprintf("TWEAK_PORT=%d", s.port),
 		"TWEAK_STATE_DIR=" + s.state,
-	}, extra...)
+	}
+	if !s.installed {
+		env = append(env, "TWEAK_BIN="+tweakBin)
+	}
+	return append(env, extra...)
 }
 
 type result struct {

@@ -86,5 +86,9 @@ func (c Config) BridgeFile() string { return filepath.Join(c.StateDir, "bridge.j
 // Database is the SQLite file.
 func (c Config) Database() string { return filepath.Join(c.StateDir, "tweak.db") }
 
+// ExtensionDir is the folder the bridge writes the extension to, for Chrome
+// to load unpacked.
+func (c Config) ExtensionDir() string { return filepath.Join(c.StateDir, "extension") }
+
 // Log is where a bridge started by the CLI writes its output.
 func (c Config) Log() string { return filepath.Join(c.StateDir, "bridge.log") }

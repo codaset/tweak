@@ -14,6 +14,7 @@
         <span class="dot" aria-hidden="true"></span>
         <span id="status-text">Connecting to Tweak…</span>
       </p>
+      <p class="update-note" id="update-note" hidden></p>
     </header>
 
     <main>
@@ -25,6 +26,15 @@
         </p>
         <button type="button" id="allow">Allow access</button>
         <p class="note" id="allow-note" hidden>Chrome didn't grant access. Click again to retry.</p>
+      </section>
+
+      <section class="another-folder" id="another-folder" hidden aria-labelledby="another-folder-title">
+        <h2 id="another-folder-title">Loaded from another folder</h2>
+        <p>
+          Chrome loads this copy of Codaset Tweak from somewhere other than the folder Tweak keeps up to date, so it
+          can't update itself. Remove it in <code>chrome://extensions</code> and load
+          <code>~/.local/state/codaset-tweak/extension</code>.
+        </p>
       </section>
 
       <section class="connection" id="not-connected" hidden aria-labelledby="not-connected-title">

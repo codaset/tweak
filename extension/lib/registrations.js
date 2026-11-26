@@ -3,7 +3,7 @@
 
 // The isolated-world content script: classic files, run in order, sharing one
 // namespace object.
-export const CONTENT_FILES = ["content/namespace.js", "content/overlay.js", "content/port.js", "content/boot.js"];
+export const CONTENT_FILES = ["content/namespace.js", "content/overlay.js", "content/port.js", "content/toast.js", "content/update.js", "content/boot.js"];
 export const PROBE_FILES = ["content/probe.js"];
 
 const PREFIX = "claim-";

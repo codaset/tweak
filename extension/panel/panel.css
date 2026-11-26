@@ -192,6 +192,24 @@ button.copy {
   border: 1px solid var(--line);
 }
 
+.update-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.another-folder {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.another-folder h2 {
+  color: var(--warn);
+}
+
+.another-folder code {
+  overflow-wrap: anywhere;
+}
+
 #refusal {
   color: var(--warn);
 }

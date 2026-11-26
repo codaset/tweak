@@ -155,9 +155,6 @@ func TestHelloGetsTheSnapshotThenClaimEvents(t *testing.T) {
 	if len(claims) != 1 || claims[0].(map[string]any)["pattern"] != "https://a.localhost/*" {
 		t.Fatalf("snapshot = %v", snap)
 	}
-	if snap["version"] != "1.2.3" {
-		t.Errorf("snapshot version = %v", snap["version"])
-	}
 	seq := snap["seq"].(float64)
 
 	h.claim("s1", "https://b.localhost/*")

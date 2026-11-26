@@ -26,7 +26,7 @@ type helloIn struct {
 type snapshotOut struct {
 	Type    string     `json:"type"`
 	Seq     int64      `json:"seq"`
-	Version string     `json:"version"`
+	Version string     `json:"version,omitempty"` // none from a development bridge
 	Claims  []claimOut `json:"claims"`
 }
 
@@ -82,6 +82,7 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 	b.BrowserConnected()
 	defer b.BrowserDisconnected()
 	b.log.Printf("extension %s connected", hello.Version)
+	b.heardFrom(hello.Version)
 	defer b.log.Printf("extension disconnected")
 
 	seq, claims, err := b.store.Snapshot()
@@ -90,7 +91,7 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusInternalError, "the bridge failed")
 		return
 	}
-	snap := snapshotOut{Type: "snapshot", Seq: seq, Version: b.opts.Version, Claims: []claimOut{}}
+	snap := snapshotOut{Type: "snapshot", Seq: seq, Version: b.helloVersion(), Claims: []claimOut{}}
 	for _, cl := range claims {
 		snap.Claims = append(snap.Claims, claimJSON(cl))
 	}

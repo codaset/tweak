@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/undone-request.json",
+  "title": "undone-request",
+  "description": "POST /tweaks/:n/undone from the CLI: tweak undone, Claude's report that it reversed an undo-requested change by hand. Answered like a status change, with undo: undone.",
+  "type": "object",
+  "properties": {
+    "message": {
+      "description": "What Claude did to reverse the change.",
+      "type": "string",
+      "pattern": "\\S"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "additionalProperties": false
+}

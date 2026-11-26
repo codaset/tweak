@@ -20,7 +20,9 @@
         "tweak-created",
         "tweak-status",
         "tweak-replied",
-        "tweak-again"
+        "tweak-again",
+        "tweak-undo-conflict",
+        "tweak-undone"
       ]
     },
     "claim": {
@@ -558,6 +560,15 @@
           "items": {
             "$ref": "#/$defs/changedFile"
           }
+        },
+        "conflicts": {
+          "description": "While undo-requested: how many of the recorded files couldn't be reversed around later edits, and need resolving by hand.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "waiting": {
+          "description": "While undo-requested: no session claims the tweak's page, so the undo waits for one.",
+          "const": true
         }
       },
       "required": [

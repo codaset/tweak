@@ -27,12 +27,17 @@ var ErrStillCapturing = errors.New("this session is still capturing another twea
 // Claude worked without being recorded: the git check's finds, and files
 // the hook saw that are binary or over 2 MB. Checked says the git check
 // ran when capture last ended, so an empty change means no files changed.
+// While undo-requested, Conflicts is how many files couldn't be reversed
+// around later edits, and Waiting says no claim covers the tweak's page, so
+// no session has been asked yet.
 type Change struct {
 	State      string       `json:"state"`
 	Capturing  bool         `json:"capturing"`
 	Checked    bool         `json:"checked"`
 	Files      []ChangeFile `json:"files"`
 	Unrecorded []ChangeFile `json:"unrecorded"`
+	Conflicts  int          `json:"conflicts,omitempty"`
+	Waiting    bool         `json:"waiting,omitempty"`
 }
 
 // ChangeFile is one file of a change: its absolute path, how the card shows
@@ -329,8 +334,10 @@ func changeOf(q queryRower, number int64) (*Change, error) {
 	var id int64
 	var capturing sql.NullString
 	var unrecorded string
-	err := q.QueryRow(`SELECT id, state, capturing, checked, unrecorded_files FROM changes WHERE tweak = ?`, number).
-		Scan(&id, &c.State, &capturing, &c.Checked, &unrecorded)
+	var unclaimed bool
+	err := q.QueryRow(`SELECT c.id, c.state, c.capturing, c.checked, c.unrecorded_files, c.conflicts, t.session IS NULL
+		FROM changes c JOIN tweaks t ON t.number = c.tweak WHERE c.tweak = ?`, number).
+		Scan(&id, &c.State, &capturing, &c.Checked, &unrecorded, &c.Conflicts, &unclaimed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -338,6 +345,7 @@ func changeOf(q queryRower, number int64) (*Change, error) {
 		return nil, err
 	}
 	c.Capturing = capturing.Valid
+	c.Waiting = unclaimed && c.State == ChangeUndoRequested
 	json.Unmarshal([]byte(unrecorded), &c.Unrecorded)
 	rows, err := q.Query(`SELECT path, shown, outside, recordable FROM change_files WHERE change = ? ORDER BY id`, id)
 	if err != nil {

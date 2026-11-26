@@ -213,6 +213,12 @@ func (b *Bridge) handle(ctx context.Context, c *websocket.Conn, raw []byte) {
 			return
 		}
 		write(ctx, c, b.again(in))
+	case "undo":
+		var in undoIn
+		if json.Unmarshal(raw, &in) != nil || in.Ref == "" {
+			return
+		}
+		write(ctx, c, b.undo(in))
 	}
 }
 

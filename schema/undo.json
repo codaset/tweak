@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/undo.json",
+  "title": "undo",
+  "description": "To the bridge on the WebSocket: the card's Undo, or Ask Claude to undo when nothing was recorded. Answered by a result with the tweak's number (not-undoable while it isn't finished or there's nothing to undo; undo-failed if a write failed, when nothing was changed). Then a tweak-undone event (every file written back), a tweak-undo-conflict event (nothing written: the session claiming the page reverses it by hand), or a tweak-status event while no session claims the page.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "undo"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "number": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "type",
+    "ref",
+    "number"
+  ],
+  "additionalProperties": false
+}

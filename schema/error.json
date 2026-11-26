@@ -19,6 +19,8 @@
         "no-tweak",
         "not-yours",
         "wrong-status",
+        "not-undoable",
+        "not-undo-requested",
         "internal"
       ]
     },

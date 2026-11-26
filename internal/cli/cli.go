@@ -61,6 +61,8 @@ func Run(args []string, env Env) int {
 		"done":    done,
 		"decline": decline,
 		"queue":   queue,
+		"undo":    undo,
+		"undone":  undone,
 	}
 	f, ok := commands[cmd]
 	if !ok {
@@ -121,13 +123,15 @@ commands:
   claim <url>        claim the pages matching a URL pattern for this session
   claims             list every claim and its session
   release [pattern]  release one claim, or all of this session's
-  watch              print one line per new tweak, reply, tweak sent again or released claim (the Monitor command)
+  watch              print one line per new tweak, reply, tweak sent again, undo conflict or released claim (the Monitor command)
   work <n>           print tweak n's brief and mark it as being worked on
   plan <n> <msg>     post a short plan for tweak n, naming the file
   ask <n> <msg>      ask the developer a question about tweak n
   done <n> <msg>     mark tweak n done, with one sentence on what changed
-  decline <n> <msg>  decline tweak n, with the reason
+  decline <n> <msg>  decline tweak n, with the reason; or refuse an undo asked of it, keeping the change
   queue <n>...       mark tweaks as queued while other work finishes
+  undo <n>           print tweak n's change to reverse by hand, after an undo conflict
+  undone <n> <msg>   report tweak n's change reversed by hand, with what you did
   version            print the binary and protocol versions
 
 The session ID comes from CLAUDE_CODE_SESSION_ID, or --session. A message

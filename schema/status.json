@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/codaset/tweak/schema/status.json",
   "title": "status",
-  "description": "The bridge's answer to POST /tweaks/:n/status: the tweak's status now. The CLI prints tweak <n>: <status>.",
+  "description": "The bridge's answer to POST /tweaks/:n/status and POST /tweaks/:n/undone: the tweak's status now. The CLI prints tweak <n>: <status>, or with undo, tweak <n>: undone or tweak <n>: undo declined, change kept.",
   "type": "object",
   "properties": {
     "number": {
@@ -10,9 +10,28 @@
       "minimum": 1
     },
     "status": {
-      "enum": ["sent", "delivered", "queued", "working", "question", "done", "declined", "withdrawn"]
+      "enum": [
+        "sent",
+        "delivered",
+        "queued",
+        "working",
+        "question",
+        "done",
+        "declined",
+        "withdrawn"
+      ]
+    },
+    "undo": {
+      "description": "What became of an undo asked of the finished tweak: declined (tweak decline, the change kept) or undone (tweak undone).",
+      "enum": [
+        "declined",
+        "undone"
+      ]
     }
   },
-  "required": ["number", "status"],
+  "required": [
+    "number",
+    "status"
+  ],
   "additionalProperties": false
 }

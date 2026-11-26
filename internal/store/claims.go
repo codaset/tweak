@@ -142,6 +142,9 @@ func (s *Store) Claim(sessionID string, p pattern.Pattern) (Claim, error) {
 	if err := tx.logClaim(EventClaimMade, c); err != nil {
 		return Claim{}, err
 	}
+	if err := tx.passUndos(sessionID, p); err != nil {
+		return Claim{}, err
+	}
 	if err := tx.commit(); err != nil {
 		return Claim{}, err
 	}
@@ -186,6 +189,13 @@ func (s *Store) Release(sessionID, pat string) ([]string, error) {
 	}
 	if pat != "" && len(released) == 0 {
 		return nil, ErrNotClaimed
+	}
+	left, err := listClaims(tx)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.dropUndos(sessionID, left); err != nil {
+		return nil, err
 	}
 	return released, tx.commit()
 }

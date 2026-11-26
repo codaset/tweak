@@ -10,7 +10,8 @@ import (
 )
 
 // The commands Claude runs on tweaks: watch (the Monitor command), work,
-// plan, ask, done, decline and queue. See docs/design.md, "The tweak CLI".
+// plan, ask, done, decline and queue, and undo and undone after an undo
+// conflict. See docs/design.md, "The tweak CLI".
 
 // inboxTimeout outlasts the bridge's long-poll hold.
 const inboxTimeout = 60 * time.Second
@@ -236,15 +237,73 @@ func (c *context) client() (*client, error) {
 }
 
 func (c *context) setStatus(cl *client, n int64, body map[string]string) error {
+	return c.post(cl, fmt.Sprintf("/tweaks/%d/status", n), body)
+}
+
+// post sends a status change and prints its confirmation line: the status,
+// or what became of an undo asked of the tweak.
+func (c *context) post(cl *client, path string, body map[string]string) error {
 	var out struct {
 		Number int64
 		Status string
+		Undo   string
 	}
-	if err := cl.call("POST", fmt.Sprintf("/tweaks/%d/status", n), body, &out); err != nil {
+	if err := cl.call("POST", path, body, &out); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.Stdout, "tweak %d: %s\n", out.Number, out.Status)
+	switch out.Undo {
+	case "declined":
+		fmt.Fprintf(c.Stdout, "tweak %d: undo declined, change kept\n", out.Number)
+	case "undone":
+		fmt.Fprintf(c.Stdout, "tweak %d: undone\n", out.Number)
+	default:
+		fmt.Fprintf(c.Stdout, "tweak %d: %s\n", out.Number, out.Status)
+	}
 	return nil
+}
+
+// undo prints the change to reverse by hand after an undo conflict. It
+// starts no capture and changes no status.
+func undo(c *context, args []string) error {
+	const usage = "usage: tweak undo <n>, for example tweak undo 12"
+	if len(args) != 1 {
+		return usageError(usage)
+	}
+	n, err := tweakArg(args[0], usage)
+	if err != nil {
+		return err
+	}
+	cl, err := c.client()
+	if err != nil {
+		return err
+	}
+	text, err := cl.text("GET", fmt.Sprintf("/tweaks/%d/undo", n))
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(c.Stdout, text)
+	return err
+}
+
+// undone reports a conflicting undo reversed by hand.
+func undone(c *context, args []string) error {
+	const usage = "usage: tweak undone <n> '<what you did>', or - to read it from stdin"
+	if len(args) != 2 {
+		return usageError(usage)
+	}
+	n, err := tweakArg(args[0], usage)
+	if err != nil {
+		return err
+	}
+	msg, err := c.message(args[1])
+	if err != nil {
+		return err
+	}
+	cl, err := c.client()
+	if err != nil {
+		return err
+	}
+	return c.post(cl, fmt.Sprintf("/tweaks/%d/undone", n), map[string]string{"message": msg})
 }
 
 // message is a message argument: the text itself, or - to read it from stdin.

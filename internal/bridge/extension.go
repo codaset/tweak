@@ -53,6 +53,15 @@ func (b *Bridge) helloVersion() string {
 	return b.extensionVersion
 }
 
+// helloFolder is where the hello reply's version is, for the side panel's
+// "loaded from another folder" (TWEAK_STATE_DIR moves it).
+func (b *Bridge) helloFolder() string {
+	if b.helloVersion() == "" {
+		return ""
+	}
+	return tilde(b.opts.Config.ExtensionDir())
+}
+
 // heardFrom records the version of the extension that said hello. Only an
 // X.Y.Z version is kept: tweak claim prints it to the agent's session.
 func (b *Bridge) heardFrom(extensionVersion string) {

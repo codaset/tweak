@@ -136,7 +136,7 @@ function onBridgeMessage(msg, port) {
   }
   if (msg.type === "snapshot") {
     setStatus({ type: "connected" }, { port });
-    selfUpdate.bridgeVersion(msg.version);
+    selfUpdate.bridgeVersion(msg.version, msg.folder);
   }
   const next = apply(claimState, msg);
   if (next !== claimState) adoptClaims(next);

@@ -36,6 +36,7 @@ function render(state) {
 
   const update = state.update;
   $("another-folder").hidden = update?.state !== "stuck";
+  $("extension-folder").textContent = update?.folder ?? "~/.local/state/codaset-tweak/extension";
   const note = { updated: `Updated to ${update?.version}`, waiting: `Updating to ${update?.version} once you've finished` }[update?.state];
   $("update-note").hidden = !note;
   $("update-note").textContent = note ?? "";

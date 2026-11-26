@@ -43,6 +43,7 @@ func (b *Bridge) routes() http.Handler {
 	api.HandleFunc("GET /tweaks/{n}/undo", b.undoText)
 	api.HandleFunc("POST /tweaks/{n}/undone", b.undone)
 	api.HandleFunc("POST /edits/before", b.editBefore)
+	api.HandleFunc("PUT /tweaks/{n}/screenshot", b.putScreenshot)
 	api.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		refuse(w, 404, "not-found", fmt.Sprintf("no such endpoint: %s %s", r.Method, r.URL.Path))
 	})
@@ -65,8 +66,8 @@ var extensionOrigin = "chrome-extension://" + tweak.ExtensionID
 
 // guard is the Security section of docs/design.md: only 127.0.0.1:<port> or
 // localhost:<port> as Host (no DNS rebinding), no Origin but the extension's,
-// and x-tweak: 1 on every request. No CORS header is ever sent, so no
-// preflight passes.
+// and x-tweak: 1 on every request. The one CORS answer is extensionCORS's,
+// for the extension's own screenshot upload; no other preflight passes.
 func (b *Bridge) guard(next http.Handler) http.Handler {
 	hosts := map[string]bool{
 		fmt.Sprintf("127.0.0.1:%d", b.Port()): true,
@@ -84,6 +85,8 @@ func (b *Bridge) guard(next http.Handler) http.Handler {
 				return
 			}
 			next.ServeHTTP(w, r)
+		case extensionCORS(w, r, origin):
+			// The screenshot upload's preflight, answered.
 		case origin != "" && origin != extensionOrigin:
 			refuse(w, 403, "forbidden", fmt.Sprintf("Origin %q refused: only the Codaset Tweak extension and the CLI may call the bridge", origin))
 		case r.Header.Get(HeaderTweak) != "1":

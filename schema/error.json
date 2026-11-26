@@ -22,6 +22,7 @@
         "not-undoable",
         "not-undo-requested",
         "still-capturing",
+        "too-large",
         "internal"
       ]
     },

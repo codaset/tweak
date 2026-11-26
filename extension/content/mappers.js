@@ -239,5 +239,16 @@
     return results.flat();
   }
 
-  ns.mappers = { run, templates, modules, prelude, suggestions };
+  // label is how the hover label names an element's source: the first
+  // place that isn't a style (the mappers come in priority order), else the
+  // first style, by its last two path segments, with a line if it has one.
+  function label(locations) {
+    const best = locations.find((l) => l.role !== "style") ?? locations[0];
+    if (!best) return "";
+    const path = best.file.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "").replace(/[?#].*$/, "");
+    const short = path.split("/").filter(Boolean).slice(-2).join("/");
+    return best.line ? `${short}:${best.line}` : short;
+  }
+
+  ns.mappers = { run, label, templates, modules, prelude, suggestions };
 })();

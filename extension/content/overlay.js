@@ -99,6 +99,7 @@
       text-overflow: ellipsis;
     }
     .tag .size { opacity: 0.75; margin-left: 6px; }
+    .tag .source { opacity: 0.9; margin-left: 6px; padding-left: 6px; border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
 
     /* Pins */
     .pin {

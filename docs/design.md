@@ -651,7 +651,8 @@ search clues.
 - CSS: the CSSOM gives no line numbers. A rule's file comes from `<style data-vite-dev-id>` or the
   sheet's `href`. A line is attempted only when the sheet has a source map: the selector text is
   found in the fetched sheet and that line mapped. If the selector appears more than once, the file
-  alone is given.
+  alone is given. The selector is matched as a whole rule prelude, whitespace aside; a mapped rule
+  takes the map's source as its file, with the line and column.
 - webpack's `eval` devtools aren't supported in v1; such pages fall back to search clues.
 
 **Search clues** are always gathered, whatever the mappers find, at most 8 per element, in this
@@ -661,6 +662,12 @@ unusual class names, and link `href` paths. Within each kind, clues unique on th
 Text that is only numbers or dates is skipped. A class is common, and left out, when it is on more
 than 10 elements on the page, looks generated (a CSS-module hash, `css-…`, `sc-…`, `svelte-…`), or
 contains `:` or `[` (Tailwind variants). The bridge does no searching in v1 (see Open measurements).
+
+**Rails and Proscenium locations**: each balanced `BEGIN`/`END` pair around the element is a
+template (`component`, file only), innermost first. A Proscenium class name
+(`name_<8 hex>_<path>-module`) gives the CSS module (`style`) whose sheet the page loaded: its
+`<style id="_<hash>" data-href>`, or the `<link>` whose path gives that suffix. A class with no
+such sheet gives nothing, since the suffix alone can't tell `/` from `.` or `-`.
 
 **Selected text**: the target is the element containing the selection, mapped as element 1, plus
 the exact selected text and about 40 characters on either side, so Claude can tell which occurrence
@@ -673,11 +680,14 @@ top-level elements fully inside it, each mapped too.
 **When mapping runs**: at pick time, alongside the screenshot, in the background while you type, so
 the composer opens at once. Send waits for it only if it hasn't finished (bounded by the timeouts).
 The hover label uses the same mappers but skips source-map fetches: it shows the file, and a line
-only if the map is already cached. It is debounced (about 60 ms).
+only if the map is already cached. It is debounced (about 60 ms), and names the first place that
+isn't a style (else the first style) by its last two path segments.
 
 - **Optional improvements**: when a page lacks an easy improvement (e.g. a Rails app without
   template annotations), the side panel suggests it once, and it can be dismissed. The app is never
-  changed automatically.
+  changed automatically. A page is Rails when its CSRF meta tag names `authenticity_token`. The
+  content script sends its suggestions with its `page` message once the HTML has loaded; the panel
+  shows its window's active tab's, until dismissed for the site (by origin, in `storage.local`).
 - Angular, Solid and Lit mappers come later.
 
 ### Context per element
@@ -1206,7 +1216,7 @@ One committed, hand-written folder per app under `fixtures/<app>/`, nothing gene
 | Fixture | Proves |
 |---|---|
 | `static` | search clues and CSS rules with no framework; our reload on a server that never reloads; overlay layering over a modal `<dialog>` and a page `popover`; the page's own `pushState`; the `activeTab` path |
-| `rails` | Rails 8. Started twice: with `annotate_rendered_view_with_filenames` on (an env var sets it), for the Rails mapper on real `<!-- BEGIN/END -->` output; and off, for the side panel's "optional improvement" suggestion and the fall back to search clues |
+| `rails` | Rails 8. Started twice: with `annotate_rendered_view_with_filenames` on (`ANNOTATE_VIEWS=1`, in `fixture.json`'s `env`), for the Rails mapper on real `<!-- BEGIN/END -->` output; and off, for the side panel's "optional improvement" suggestion and the fall back to search clues (the cases marked `"annotations": false`) |
 | `vite-react19` | the React 19 `_debugStack` route through an inline source map |
 | `vite-react18` | React 18 `_debugSource` (its own app: two Reacts don't share a Vite app) |
 | `vite-vue` | Vue 3 `__file`, file only |
@@ -1259,7 +1269,8 @@ golden-tested in Go, not here.
 Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/`.
 Files run concurrently (node's default), each with its own Chrome. For each fixture the runner:
 
-1. copies the fixture to a temporary folder (round trips edit files), with `node_modules` symlinked;
+1. copies the fixture to a temporary folder (round trips edit files), with `node_modules` and
+   `vendor/` (gems) symlinked;
 2. takes a free port (listen on port 0, read it, close);
 3. spawns the start command in its own process group;
 4. polls the ready path until it returns 200, for at most 60 s. On a timeout it fails, showing the

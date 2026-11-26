@@ -99,3 +99,14 @@ test("every mapper runs; one that fails or takes over 300 ms gives nothing, the 
   });
   assert.deepEqual(plain(got), [loc("rails"), loc("vue")]);
 });
+
+test("the hover label names the strongest place's file, its line only when there is one", () => {
+  const { label } = mappers;
+  assert.equal(label([]), "");
+  assert.equal(label([
+    { file: "http://localhost:3000/src/theme.css", line: 10, role: "style", via: "css" },
+    { file: "app/views/pages/_signup.html.erb", role: "component", via: "rails" },
+  ]), "pages/_signup.html.erb");
+  assert.equal(label([{ file: "http://localhost:3000/src/theme.css?v=2", line: 10, column: 3, role: "style", via: "css" }]), "src/theme.css:10");
+  assert.equal(label([{ file: "/Users/joel/app/components/Card.tsx", line: 4, role: "element", via: "react" }]), "components/Card.tsx:4");
+});

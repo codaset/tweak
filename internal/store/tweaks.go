@@ -292,6 +292,9 @@ func (s *Store) SetStatusEnding(sessionID string, number int64, status string, e
 		if end == nil {
 			return tw, nil
 		}
+		if end.Tweak != number {
+			return Tweak{}, ErrNotCapturing
+		}
 		if tw, err = tx.endWithdrawn(sessionID, *end); err != nil {
 			return Tweak{}, err
 		}

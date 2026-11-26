@@ -74,7 +74,7 @@ state. Registrations stay in place but don't inject until access is granted agai
 | Service worker | the bridge WebSocket; content-script registration; the badge, commands and context menu; `captureVisibleTab` and the screenshot processing; relaying between tabs and the bridge |
 | Content script (isolated world) | everything you see and touch: picker, hover outline, composer, card, pins, toasts; the mappers that only need the DOM (Rails comments, Proscenium classes, CSS rules, search clues); building a tweak's targets; reload detection |
 | Page probe (MAIN world) | a thin probe that never draws anything: reads framework metadata (React fibers, Vue `__file`, Svelte `__svelte_meta`) when asked, and listens for HMR signals. It answers through `CustomEvent`s on `document` with request IDs, never through attributes written onto the page. The page can see and spoof this traffic; that's acceptable, because the results are data describing the element |
-| Side panel | a view only, holding no state; talks to the worker through a port |
+| Side panel | a view only, holding no state of its own beyond an Undo on its way and which site the front tab shows; talks to the worker through a port |
 
 The overlay lives in a closed shadow root with its own styles. Nothing is added to the page's CSS.
 
@@ -121,7 +121,7 @@ another page. The bridge enforces the same rule: `create` for an unclaimed page 
 |---|---|
 | Bridge | tweaks, conversations, claims, changes: the source of truth |
 | `chrome.storage.local` | last-known claims, the bridge port, per-site settings (pins hidden, auto-reload off), dismissed improvement suggestions |
-| `chrome.storage.session` | the open tweaks (the worker's copy of the last snapshot and events, so pins and cards survive a worker restart while the bridge is down); per tab: the open card, and composer and reply drafts, saved as you type, restored on load, cleared on Send or esc |
+| `chrome.storage.session` | the open tweaks and the resolved ones still kept (the worker's copy of the last snapshot and events, so pins and cards survive a worker restart while the bridge is down); per tab: the open card, and composer and reply drafts, saved as you type, restored on load, cleared on Send or esc |
 | The page's own storage | nothing; the page can read and clear it |
 
 "Per site" means per origin. `chrome.storage.session` is closed to content scripts by default, so

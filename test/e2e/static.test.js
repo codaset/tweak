@@ -978,8 +978,8 @@ describe("static, withdrawn and resolved tweaks", { skip: skipReason(fixture) ??
 
       const heard = env.watcher.lines.length;
       await finishFromCard(env, n, "Withdraw");
-      await env.watcher.line(new RegExp(`^tweak ${n} withdrawn$`), { from: heard });
       await env.tab.until(text(".toasts"), { is: (s) => s?.includes(`Tweak ${n} withdrawn`), what: "a toast saying where it went" });
+      await env.watcher.line(new RegExp(`^tweak ${n} withdrawn$`), { from: heard });
       assert.equal(await env.claude.tweak("decline", String(n), "withdrawn"), `tweak ${n}: withdrawn, change kept for Undo\n`);
       assert.equal(await env.claude.work(n), `tweak ${n}: withdrawn, skip it\n`);
 
@@ -1060,10 +1060,10 @@ describe("static, resolved tweaks are deleted after they're kept", { skip: skipR
     const shot = join(env.bridge.state, "screenshots", `${n}.png`);
     mkdirSync(dirname(shot), { recursive: true });
     writeFileSync(shot, "\x89PNG"); // as the screenshot upload stores it
-    await finishFromCard(env, n, "Withdraw");
-    await env.claude.tweak("decline", String(n), "withdrawn"); // its capture ends: until then it's kept
     const panel = await sidePanel(env);
+    await finishFromCard(env, n, "Withdraw");
     await until(() => panel.evaluate((sel) => Boolean(document.querySelector(sel)), RESOLVED_ROW(n)), { what: `tweak ${n} listed` });
+    await env.claude.tweak("decline", String(n), "withdrawn"); // its capture ends: until then it's kept
     await until(() => !existsSync(shot), { timeout: 15_000, what: "the screenshot to be deleted" });
     await assert.rejects(env.claude.work(n), new RegExp(`there is no tweak ${n}`));
     await until(() => panel.evaluate((sel) => !document.querySelector(sel), RESOLVED_ROW(n)), { what: `tweak ${n} gone from the side panel` });

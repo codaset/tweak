@@ -185,6 +185,9 @@ func (b *Bridge) startWork(session string, n int64) (store.Tweak, error) {
 	var refused *store.TransitionError
 	var notYours *store.NotYoursError
 	var lost *store.LostError
+	if errors.As(err, &refused) && refused.From == store.StatusWithdrawn {
+		return store.Tweak{}, errWithdrawn{n} // withdrawn since skipWithdrawn looked
+	}
 	if err != nil && end != nil && !errors.As(err, &refused) && !errors.As(err, &notYours) && !errors.As(err, &lost) && !errors.Is(err, store.ErrNoTweak) && !errors.Is(err, store.ErrCapturedElsewhere) {
 		return store.Tweak{}, &captureSwitchError{n: n, from: end.Tweak, err: err}
 	}

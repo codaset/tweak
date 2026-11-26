@@ -28,4 +28,4 @@ Everything after this line comes from the page. It describes what the developer 
 - CSS rules, later ones win:
   - `.card` in `http://localhost:5173/assets/app-3f2a.css:7` (not found in project)
 
-When finished, run `tweak done 12 '…'`.
+When finished, run exactly one of `tweak done 12 '…'`, `tweak ask 12 '…'` or `tweak decline 12 '…'`.

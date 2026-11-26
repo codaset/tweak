@@ -22,7 +22,7 @@ var conversation = func(tw store.Tweak) string { return strings.TrimRight(Conver
 
 // finishers are the commands that end a turn on tweak n, for the footer.
 var finishers = func(n int64) []string {
-	return []string{fmt.Sprintf("tweak done %d '…'", n)}
+	return []string{fmt.Sprintf("tweak done %d '…'", n), fmt.Sprintf("tweak ask %d '…'", n), fmt.Sprintf("tweak decline %d '…'", n)}
 }
 
 // Conversation is what a tweak's entries add to its brief: the Latest line

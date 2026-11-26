@@ -126,7 +126,7 @@ func TestTheFooter(t *testing.T) {
 	if got := footer([]string{"tweak done 3 '…'", "tweak ask 3 '…'", "tweak decline 3 '…'"}); got != "When finished, run exactly one of `tweak done 3 '…'`, `tweak ask 3 '…'` or `tweak decline 3 '…'`." {
 		t.Errorf("three commands: %s", got)
 	}
-	if got := Render(tweak(`{"elements":[{"label":"p","selector":"p"}]}`), Options{}); !strings.HasSuffix(got, "\n\nWhen finished, run `tweak done 12 '…'`.\n") {
+	if got := Render(tweak(`{"elements":[{"label":"p","selector":"p"}]}`), Options{}); !strings.HasSuffix(got, "\n\nWhen finished, run exactly one of `tweak done 12 '…'`, `tweak ask 12 '…'` or `tweak decline 12 '…'`.\n") {
 		t.Errorf("the brief doesn't end with the footer:\n%s", got)
 	}
 }
@@ -228,6 +228,19 @@ func TestPageTextCantBreakOut(t *testing.T) {
 	if !strings.Contains(long, "`"+strings.Repeat("x", 59)+"…`") || !strings.Contains(long, `"`+strings.Repeat("y", 79)+`…"`) {
 		t.Fatalf("label and text not cut at 60 and 80:\n%s", long)
 	}
+}
+
+// design.md's example as it stands, after one question and reply: the same
+// brief, plus the Latest line and the Conversation section.
+func TestTheFullBriefAfterAReply(t *testing.T) {
+	tw := tweak(fixture(t, "two-elements"))
+	tw.URL = "https://ernie.localhost/admin/users/12/edit"
+	tw.Entries = []store.Entry{
+		{From: store.FromYou, Kind: store.KindRequest, Text: `make these buttons green and say "Save draft"`},
+		{From: store.FromClaude, Kind: store.KindQuestion, Text: "Solid green, or the outline variant?"},
+		{From: store.FromYou, Kind: store.KindReply, Text: "yes, the outline variant"},
+	}
+	golden(t, "two-elements-reply", Render(tw, Options{Folder: root(t), Screenshot: "/state/screenshots/12.png"}))
 }
 
 // With no locations at all, Claude is told to search for the clues; with

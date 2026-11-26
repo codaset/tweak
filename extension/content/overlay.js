@@ -262,6 +262,83 @@
   // Keys typed in the overlay stay in it, so the page's shortcuts don't fire.
   const KEY_EVENTS = ["keydown", "keyup", "keypress", "input", "beforeinput"];
 
+  // Layering (design.md § Overlay layering). The host is a manual popover, so
+  // it's in the top layer, above anything the page's z-index can do. A modal
+  // dialog makes everything outside it inert, top layer included, so while
+  // one is open the host lives inside the topmost one, and moves back when
+  // it closes. Whenever the page puts something new in the top layer (its
+  // own popovers, a dialog), the host is shown again, so it's on top.
+  const layer = (() => {
+    const modals = []; // the open modal dialogs, in the order they opened
+    let queued = false;
+    let raise = false;
+
+    // home is where the host belongs: the topmost open modal dialog, or the document.
+    function home() {
+      for (let i = modals.length - 1; i >= 0; i--) if (!modals[i].isConnected || !modals[i].matches(":modal")) modals.splice(i, 1);
+      for (const d of document.querySelectorAll("dialog:modal")) if (!modals.includes(d)) modals.push(d);
+      return modals.at(-1) ?? document.documentElement;
+    }
+
+    // place moves the host home if it isn't there, and shows it again when
+    // it moved (a move takes it out of the top layer) or when asked to.
+    function place(again) {
+      const { host, root } = ns.overlay;
+      if (!host) return;
+      const to = home();
+      const moved = host.parentNode !== to;
+      if (!moved && !again && host.matches(":popover-open")) return;
+      const focused = root.activeElement; // a move or a hide takes the focus away
+      if (moved) to.append(host);
+      try {
+        if (host.matches(":popover-open")) host.hidePopover();
+        host.showPopover();
+      } catch {
+        // Not in the top layer; the page's stacking may cover it.
+      }
+      if (focused?.isConnected && root.activeElement !== focused) focused.focus({ preventScroll: true });
+    }
+
+    // Everything waits for a microtask, so a burst of changes moves the host
+    // once, after the page's own call has finished, and before the paint.
+    function soon(again = false) {
+      raise ||= again;
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        const r = raise;
+        raise = false;
+        place(r);
+      });
+    }
+
+    // toggle fires for popovers and dialogs (it doesn't bubble, so it's
+    // heard in the capture phase); the host's own are ignored.
+    const onToggle = (e) => {
+      if (e.target !== ns.overlay.host) soon(e.newState === "open");
+    };
+    // The fallback: a dialog's open attribute changes as showModal and close
+    // run, and the page may remove the dialog the host is in, or the host.
+    const observer = new MutationObserver((records) => {
+      const dialog = records.some((r) => r.type === "attributes" && r.target.localName === "dialog");
+      if (dialog || !ns.overlay.host?.isConnected || modals.some((d) => !d.isConnected)) soon();
+    });
+
+    return {
+      start() {
+        place(true);
+        document.addEventListener("toggle", onToggle, true);
+        observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
+      },
+      stop() {
+        document.removeEventListener("toggle", onToggle, true);
+        observer.disconnect();
+        modals.length = 0;
+      },
+    };
+  })();
+
   ns.overlay = {
     host: null,
     root: null,
@@ -274,16 +351,12 @@
       sheet.replaceSync(STYLE);
       root.adoptedStyleSheets = [sheet];
       for (const type of KEY_EVENTS) root.addEventListener(type, (e) => e.stopPropagation());
-      document.documentElement.append(host);
-      try {
-        host.showPopover();
-      } catch {
-        // Not in the top layer; the page's stacking may cover it.
-      }
       this.host = host;
       this.root = root;
+      layer.start();
     },
     detach() {
+      layer.stop();
       this.host?.remove();
       this.host = this.root = null;
     },

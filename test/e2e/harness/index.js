@@ -119,8 +119,7 @@ export async function replyFromCard(env, answer) {
 // the focus; reply from the card; the reply reaches the watcher; work again
 // gets the brief with the Latest line and the conversation; then done.
 export async function conversation(env, c, { request = `tweak the ${c.name}`, question = "Which colour?", answer = "green", summary = `made the ${c.name} green` } = {}) {
-  await open(env, c.path ?? "/");
-  await pick(env, c.pick);
+  await pickCase(env, c);
   await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
   await env.page.keyboard.type(request);
   const from = env.watcher.lines.length;
@@ -151,14 +150,21 @@ export async function conversation(env, c, { request = `tweak the ${c.name}`, qu
   return n;
 }
 
+// pickCase opens a case's page, clicks its `first` control if it has one
+// (such as the button that opens a dialog), and makes its pick.
+async function pickCase(env, c) {
+  await open(env, c.path ?? "/");
+  if (c.first?.click) await env.page.click(c.first.click);
+  return pick(env, c.pick);
+}
+
 // A golden case through the tracer: pick it, send a tweak, let the stand-in
 // work it, check the brief against the case, finish it, and see the card
 // reach Done. Round-trip cases (with `edit`) will add the edit and Undo
 // between work and done. The brief's and the watch line's own layout are
 // golden-tested in Go; this checks the wiring.
 export async function tracer(env, c, { request = `tweak the ${c.name}`, summary = `tweaked the ${c.name}` } = {}) {
-  await open(env, c.path ?? "/");
-  const element = await pick(env, c.pick);
+  const element = await pickCase(env, c);
   await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
   await env.page.keyboard.type(request);
   // Before the send: its line can arrive while press() is still resolving.

@@ -4,5 +4,12 @@
     "pick": { "selector": "#save" },
     "locations": [],
     "clues": []
+  },
+  {
+    "name": "save button in a modal dialog",
+    "first": { "click": "#open-profile" },
+    "pick": { "selector": "#profile-save" },
+    "locations": [],
+    "clues": []
   }
 ]

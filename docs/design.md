@@ -99,9 +99,12 @@ the worker restarts.
 (`/users/12` and `/users/13` are different pages; `/admin?tab=2` is `/admin`). A page shows pins for
 its unresolved tweaks. Events go to every tab showing that page, so pins and badges update
 everywhere. The card opens, and a question pops up, only in the tab the tweak was sent from; if that
-tab is gone, the question shows as a toast in the others. On client-side navigation, the content
-script hears the Navigation API (`navigatesuccess` and `currententrychange`, expected to fire for
-the page's own `pushState` too; asserted on the `static` fixture, see [Testing](#testing)) and loads the pins for the
+tab is gone, the question shows as a toast in the others. The worker keeps the sending tab of each
+tweak (in `chrome.storage.session`, by number) and decides: `asked` goes to that tab, whatever page
+it now shows, or with `toast` to the tabs showing the page. On client-side navigation, the content
+script hears the Navigation API's `currententrychange` (it fires for the page's own `pushState` and
+`replaceState`, `history.back()` and intercepted navigations alike, so `navigatesuccess` adds
+nothing; asserted on the `static` fixture, see [Testing](#testing)) and loads the pins for the
 new URL. A query-only change doesn't change the page, but a claim's pattern can match the query, so
 the worker is asked again. A page no claim covers is **dormant**: no picker, no pins, and the card
 hides. The card comes back when a claim covers the page again. It stays open through client-side
@@ -127,10 +130,15 @@ the tab's port reconnects after a reload.
 
 **Overlay layering**: the overlay host is a `popover="manual"` element in the top layer, so no
 `z-index` fights. A modal `<dialog>` makes everything outside it inert, top layer included. So when
-one opens (a capture-phase `toggle` listener on `document`, with a `MutationObserver` on `open` as a
-fallback), the host moves inside the dialog and is shown again. It then sits above the dialog and
+one opens (heard by a capture-phase `toggle` listener on `document` and a `MutationObserver` on
+`open`), the host moves inside the dialog and is shown again. It then sits above the dialog and
 isn't inert, and it moves back when the dialog closes. Whenever the page puts something new in the
-top layer (its own popovers), the host is shown again so it stays on top. Asserted on the `static` fixture (see
+top layer (its own popovers), the host is shown again so it stays on top. Both happen in a microtask,
+so before the next paint: the `open` observer is what catches `showModal()` in time (with `toggle`
+alone, a pick made straight after `showModal()` failed in Chrome 158), and `toggle` is what catches a
+popover, which has no attribute to observe. The
+observer also puts the host back when the page removes it, or the dialog it's in. Focus inside the
+overlay survives each move. Asserted on the `static` fixture (see
 [Testing](#testing)).
 
 **Code shape**: no build step. The worker and side panel are ES modules (`"type": "module"`).
@@ -151,6 +159,7 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `created` | `ref`, and the `number` created or an `error` and `message` |
 | | `replied` | `ref`, and the `number` replied to or an `error` and `message` |
 | | `claimed` | `claimed`, sent to every tab whenever the claims change |
+| | `asked` | `tweak`, which has just become a question: sent to the tab it was sent from, which opens its card, or with `toast: true` to the tabs showing its page when that tab is gone |
 | | `state` | `connection`: connecting, connected, refused or disconnected |
 | Port, local | `open`, `closed` | made by the content script's own port when it connects and when it's lost; `open` is what sends `page`, and `closed` ends a send in flight |
 | Worker to side panel | `state` | the whole view: connection and message, bridge port, whether access is granted, the claims, any pending update |
@@ -1192,7 +1201,9 @@ it with `actions/cache`, keyed on the version.
 }
 ```
 
-`pick` is one of `{selector}`, `{text}` (a selection) or `{area}` (a box). Paths are project-relative.
+`pick` is one of `{selector}`, `{text}` (a selection) or `{area}` (a box). `first`, optional, is
+`{click: selector}`: a page control clicked before the pick, such as the one that opens a dialog.
+Paths are project-relative.
 `edit` appears only on round-trip cases. Assertions are made against the **brief** that `tweak work`
 prints, since that is what Claude reads, and it covers the bridge's path normalisation. The listed
 locations must be the first N under "Where to look", in order, matched on `` `file:line` `` and the

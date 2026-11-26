@@ -109,8 +109,10 @@ async function onTabMessage(port, msg) {
       if (msg.number) await chrome.storage.session.set({ [cardKey(tabId)]: msg.number });
       else await chrome.storage.session.remove(cardKey(tabId));
       break;
-    case "create": {
-      const ref = bridge.request(msg, (answer) => port.postMessage({ type: "created", ref: msg.ref, ...answer }));
+    case "create":
+    case "reply": {
+      const answered = msg.type === "create" ? "created" : "replied";
+      const ref = bridge.request(msg, (answer) => port.postMessage({ type: answered, ref: msg.ref, ...answer }));
       if (ref) port.onDisconnect.addListener(() => bridge.pending.forget(ref));
       break;
     }

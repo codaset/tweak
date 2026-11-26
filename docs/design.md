@@ -421,10 +421,13 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
 | `withdrawn` | you, from the card, before Claude finished; also resolves the tweak | Withdrawn |
 
 Which changes Claude may make is one table in the bridge's store, so the other tickets extend it
-rather than add checks: `sent` or `delivered` to `working`, and `working` to `working` or `done`.
-Anything else is refused with `wrong-status` (409) and a line saying what to do: `work` on a done
-tweak, a second `done`, and `done` before `work`. A session can only change tweaks sent to it
-(`not-yours`, 409), and an unknown number is `no-tweak` (404).
+rather than add checks: `sent`, `delivered` or `queued` to `working`, `queued` or `declined`, and
+`working` to `working`, `question`, `done` or `declined`; a `question` can only be declined. Your
+reply reopens a question as `sent`, logging `tweak-replied` (the inbox's `reply` line, for the
+session that asked); the card then reads "Reply sent", then "Claude has your reply". Done and
+declined are final. Anything else is refused with `wrong-status` (409) and a line saying what to
+do (`done` before `work`, `work` while a question waits). A session can only change tweaks sent to
+it (`not-yours`, 409), and an unknown number is `no-tweak` (404).
 
 **Resolved** is separate from status: you've finished with the tweak, and its pin leaves the page.
 A change has its own state: `recorded`, `nothing-recorded`, `undo-requested` or `undone` (see
@@ -968,6 +971,8 @@ Don't stop the Monitor yourself.
 Opens when you send a tweak, in place of the composer, and stays open until **esc** or **×**.
 Clicking around the page leaves it open. It shows the status (with the time spent while working),
 Claude's plan, any question with a reply box, the summary, and **Withdraw** while the tweak is open. It reopens in place after a reload.
+A question opens its card by itself, without taking the focus, unless a composer or a reply being
+written is open.
 
 ### Pins
 

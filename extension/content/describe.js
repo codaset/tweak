@@ -16,6 +16,19 @@
     declined: { text: "Declined", tone: "ended" },
     withdrawn: { text: "Withdrawn", tone: "ended" },
   };
+  // How sent and delivered read once the developer has replied to a question.
+  const REPLIED = { sent: "Reply sent", delivered: "Claude has your reply" };
+  // How the card labels each entry of the conversation after the request.
+  const ENTRY = {
+    request: "You",
+    plan: "Claude's plan",
+    question: "Claude asks",
+    reply: "You replied",
+    summary: "Claude",
+    reason: "Why Claude declined",
+    undo: "Undo",
+    notice: "Tweak",
+  };
   // SENDING is a card's tweak that the bridge hasn't sent back yet.
   const SENDING = { text: "Sending…", tone: "sent" };
 
@@ -34,6 +47,8 @@
   function status(tweak, now = Date.now()) {
     if (!tweak) return SENDING;
     const { text, tone } = STATUS[tweak.status] ?? { text: tweak.status, tone: "sent" };
+    // A reply sends the tweak again: it waits for the same session, not a new one.
+    if (tweak.entries?.at(-1)?.kind === "reply" && REPLIED[tweak.status]) return { text: REPLIED[tweak.status], tone };
     if (tweak.status === "working" && tweak.statusAt) {
       return { text: `${text} · ${elapsed(now - Date.parse(tweak.statusAt))}`, tone };
     }
@@ -42,6 +57,11 @@
 
   // classes are the status modifier classes a pin and the card's status
   // share: the tone, and working (the pulse).
+  // thread is the conversation the card shows below the request: every
+  // later entry, labelled, oldest first.
+  const thread = (tweak) =>
+    (tweak?.entries ?? []).slice(1).map((e) => ({ kind: e.kind, from: e.from, label: ENTRY[e.kind] ?? e.kind, text: e.text }));
+
   const classes = (tweak) => `tone-${status(tweak).tone}${tweak?.status === "working" ? " working" : ""}`;
 
   // label is the tag plus an ID or up to two classes: button.btn-primary.
@@ -87,5 +107,5 @@
   // element is one element as a tweak's targets carry it (schema/create.json).
   const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
 
-  ns.describe = { status, classes, elapsed, label, text, selector, element };
+  ns.describe = { status, classes, thread, elapsed, label, text, selector, element };
 })();

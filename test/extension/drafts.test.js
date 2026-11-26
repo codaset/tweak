@@ -2,10 +2,8 @@
 // it is, with a stand-in for the worker's port.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { loadScript } from "./probe-world.js";
 
-const src = readFileSync(new URL("../../extension/content/drafts.js", import.meta.url), "utf8");
 
 function load() {
   const posted = [];
@@ -21,7 +19,7 @@ function load() {
       },
     },
   };
-  runInNewContext(src, { codasetTweak: ns, globalThis: { codasetTweak: ns } });
+  loadScript("drafts.js", ns);
   const hear = (msg) => listeners.forEach((fn) => fn(msg));
   return { ns, posted, hear };
 }

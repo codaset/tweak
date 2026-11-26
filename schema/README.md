@@ -8,4 +8,4 @@ The source of truth for every message between the bridge, the CLI and the extens
 - `examples/invalid/<name>.<case>.json`: messages that must be refused by it.
 
 Both sides test against the examples: Go in `schema/schema_test.go`, JavaScript in
-`test/extension/schema.test.js`. Every schema needs at least one valid example.
+`test/extension/schema.test.js`. Every schema needs at least one valid and one invalid example; both tests fail without them.

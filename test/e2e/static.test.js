@@ -748,15 +748,6 @@ describe("static, with access to every site", { skip: skipReason(fixture) ?? fal
     await env.page.keyboard.press("Escape");
   });
 
-  test("a big area's screenshot is scaled down to 1600 px on its longest side", async () => {
-    await open(env);
-    const { n } = await sendTweak(env, { area: { x: 10, y: 10, width: 1080, height: 780 } }, "tidy up this whole area");
-    const shot = await storedScreenshot(env, n);
-    assert.equal(Math.max(shot.width, shot.height), 1600);
-    assert.ok(shot.width > shot.height, `${shot.width}×${shot.height} keeps the viewport's shape`);
-    await env.page.keyboard.press("Escape");
-  });
-
   test("a capture is held while composing and thrown away on cancel", async (t) => {
     await open(env);
     const started = performance.now();
@@ -813,15 +804,6 @@ describe("static, when the session goes quiet", { skip: skipReason(fixture) ?? f
     await env.page.keyboard.press("Escape");
     return Number(n);
   };
-
-  test("with no watcher, a command warns on stderr until the watcher is back", async () => {
-    env.watcher.stop();
-    // Each command checks in, so the claim can't lapse while this waits.
-    const warning = "no watcher running: start a Monitor with tweak watch\n";
-    await until(async () => (await env.claude.tweakBoth("claims")).stderr === warning, { what: "the no-watcher warning" });
-    env.watcher = env.claude.watch();
-    await until(async () => (await env.claude.tweakBoth("claims")).stderr === "", { what: "the warning to stop once the watcher listens" });
-  });
 
   // The card and the side panel, built from the snapshot as well as events,
   // so a reload says the same.

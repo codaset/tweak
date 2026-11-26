@@ -85,12 +85,20 @@ func TestTargetsAreTheSameEverywhere(t *testing.T) {
 	}
 }
 
-func TestEverySchemaHasAValidExample(t *testing.T) {
+// Every schema needs both kinds of example (schema/README.md): one that
+// validates and one that is refused.
+func TestEverySchemaHasAValidAndAnInvalidExample(t *testing.T) {
 	schemas, _ := filepath.Glob("*.json")
+	if len(schemas) == 0 {
+		t.Fatal("no schemas")
+	}
 	for _, s := range schemas {
 		name := strings.TrimSuffix(s, ".json")
 		if m, _ := filepath.Glob("examples/" + name + ".*.json"); len(m) == 0 {
-			t.Errorf("%s has no example in examples/", s)
+			t.Errorf("%s has no valid example in examples/", s)
+		}
+		if m, _ := filepath.Glob("examples/invalid/" + name + ".*.json"); len(m) == 0 {
+			t.Errorf("%s has no invalid example in examples/invalid/", s)
 		}
 	}
 }

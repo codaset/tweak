@@ -3,10 +3,8 @@
 // esbuild built, saved in test/extension/fixtures/.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { read, runScripts } from "./probe-world.js";
 
-const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 // load gives a fresh copy of the mappers (and the source maps they use),
@@ -18,9 +16,7 @@ function load({ fetch = () => Promise.reject(new Error("no fetch")), rules = () 
     codasetTweak: ns, globalThis: { codasetTweak: ns }, setTimeout, clearTimeout, URL, Promise, atob, TextDecoder, fetch,
     location: { href: "http://localhost:3000/" },
   };
-  runInNewContext(read("../../extension/content/sourcemap.js"), context);
-  runInNewContext(read("../../extension/content/mappers.js"), context);
-  runInNewContext(read("../../extension/content/hover.js"), context);
+  runScripts(["sourcemap.js", "mappers.js", "hover.js"], context);
   return { ...ns.mappers, ...ns.hover };
 }
 const mappers = load();

@@ -1,6 +1,8 @@
 package pattern
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -74,58 +76,30 @@ func TestParseErrorSaysWhatIsWrong(t *testing.T) {
 	}
 }
 
+// TestMatch runs the cases shared with extension/lib/match.js
+// (test/fixtures/match-cases.json): both must agree on every one.
 func TestMatch(t *testing.T) {
-	cases := []struct {
-		pattern, url string
-		want         bool
-	}{
-		{"https://ernie.localhost/*", "https://ernie.localhost/", true},
-		{"https://ernie.localhost/*", "https://ernie.localhost/admin/users/12?tab=2#x", true},
-		{"https://ernie.localhost/*", "http://ernie.localhost/", false},
-		{"https://ernie.localhost/*", "https://bert.localhost/", false},
-		{"https://ernie.localhost/*", "https://x.ernie.localhost/", false},
-		{"https://ernie.localhost/admin/*", "https://ernie.localhost/admin/users", true},
-		{"https://ernie.localhost/admin/*", "https://ernie.localhost/admin/", true},
-		{"https://ernie.localhost/admin/*", "https://ernie.localhost/admin", false},
-		{"https://ernie.localhost/admin/*", "https://ernie.localhost/users", false},
-		// *. matches the bare host and every subdomain (checked in Chrome).
-		{"https://*.bert.localhost/*", "https://bert.localhost/", true},
-		{"https://*.bert.localhost/*", "https://a.b.bert.localhost/x", true},
-		{"https://*.bert.localhost/*", "https://notbert.localhost/", false},
-		{"http://*/*", "http://anything.test/", true},
-		{"*://localhost/*", "https://localhost/", true},
-		{"*://localhost/*", "http://localhost/", true},
-		{"*://localhost/*", "ws://localhost/", false},
-		// No port matches every port; a port matches only that port
-		// (checked in Chrome 158).
-		{"http://localhost/*", "http://localhost:3000/", true},
-		{"http://localhost/*", "http://localhost/", true},
-		{"http://localhost:3000/*", "http://localhost:3000/", true},
-		{"http://localhost:3000/*", "http://localhost:5173/", false},
-		{"http://localhost:3000/*", "http://localhost/", false},
-		{"http://localhost:80/*", "http://localhost/", true},
-		{"https://localhost:443/*", "https://localhost/", true},
-		{"http://LOCALHOST/*", "http://LocalHost/", true},
-		// The path glob sees the query (checked in Chrome), but not the hash.
-		{"http://localhost/qq*a=1*", "http://localhost:3000/qq?a=1", true},
-		{"http://localhost/qq*a=1*", "http://localhost:3000/qq", false},
-		{"http://localhost/qq*a=1*", "http://localhost:3000/qq#a=1", false},
-		// Only * is a wildcard.
-		{"http://localhost/a?b", "http://localhost/a?b", true},
-		{"http://localhost/a?b", "http://localhost/axb", false},
-		{"http://localhost/users/12", "http://localhost/users/12", true},
-		{"http://localhost/users/12", "http://localhost/users/123", false},
-		{"http://localhost/*/edit", "http://localhost/users/12/edit", true},
-		{"http://[::1]:3000/*", "http://[::1]:3000/x", true},
-		{"http://localhost/*", "not a url", false},
+	raw, err := os.ReadFile("../../test/fixtures/match-cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Pattern, URL string
+		Want         bool
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("no cases")
 	}
 	for _, c := range cases {
-		p, err := Parse(c.pattern)
+		p, err := Parse(c.Pattern)
 		if err != nil {
-			t.Fatalf("Parse(%q): %v", c.pattern, err)
+			t.Fatalf("Parse(%q): %v", c.Pattern, err)
 		}
-		if got := p.Match(c.url); got != c.want {
-			t.Errorf("%q.Match(%q) = %v, want %v", c.pattern, c.url, got, c.want)
+		if got := p.Match(c.URL); got != c.Want {
+			t.Errorf("%q.Match(%q) = %v, want %v", c.Pattern, c.URL, got, c.Want)
 		}
 	}
 }

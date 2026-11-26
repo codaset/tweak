@@ -17,6 +17,15 @@ const schemas = Object.fromEntries(
   jsonFiles(root).map((f) => [f.replace(/\.json$/, ""), ajv.compile(readJSON(join(root, f)))]),
 );
 
+// Every schema needs both kinds of example (schema/README.md).
+for (const name of Object.keys(schemas)) {
+  test(`${name} has a valid and an invalid example`, () => {
+    const has = (dir) => jsonFiles(join(root, dir)).some((f) => schemaName(f) === name);
+    assert.ok(has("examples"), `${name}.json has no valid example in examples/`);
+    assert.ok(has(join("examples", "invalid")), `${name}.json has no invalid example in examples/invalid/`);
+  });
+}
+
 for (const example of jsonFiles(join(root, "examples"))) {
   test(`${example} validates`, () => {
     const validate = schemas[schemaName(example)];

@@ -4,14 +4,10 @@
 // the round trips (test/e2e).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { loadScript, runScripts } from "./probe-world.js";
 
 const ns = { ready: false, teardowns: [] };
-for (const file of ["describe.js", "reload.js"]) {
-  const src = readFileSync(new URL(`../../extension/content/${file}`, import.meta.url), "utf8");
-  runInNewContext(src, { codasetTweak: ns, globalThis: { codasetTweak: ns } });
-}
+for (const file of ["describe.js", "reload.js"]) loadScript(file, ns);
 const { moment, signalled, reason, unsaved, inProgress } = ns.reload;
 
 const recorded = { state: "recorded", checked: true, files: [{ path: "a.html" }], unrecorded: [] };
@@ -159,7 +155,7 @@ function page({ onReload } = {}) {
     chrome: { storage: { local: { get: async () => (read = structuredClone(settings)) } } },
   };
   context.globalThis = context;
-  for (const file of ["describe.js", "reload.js"]) runInNewContext(readFileSync(new URL(`../../extension/content/${file}`, import.meta.url), "utf8"), context);
+  runScripts(["describe.js", "reload.js"], context);
   // advance runs every timer due within ms, letting each one's awaits settle.
   async function advance(ms) {
     const end = now + ms;

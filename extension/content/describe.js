@@ -53,6 +53,16 @@
   const unanswered = (tweak, now = Date.now()) =>
     tweak?.status === "delivered" && (tweak.resends ?? 0) >= 2 && Boolean(tweak.againAt) && now >= Date.parse(tweak.againAt);
 
+  // resendOffer says whether the card offers Send again. sentAt is the
+  // tweak's resends when a Send again was answered, or undefined: the offer
+  // hides until the tweak's resend shows (its event may come after the
+  // answer), then the hold ends, so a later delivery's offer isn't hidden.
+  // It returns the offer and the sentAt to keep.
+  function resendOffer(tweak, sentAt, now = Date.now()) {
+    const held = sentAt !== undefined && tweak?.resends === sentAt;
+    return { offer: unanswered(tweak, now) && !held, sentAt: held ? sentAt : undefined };
+  }
+
   // status is how a tweak's status reads now: while working, with the time
   // since it started (the bridge's statusAt, so a reload keeps the count).
   // No tweak yet is a card still sending.
@@ -132,5 +142,5 @@
   // element is one element as a tweak's targets carry it (schema/create.json).
   const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
 
-  ns.describe = { status, unanswered, classes, thread, elapsed, label, text, selector, element };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, elapsed, label, text, selector, element };
 })();

@@ -265,10 +265,10 @@
     refreshReply();
 
     // Send again stays up while its answer is on the way, or it failed.
-    // Once sent, it hides until the tweak's resend shows, which may come
-    // after the bridge's answer.
-    const resent = mode.resent !== undefined && tweak?.resends === mode.resent;
-    const offer = (unanswered && !resent) || Boolean(mode.resending || mode.resendError);
+    // Once sent, it hides until the tweak's resend shows (resendOffer).
+    const resend = ns.describe.resendOffer(tweak, mode.resent);
+    mode.resent = resend.sentAt;
+    const offer = resend.offer || Boolean(mode.resending || mode.resendError);
     if (parts.retry.hidden === offer) {
       if (!offer && ns.overlay.root?.activeElement === parts.resend) panel.focus({ preventScroll: true });
       parts.retry.hidden = !offer;

@@ -20,6 +20,25 @@
     return pickable(el) ? el : null;
   }
 
+  // The hover label's source: the mappers run once the pointer has rested
+  // on an element for SOURCE_DELAY, without fetching (a line only from a
+  // source map already loaded), and it's shown if that element is still
+  // the one outlined.
+  const SOURCE_DELAY = 60;
+  let source = { el: null, text: "" };
+  let sourceTimer = 0;
+  function findSource(el) {
+    clearTimeout(sourceTimer);
+    source = { el, text: "" };
+    sourceTimer = setTimeout(async () => {
+      const text = ns.mappers.label(await ns.mappers.run(el, { fetch: false }).catch(() => []));
+      if (source.el !== el || !text) return;
+      source.text = text;
+      const shown = hovered ?? ns.picker.held;
+      if (shown === el && outline && !outline.hidden) draw(el, el !== hovered);
+    }, SOURCE_DELAY);
+  }
+
   function draw(el, picked = false) {
     const root = ns.overlay.root;
     if (!root) return;
@@ -32,6 +51,8 @@
     Object.assign(outline.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
     outline.classList.toggle("picked", picked);
     tag.replaceChildren(ns.overlay.el("span", "", ns.describe.label(el)), ns.overlay.el("span", "size", `${Math.round(r.width)}×${Math.round(r.height)}`));
+    if (source.el === el && source.text) tag.append(ns.overlay.el("span", "source", source.text));
+    else if (source.el !== el) findSource(el);
     // Above the element, or inside its top edge when there's no room.
     const top = r.top >= 24 ? r.top - 22 : Math.max(2, r.top + 2);
     Object.assign(tag.style, { left: `${Math.max(2, Math.min(r.left, innerWidth - 200))}px`, top: `${top}px` });
@@ -133,6 +154,7 @@
   };
   ns.teardowns.push(() => {
     for (const [type, fn] of listeners) window.removeEventListener(type, fn, opts);
+    clearTimeout(sourceTimer);
     outline?.remove();
     tag?.remove();
   });

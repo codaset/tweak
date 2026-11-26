@@ -46,6 +46,8 @@ func tracer(t *testing.T, opts ...func(*Options)) (*harness, *socket) {
 	h := start(t, opts...)
 	h.register("s1", "/dev/ernie")
 	h.claim("s1", "https://ernie.localhost/*")
+	// Connected a moment ago: its connecting is no news to the watcher.
+	h.b.store.SawExtension()
 	s := h.connect()
 	s.hello(version.Protocol)
 	s.next("snapshot")

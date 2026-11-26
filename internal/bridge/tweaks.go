@@ -186,6 +186,8 @@ func (b *Bridge) line(e store.Event) string {
 		return "claim restored: " + e.Claim.Pattern
 	case store.EventClaimLost:
 		return b.store.LostLine(*e.Claim)
+	case store.EventExtensionConnected:
+		return "extension connected"
 	}
 	return ""
 }

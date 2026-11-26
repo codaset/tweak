@@ -274,7 +274,10 @@ files, fires `onInstalled` with reason `update`, wipes runtime registrations and
   version still differs after the reload, Chrome has a copy loaded from somewhere else (an old
   plugin-cache path, a repo checkout), so it stops trying. The side panel says "Loaded from another
   folder: remove it in `chrome://extensions` and load `~/.local/state/codaset-tweak/extension`", and
-  `tweak claim` relays the same warning from the version the bridge recorded at `hello`.
+  `tweak claim` relays the same warning from the version the bridge recorded at `hello`. The
+  `hello` also carries that stored version (`reloadedFor`), and the bridge warns only once it equals
+  its own (or is absent, from an older extension): not while a busy tab holds the reload back or
+  it is under way.
 
 **Handing over to a newer bridge**: any CLI command, not only `tweak claim`, that finds a bridge older
 than itself (from `bridge.json`, or the `x-tweak-version` header on every bridge response) replaces it
@@ -333,7 +336,9 @@ Browser text calls the bridge "Tweak"; CLI and skill text call it "the bridge".
 - Any command that finds no bridge starts one, as `tweak claim` does.
 - `tweak watch` reconnects with backoff (1, 2, 5 s, then every 10 s) and, after 10 seconds without an
   answer (longer than a handover takes), starts the bridge itself. It prints nothing about this. It
-  exits only on `claim released`, `bridge updated`, or a bridge that can't be started.
+  exits only on `claim released`, `bridge updated`, or a bridge that can't be started. A bridge that
+  answers with a failure (a 5xx) is asked again with the same backoff, and never replaced; any other
+  refusal ends it, as `bridge updated` will.
 - A bridge that can't start prints one line saying why, for example `port 47391 is in use by another
   program: set TWEAK_PORT`, or the start error and the log path.
 - **Downtime doesn't count toward lapses**: on start, the bridge sets every session's last check-in to
@@ -353,8 +358,13 @@ Browser text calls the bridge "Tweak"; CLI and skill text call it "the bridge".
 - connected before but not now: `Chrome extension not connected (last seen 2 h ago): is Chrome open
   with Codaset Tweak enabled?`
 
+Last seen is kept in the database, stamped at `hello`, on disconnect and by the sweep while
+connected. An extension gone less than 30 seconds (a worker restart, a self-update reload, a
+handover) isn't warned about: it's back within seconds.
+
 When the extension connects, each watcher with claims prints `extension connected`, and the skill
-relays it. There's no timeout: without the extension nothing can be sent.
+relays it: only when it was away 30 seconds or more (or has never connected), so those blips stay
+quiet. There's no timeout: without the extension nothing can be sent.
 
 **A handover that fails**: when the new bridge fails to start or doesn't answer within 5 seconds, the
 CLI starts the previous version's binary again (the two newest are kept), prints
@@ -429,8 +439,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `x-tweak-warning` lines (`no watcher running`, `claim lost: …`), which the CLI prints on stderr
   once each; the watcher's inbox and the hooks get none. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
-- **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version}` (the extension's
-  version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `again`, `undo`,
+- **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version, reloadedFor?}` (the
+  extension's version, and the version it last reloaded itself for or `""`, recorded by the bridge
+  for `tweak claim`'s reload warning), `create`, `reply`, `again`, `undo`,
   `withdraw`, `resolve`; from the bridge a snapshot or events, and refusals. A request carries the worker's
   `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
   socket stays open. `create` is `{ref, url, request, targets, anchor, screenshot?}`; the bridge refuses it with
@@ -458,7 +469,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `tweak watch` exits on), are in `schema/`.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
   sequence. Clients remember the last sequence seen and get everything newer on reconnect, or a
-  fresh snapshot if too far behind. Inbox acknowledgement and redelivery use the same log:
+  fresh snapshot if too far behind. One event is for the watchers only and never reaches a socket:
+  `extension-connected`, logged once for each session with claims. Inbox acknowledgement and redelivery use the same log:
   `GET /inbox?after=<seq>` acknowledges the session's lines up to `seq` (each session's cursor is
   in `deliveries`), and without `after` it starts where the last watcher left off, so a line handed
   out but never acknowledged is handed out again.

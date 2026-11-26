@@ -112,7 +112,19 @@ func (s *sandbox) watch(session, folder string) *watcher {
 	return w
 }
 
+// line is the watcher's next line about tweaks and claims. The stand-in
+// extension connecting after the claim is no news to these tests, so
+// "extension connected" is passed over; next reads every line.
 func (w *watcher) line() string {
+	w.t.Helper()
+	for {
+		if l := w.next(); l != "extension connected" {
+			return l
+		}
+	}
+}
+
+func (w *watcher) next() string {
 	w.t.Helper()
 	select {
 	case l := <-w.lines:
@@ -142,9 +154,13 @@ func TestWatchWorkDone(t *testing.T) {
 	}
 	ext := s.extension()
 	w := s.watch("s1", ernie)
+	// The extension connected after the claim: the watcher says so first.
+	if got := w.next(); got != "extension connected" {
+		t.Fatalf("first line %q", got)
+	}
 
 	n := ext.create("https://ernie.localhost/admin?tab=2", "make it green")
-	if got := w.line(); got != fmt.Sprintf("tweak %d new: make it green [on /admin, 1 element]", n) {
+	if got := w.next(); got != fmt.Sprintf("tweak %d new: make it green [on /admin, 1 element]", n) {
 		t.Fatalf("line %q", got)
 	}
 
@@ -164,6 +180,39 @@ func TestWatchWorkDone(t *testing.T) {
 	}
 	if code := w.exited(); code != 0 {
 		t.Fatalf("watch exited %d: %s", code, w.err)
+	}
+}
+
+// A watcher outlives its bridge: with none answering for 10 seconds it starts
+// one itself, says nothing about it, and carries on.
+func TestTheWatcherStartsAGoneBridge(t *testing.T) {
+	s := newSandbox(t)
+	ernie := s.folder("ernie")
+	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
+	w := s.watch("s1", ernie)
+	time.Sleep(500 * time.Millisecond) // let it start its long-poll
+	s.stopBridge()
+	gone := time.Now()
+
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		if _, ok := s.bridgeFile(); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the watcher didn't start a bridge")
+		}
+	}
+	if waited := time.Since(gone); waited < 9*time.Second {
+		t.Fatalf("started a bridge %v after the last went: want about 10 s", waited)
+	}
+	n := s.extension().create("https://ernie.localhost/", "make it green")
+	if got := w.line(); !strings.HasPrefix(got, fmt.Sprintf("tweak %d new:", n)) {
+		t.Fatalf("line %q", got)
+	}
+	w.cmd.Process.Kill()
+	<-w.done // stderr is complete
+	if w.err.Len() != 0 {
+		t.Fatalf("stderr %q", w.err)
 	}
 }
 

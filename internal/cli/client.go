@@ -26,24 +26,46 @@ type client struct {
 	warn    func(string) // prints the bridge's warnings; nil (a hook) prints nothing
 }
 
-// connect finds the running bridge (bridge.json first, then the configured
-// port) or starts one.
+// connect finds the running bridge or starts one.
 func (c *context) connect() (*client, error) {
-	cl := &client{session: c.session, http: &http.Client{Timeout: 30 * time.Second}, warn: c.warn}
+	if cl, ok := c.find(); ok {
+		return cl, nil
+	}
+	return c.started()
+}
+
+// find looks for a running bridge: on bridge.json's port, then the
+// configured one.
+func (c *context) find() (*client, bool) {
+	cl := c.newClient()
 	if f, err := bridge.ReadBridgeFile(c.cfg.StateDir); err == nil && cl.ping(f.Port) {
 		cl.port = f.Port
-		return cl, nil
+		return cl, true
 	}
 	if cl.ping(c.cfg.Port) {
 		cl.port = c.cfg.Port
-		return cl, nil
+		return cl, true
 	}
-	port, err := c.startBridge()
+	return nil, false
+}
+
+// started starts a bridge and returns a client for it.
+func (c *context) started() (*client, error) {
+	start := c.start
+	if start == nil {
+		start = c.startBridge
+	}
+	port, err := start()
 	if err != nil {
 		return nil, err
 	}
+	cl := c.newClient()
 	cl.port = port
 	return cl, nil
+}
+
+func (c *context) newClient() *client {
+	return &client{session: c.session, http: &http.Client{Timeout: 30 * time.Second}, warn: c.warn}
 }
 
 // ping reports whether a bridge answers on port.
@@ -58,9 +80,12 @@ func (cl *client) ping(port int) bool {
 	return resp.Header.Get(bridge.HeaderVersion) != ""
 }
 
-// refusal is the bridge saying no: its one-line message, as-is. Any other
-// error from a call means the bridge didn't answer.
-type refusal struct{ message string }
+// refusal is the bridge saying no: its one-line message, as-is, and the
+// HTTP status. Any other error from a call means the bridge didn't answer.
+type refusal struct {
+	message string
+	status  int
+}
 
 func (r *refusal) Error() string { return r.message }
 
@@ -124,9 +149,9 @@ func (cl *client) send(timeout time.Duration, method, path string, body any) ([]
 	if resp.StatusCode >= 300 {
 		var e struct{ Message string }
 		if json.Unmarshal(raw, &e) == nil && e.Message != "" {
-			return nil, &refusal{e.Message}
+			return nil, &refusal{e.Message, resp.StatusCode}
 		}
-		return nil, &refusal{fmt.Sprintf("the bridge answered %s", resp.Status)}
+		return nil, &refusal{fmt.Sprintf("the bridge answered %s", resp.Status), resp.StatusCode}
 	}
 	return raw, nil
 }

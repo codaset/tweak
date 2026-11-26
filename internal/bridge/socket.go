@@ -25,6 +25,9 @@ type helloIn struct {
 	Protocol int    `json:"protocol"`
 	LastSeq  int64  `json:"lastSeq"`
 	Version  string `json:"version"`
+	// ReloadedFor is the version the worker last reloaded itself for ("":
+	// none since it last matched). An older extension leaves it out (nil).
+	ReloadedFor *string `json:"reloadedFor"`
 }
 
 type snapshotOut struct {
@@ -133,11 +136,8 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	b.BrowserConnected()
-	defer b.BrowserDisconnected()
-	b.log.Printf("extension %s connected", hello.Version)
-	b.heardFrom(hello.Version)
-	defer b.log.Printf("extension disconnected")
+	b.extensionHello(hello)
+	defer b.extensionGone()
 
 	seq, claims, tweaks, err := b.store.Snapshot()
 	if err != nil {
@@ -190,6 +190,11 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range events {
+			// The extension connecting is news for the watchers only.
+			if e.Type == store.EventExtensionConnected {
+				seq = e.Seq
+				continue
+			}
 			if write(ctx, c, b.eventJSON(e)) != nil {
 				return
 			}

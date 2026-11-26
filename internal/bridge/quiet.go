@@ -140,6 +140,9 @@ func (b *Bridge) lapse() {
 	if err := b.store.MarkUp(); err != nil {
 		b.log.Print(err)
 	}
+	if b.browsers.Load() > 0 {
+		b.sawExtension() // so a crash leaves a recent "last seen"
+	}
 	if err := b.store.Expire(b.opts.RestoreFor); err != nil {
 		b.log.Print(err)
 	}

@@ -96,8 +96,9 @@ type Bridge struct {
 	change      chan struct{} // closed and replaced on each event-log change
 
 	extensionVersion string     // the embedded extension's version
-	heardMu          sync.Mutex // guards heard
+	heardMu          sync.Mutex // guards heard and settled
 	heard            string     // the version of the extension that last said hello
+	settled          bool       // and whether it has finished updating itself (extension.go)
 
 	shotsMu sync.Mutex
 	shots   map[int64]chan struct{} // screenshots on their way: closed when stored or given up on

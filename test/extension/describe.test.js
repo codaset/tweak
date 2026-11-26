@@ -97,6 +97,20 @@ test("a card whose tweak hasn't arrived yet reads Sending", () => {
   assert.deepEqual({ ...status(undefined) }, { text: "Sending…", tone: "sent" });
 });
 
+test("Send again hides until its resend shows, and only for that resend", () => {
+  const { resendOffer } = ns.describe;
+  const now = Date.parse("2026-11-26T10:20:00.000Z");
+  const unanswered = (resends) => ({ status: "delivered", resends, againAt: "2026-11-26T10:09:00.000Z" });
+  assert.deepEqual({ ...resendOffer(unanswered(2), undefined, now) }, { offer: true, sentAt: undefined });
+  // Answered at 2 resends, before the tweak-again event: hidden.
+  assert.deepEqual({ ...resendOffer(unanswered(2), 2, now) }, { offer: false, sentAt: 2 });
+  // The event arrives: the line is on its way, and the hold ends.
+  assert.deepEqual({ ...resendOffer({ status: "delivered", resends: 3 }, 2, now) }, { offer: false, sentAt: undefined });
+  // Claude picks it up, asks, and the reply goes unanswered twice: offered again.
+  assert.deepEqual({ ...resendOffer({ status: "working" }, 2, now) }, { offer: false, sentAt: undefined });
+  assert.deepEqual({ ...resendOffer(unanswered(2), undefined, now) }, { offer: true, sentAt: undefined });
+});
+
 test("a delivered tweak Claude hasn't picked up after two resends says so, from the wait and the resends", () => {
   const { unanswered } = ns.describe;
   const waiting = { status: "delivered", resends: 2, againAt: "2026-11-26T10:09:00.000Z" };

@@ -167,9 +167,13 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     await open(env);
     await pick(env, { selector: "#docs" });
     await env.tab.until(`root.querySelector(".outline") && !root.querySelector(".outline").hidden`, { what: "the element's outline" });
+    // The composer takes the focus a frame after it opens, and that clears
+    // the page's selection: select the text only once it has.
+    await env.tab.until(composing, { what: "the element's composer to take the focus" });
     await pick(env, { text: "no framework", in: ".lede" });
     await env.tab.until(`root.querySelector(".outline").hidden`, { what: "the earlier element's outline to go" });
     await env.tab.until(`root.querySelectorAll(".marks .mark.kind-text").length`, { what: "the selected text marked" });
+    await env.tab.until(composing, { what: "the text's composer to take the focus" });
     await env.page.keyboard.type("reword this");
     const from = env.watcher.lines.length;
     await env.page.keyboard.press("Enter");

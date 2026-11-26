@@ -67,8 +67,11 @@
       for (const tweak of tweaks) {
         let p = pins.get(tweak.number);
         if (!p) {
-          const el = ns.overlay.el("button", "pin", String(tweak.number));
+          // No number on the pin: it reads as a count. Its accessible name
+          // still says "Tweak 12: …" (below).
+          const el = ns.overlay.el("button", "pin");
           el.type = "button";
+          el.dataset.number = String(tweak.number);
           el.addEventListener("click", () => ns.panel.toggle(tweak.number, el));
           el.addEventListener("keydown", (e) => {
             if (e.key === "Escape" && ns.panel.open()) {

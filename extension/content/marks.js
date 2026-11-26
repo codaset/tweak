@@ -13,7 +13,8 @@
 
   ns.marks = {
     // draw shows exactly these marks: {kind: "element" | "inside" | "text" |
-    // "area", number?, x, y, width, height}, in viewport CSS pixels.
+    // "area", number?, hot?, x, y, width, height}, in viewport CSS pixels;
+    // hot is the one whose row in the composer's list is pointed at.
     draw(items) {
       if (!ns.overlay.root) return;
       if (!layer) {
@@ -30,7 +31,7 @@
           layer.append(node);
           drawn[i] = node;
         }
-        const cls = `mark kind-${m.kind}`;
+        const cls = `mark kind-${m.kind}${m.hot ? " hot" : ""}`;
         if (node.className !== cls) node.className = cls;
         Object.assign(node.style, { left: `${m.x}px`, top: `${m.y}px`, width: `${m.width}px`, height: `${m.height}px` });
         const badge = node.firstChild;

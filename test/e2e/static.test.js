@@ -11,8 +11,6 @@ import { briefProblems } from "./harness/golden.js";
 import {
   autoReload,
   CARD,
-  CARD_CHANGE,
-  CARD_FILES,
   CARD_RESEND,
   CARD_STATUS,
   CARD_TITLE,
@@ -123,8 +121,8 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     await env.tab.handler("side-panel");
     const target = await until(() => env.browser.targets().find((t) => t.url().endsWith("/panel/panel.html")), { what: "the side panel" });
     const panel = await target.asPage();
-    const site = `localhost:${env.app.port}`;
-    await until(() => panel.evaluate(`!document.getElementById("reload-setting").hidden && document.getElementById("reload-site").textContent`), {
+    const site = new URL(env.app.url("/")).origin;
+    await until(() => panel.evaluate(`!document.getElementById("reload-setting").hidden && document.getElementById("reload-setting").dataset.origin`), {
       is: (s) => s === site,
       what: "the reload setting for the site in front",
     });
@@ -347,6 +345,15 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
       assert.equal(await env.tab.evaluate(`getComputedStyle(root.querySelector(".marks .mark")).animationName`), "none", "no motion when it's reduced");
       assert.equal(await env.tab.evaluate(`root.querySelector(".panel .chip").textContent`), "3 elements");
       assert.equal(await env.tab.evaluate(composing), true, "the composer keeps the focus");
+
+      // Pointing at a row highlights it and its element on the page.
+      const row = await env.tab.evaluate(`(() => { const r = root.querySelectorAll(".picked li")[1].getBoundingClientRect(); return { x: r.x + r.width / 3, y: r.y + r.height / 2 }; })()`);
+      await env.page.mouse.move(row.x, row.y);
+      await env.tab.until(`[...root.querySelectorAll(".marks .mark.hot")].map((m) => m.textContent).join()`, { is: (s) => s === "2", what: "element 2 highlighted on the page" });
+      assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(".picked li")].map((li) => li.classList.contains("hot"))`), [false, true, false], "and its row");
+      await env.page.mouse.move(5, 5);
+      await env.tab.until(`root.querySelectorAll(".marks .mark.hot, .picked li.hot").length`, { is: (n) => n === 0, what: "the highlight gone with the pointer" });
+      assert.equal(await env.tab.evaluate(composing), true, "the composer still has the focus");
       await env.page.keyboard.type("make these match");
 
       // A plain ⇧-click (no ⌥) on one already in takes it out, and the rest renumber.
@@ -368,6 +375,11 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
       const pin = await env.tab.evaluate(`ns.pins.point(${n})`);
       const name = await (await env.page.$("#name")).boundingBox();
       assert.ok(pin.x >= name.x && pin.x <= name.x + name.width && pin.y >= name.y && pin.y <= name.y + name.height, "the pin is on element 1");
+      // A number on the pin would read as a count: it's the pin's name, not its text.
+      const pinEl = `[...root.querySelectorAll(".pin")].find((p) => p.dataset.number === "${n}")`;
+      await env.tab.until(`${pinEl}?.getAttribute("aria-label")`, { is: (l) => l?.startsWith(`Tweak ${n}: `), what: `tweak ${n}'s pin, named` });
+      assert.equal(await env.tab.evaluate(`${pinEl}.textContent`), "", "no number on the pin");
+      assert.equal(await env.tab.evaluate(`root.querySelector(".panel .chip").hidden`), true, "the card has no chip: the composer's was enough");
       await env.claude.tweakWith("done\n", "done", String(n), "-");
       await env.page.keyboard.press("Escape");
       await env.tab.until(noCard, { what: "esc to close the card" });
@@ -910,9 +922,9 @@ describe("static, when the session goes quiet", { skip: skipReason(fixture) ?? f
     env.watcher.stop();
     await env.tab.until(statusOf(n), { is: (s) => s === "sent", what: "the lapse to send the tweak back to waiting" });
     // While lapsed: the files it already changed, and no Undo.
-    await env.tab.until(text(CARD_CHANGE), { is: (s) => s === "Files already changed", what: "the files already changed" });
-    assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(${JSON.stringify(CARD_FILES)})].map((e) => e.textContent)`), ["public/index.html"]);
-    assert.equal(await env.tab.evaluate(`root.querySelector(".panel .undo").hidden`), true, "no Undo");
+    await env.tab.until(`ns.describe.change(ns.page.tweak(${n}))?.kind`, { is: (k) => k === "partial", what: "the files already changed" });
+    assert.deepEqual(await env.tab.evaluate(`ns.describe.change(ns.page.tweak(${n})).files.map((f) => f.path)`), ["public/index.html"]);
+    assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).hidden`), true, "no Undo");
 
     const second = standIn(env.bridge, { folder: env.app.folder, session: `claude-second-${process.pid}` });
     try {
@@ -1014,7 +1026,7 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
     await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "no card open" });
     const n = await send(".plan-title", "make the plan title bolder");
     const action = `root.querySelector(${JSON.stringify(CARD_ACTION)})`;
-    await env.tab.until(`${action}?.textContent`, { is: (s) => s === "Withdraw", what: "the card's Withdraw" });
+    await env.tab.until(`${action}?.getAttribute("aria-label")`, { is: (s) => s === "Stop and withdraw", what: "the card's Withdraw" });
 
     await down();
     await env.tab.until(`${action}.disabled`, { what: "Withdraw to be refused" });
@@ -1024,7 +1036,7 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
 
     await up();
     const from = env.watcher.lines.length;
-    await finishFromCard(env, n, "Withdraw");
+    await finishFromCard(env, n, "Stop and withdraw");
     await env.watcher.line(new RegExp(`^tweak ${n} withdrawn$`), { from });
   });
 
@@ -1178,6 +1190,27 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
     }
   });
 
+  test("a page going into the back/forward cache puts nothing on chrome://extensions' Errors page", async () => {
+    const extensions = await env.browser.newPage();
+    try {
+      await extensions.goto("chrome://extensions");
+      await extensions.evaluate(() => chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }));
+      const id = await inWorker(env.browser, `chrome.runtime.id`);
+      await open(env);
+      await env.page.bringToFront();
+      // Away and back: the page and its port go into the cache, and come out.
+      await env.page.evaluate(() => addEventListener("pageshow", (e) => (window.e2eFromCache = e.persisted)));
+      await env.page.goto(env.app.url("/?away"));
+      await env.page.goBack();
+      await until(() => env.page.evaluate(() => window.e2eFromCache), { is: (v) => v === true, what: "the page back from the back/forward cache" });
+      await sleep(1000); // for the worker to hear the port go and come back
+      const { runtimeErrors } = await extensions.evaluate((id) => chrome.developerPrivate.getExtensionInfo(id), id);
+      assert.deepEqual(runtimeErrors.map((e) => e.message).filter((m) => /back\/forward cache|Unchecked runtime\.lastError/.test(m)), []);
+    } finally {
+      await extensions.close();
+    }
+  });
+
   test("tries at a bridge that's down put nothing on chrome://extensions' Errors page", async () => {
     // The Errors page records only in developer mode, which loading an
     // unpacked extension needs anyway.
@@ -1228,7 +1261,7 @@ describe("static, withdrawn and resolved tweaks", { skip: skipReason(fixture) ??
       await env.claude.edit(c.edit);
 
       const heard = env.watcher.lines.length;
-      await finishFromCard(env, n, "Withdraw");
+      await finishFromCard(env, n, "Stop and withdraw");
       await env.tab.until(text(".toasts"), { is: (s) => s?.includes(`Tweak ${n} withdrawn`), what: "a toast saying where it went" });
       await env.watcher.line(new RegExp(`^tweak ${n} withdrawn$`), { from: heard });
       assert.equal(await env.claude.tweak("decline", String(n), "withdrawn"), `tweak ${n}: withdrawn, change kept for Undo\n`);
@@ -1258,7 +1291,7 @@ describe("static, withdrawn and resolved tweaks", { skip: skipReason(fixture) ??
     assert.equal(listed.status, "Change saved");
     // A reload brings back no pin for it.
     await open(env, c.path ?? "/");
-    assert.equal(await env.tab.evaluate(`[...root.querySelectorAll(".pin")].some((p) => p.textContent === "${n}")`), false);
+    assert.equal(await env.tab.evaluate(`[...root.querySelectorAll(".pin")].some((p) => p.dataset.number === "${n}")`), false);
 
     // On a tab whose address it can't read (127.0.0.1: this copy has no
     // access there), the list is about no site, so it lists none, and says why.
@@ -1325,7 +1358,7 @@ describe("static, resolved tweaks are deleted after they're kept", { skip: skipR
     mkdirSync(dirname(shot), { recursive: true });
     writeFileSync(shot, "\x89PNG"); // as the screenshot upload stores it
     const panel = await sidePanel(env);
-    await finishFromCard(env, n, "Withdraw");
+    await finishFromCard(env, n, "Stop and withdraw");
     await until(() => panel.evaluate((sel) => Boolean(document.querySelector(sel)), RESOLVED_ROW(n)), { what: `tweak ${n} listed` });
     await env.claude.tweak("decline", String(n), "withdrawn"); // its capture ends: until then it's kept
     await until(() => !existsSync(shot), { timeout: 15_000, what: "the screenshot to be deleted" });
@@ -1397,7 +1430,7 @@ describe("static on 127.0.0.1, through activeTab", { skip: skipReason(fixture) ?
 describe("static, the shortcuts and pins", { skip: skipReason(fixture) ?? false }, () => {
   const env = setup(fixture);
   const composing = `Boolean(root.activeElement) && root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`;
-  const pinOf = (n) => `[...root.querySelectorAll(".pin")].find((p) => p.textContent === "${n}")`;
+  const pinOf = (n) => `[...root.querySelectorAll(".pin")].find((p) => p.dataset.number === "${n}")`;
   const pinShown = (n) => `(() => { const p = ${pinOf(n)}; return Boolean(p) && !p.hidden && p.checkVisibility({ visibilityProperty: true }); })()`;
   const toasted = (text) => `[...root.querySelectorAll(".toast")].some((t) => t.textContent === ${JSON.stringify(text)})`;
   async function send(selector, request) {

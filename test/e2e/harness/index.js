@@ -30,14 +30,12 @@ export const REPLY_SEND = ".panel .answer .send";
 export const CARD_RESEND = ".panel .retry .send";
 // What a finished tweak changed: its title ("Files changed", "No edits
 // recorded", "No files changed") and the recorded files' paths.
-export const CARD_CHANGE = ".panel .change .entry-label";
-export const CARD_FILES = ".panel .change > .files .path";
 // Undo below it: the button (Undo, or Ask Claude to undo), and the note:
 // where an undo with Claude stands, or Undone.
-export const CARD_UNDO = ".panel .undo .send";
+export const CARD_UNDO = ".panel .actions .undo-button";
 export const CARD_UNDO_NOTE = ".panel .undo .undo-note";
 // The card's foot: Withdraw while Claude is on it, Resolve once it's finished.
-export const CARD_ACTION = ".panel .actions .send";
+export const CARD_ACTION = ".panel .actions .finish";
 // The side panel's resolved tweaks: one row per tweak, by number.
 export const RESOLVED_ROW = (n) => `#resolved-list li[data-number="${n}"]`;
 const text = (selector) => `root.querySelector(${JSON.stringify(selector)})?.textContent`;
@@ -290,7 +288,7 @@ async function pickCase(env, c) {
 export async function undoFromCard(env, { label = "Undo", note = "Undone" } = {}) {
   // Shown, not just built: a card opened before its tweak arrives has a
   // hidden Undo already labelled.
-  const button = `(() => { const b = root.querySelector(${JSON.stringify(CARD_UNDO)}); return b && !b.hidden && !b.closest("[hidden]") && b.textContent; })()`;
+  const button = `(() => { const b = root.querySelector(${JSON.stringify(CARD_UNDO)}); return b && !b.hidden && !b.closest("[hidden]") && (b.getAttribute("aria-label") ?? b.textContent); })()`;
   await env.tab.until(button, { is: (s) => s === label, what: `the card's ${label} button` });
   await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).focus()`);
   await env.page.keyboard.press("Enter");
@@ -301,13 +299,15 @@ export async function undoFromCard(env, { label = "Undo", note = "Undone" } = {}
 // and resolves once the tweak has left the page: its card has closed and
 // its pin has gone.
 export async function finishFromCard(env, n, label) {
-  await env.tab.until(text(CARD_ACTION), { is: (s) => s === label, what: `the card's ${label} button` });
+  // Withdraw and Resolve are icons, named by their aria-label.
+  const name = `(() => { const b = root.querySelector(${JSON.stringify(CARD_ACTION)}); return b?.getAttribute("aria-label"); })()`;
+  await env.tab.until(name, { is: (s) => s === label, what: `the card's ${label} button` });
   // A card just shown takes the focus a frame later: focus the button after it.
   const button = `root.querySelector(${JSON.stringify(CARD_ACTION)})`;
   await env.tab.evaluate(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(${button}.focus()))))`);
   await env.tab.until(`root.activeElement === ${button}`, { what: `the focus on ${label}` });
   await env.page.keyboard.press("Enter");
-  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)}) && ![...root.querySelectorAll(".pin")].some((p) => p.textContent === "${n}")`, {
+  await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)}) && ![...root.querySelectorAll(".pin")].some((p) => p.dataset.number === "${n}")`, {
     what: `tweak ${n}'s card and pin to leave the page`,
   });
 }
@@ -436,13 +436,11 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
     await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
     assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
     if (edit) {
-      // The card lists the file the hook recorded.
-      await env.tab.until(text(CARD_CHANGE), { is: (s) => s === "Files changed", what: "the card to list the files changed" });
-      assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(${JSON.stringify(CARD_FILES)})].map((f) => f.textContent)`), [edit.file]);
-      // It's read out as it arrives, and the list keeps its list semantics.
-      await env.tab.until(text(".panel .sr-only"), { is: (s) => s?.includes("1 file changed"), what: "the change to be read out" });
-      assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change > .files").getAttribute("role")`), "list");
-      assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change").hasAttribute("tabindex")`), false, "a short list is no tab stop");
+      // The hook recorded the file, which the tab hears (for Undo and the
+      // reload); the card doesn't list it.
+      await env.tab.until(`ns.describe.change(ns.page.tweak(${n}))`, { is: (c) => c?.kind === "recorded", what: "the change, recorded" });
+      assert.deepEqual(await env.tab.evaluate(`ns.describe.change(ns.page.tweak(${n})).files.map((f) => f.path)`), [edit.file]);
+      assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change")`), null, "no files listed in the card");
 
       // The page shows the change; after our reload the card is back, Done.
       await updated(env, c, n, edit.text, "after the change");

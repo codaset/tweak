@@ -33,3 +33,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Claude mark
+
+The spark beside Claude's words in a tweak's card (`extension/content/card.js`, `CLAUDE_MARK`) is
+the Claude logo, a trademark of Anthropic, PBC, used to show what Claude said. It is not licensed
+for reuse with this code; check Anthropic's brand guidelines before a public release.

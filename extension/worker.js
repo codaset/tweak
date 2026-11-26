@@ -84,6 +84,9 @@ chrome.runtime.onConnect.addListener((port) => {
   port.shots = new Map(); // a tab's captures, held until Send or drop
   port.dropped = new Set(); // ids dropped while still being captured
   port.onDisconnect.addListener(() => {
+    // Read, so Chrome doesn't list it as unchecked: a page going into the
+    // back/forward cache closes its port with an error, which is expected.
+    void chrome.runtime.lastError;
     ports.delete(port);
     port.shots.clear();
     if (port.suggestions?.length) publishSuggestions();

@@ -280,7 +280,7 @@ test("a withdrawn tweak's change is listed and undoable, as a finished one's", (
 
 test("an open tweak's card offers Withdraw, a finished one's Resolve, and a resolved one neither", () => {
   const { finish } = ns.describe;
-  for (const s of ["sent", "delivered", "queued", "working", "question"]) assert.deepEqual({ ...finish({ status: s }) }, { kind: "withdraw", label: "Withdraw" }, s);
+  for (const s of ["sent", "delivered", "queued", "working", "question"]) assert.deepEqual({ ...finish({ status: s }) }, { kind: "withdraw", label: "Stop and withdraw" }, s);
   for (const s of ["done", "declined"]) assert.deepEqual({ ...finish({ status: s }) }, { kind: "resolve", label: "Resolve" }, s);
   assert.equal(finish({ status: "withdrawn", resolvedAt: "2026-11-26T10:00:00Z" }), null);
   assert.equal(finish({ status: "done", resolvedAt: "2026-11-26T10:00:00Z" }), null);

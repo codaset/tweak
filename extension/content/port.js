@@ -52,6 +52,7 @@
         for (const fn of listeners) fn(msg);
       });
       port.onDisconnect.addListener(() => {
+        void chrome.runtime.lastError; // expected, e.g. the page went into the back/forward cache
         port = null;
         // Until the new port's state arrives, nothing can be sent, and
         // whatever was waiting on the worker will never be answered.

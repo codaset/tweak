@@ -2,8 +2,9 @@
 // at once on a pick; Send turns it into the card, which shows the status live
 // (with the time spent while working), the request and the conversation after
 // it: Claude's plan, its question, your reply, its summary or its reason for
-// declining; once Claude is done, the files it changed, and Undo (or where
-// an undo with Claude stands). While Claude has a
+// declining; once Claude is done, Undo (or where an undo with Claude
+// stands). The files it changed aren't listed: the side panel's resolved
+// tweaks say how many. While Claude has a
 // question, the card has a reply box, and the card opens by itself when the
 // question arrives (without taking the focus). When Claude hasn't picked a
 // delivered tweak up after the bridge sent it twice more, the card says so
@@ -34,11 +35,10 @@
   const EDGE = 8; // from the viewport's edges
 
   // mode: null, {kind: "compose", element, targets, anchor, sending, error, ref}
-  // or {kind: "card", number, request, label, replying, replyError, replyRef,
+  // or {kind: "card", number, request, replying, replyError, replyRef,
   // resending, resendError, resendRef, undoing, undoError, undoRef, finishing,
-// finishError, finishRef} (request
-  // and label are the local copies while the bridge's tweak hasn't arrived
-  // yet; the reply fields are a reply on its way, the resend fields a Send
+  // finishError, finishRef} (request is the local copy while the bridge's
+  // tweak hasn't arrived yet; the reply fields are a reply on its way, the resend fields a Send
   // again, the undo fields an Undo, the finish fields a Withdraw or Resolve
 // on its way, finishing being which). Both may carry
   // returnTo, the element focus goes back to on close.
@@ -49,6 +49,53 @@
   let refs = 0;
 
   const el = (...a) => ns.overlay.el(...a);
+
+  // Icon buttons: Withdraw is a stop sign, Resolve a tick, Undo an arrow
+  // turning back. The
+  // label is the button's accessible name and its tooltip (overlay.js).
+  const ICONS = {
+    withdraw: ["solid:M5.2 1.25h5.6l3.95 3.95v5.6l-3.95 3.95h-5.6L1.25 10.8V5.2Z", "knock:M5 8h6"],
+    resolve: ["M2.75 8.5 6.25 12 13.25 4.5"],
+    undo: ["M5.75 3.25 2.5 6.5l3.25 3.25", "M2.75 6.5h6.5a3.75 3.75 0 0 1 0 7.5H7.5"],
+  };
+  function icon(name) {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    for (const spec of ICONS[name]) {
+      // "solid:" fills a shape; "knock:" draws a line in the card's colour across it.
+      const [, kind, d] = spec.match(/^(?:(solid|knock):)?(.*)$/);
+      const path = document.createElementNS(NS, "path");
+      path.setAttribute("d", d);
+      if (kind) path.setAttribute("class", kind);
+      svg.append(path);
+    }
+    return svg;
+  }
+  // claudeMark is Claude's spark, beside the label of what Claude says in
+  // the conversation. Anthropic's trademark: see THIRD_PARTY_NOTICES.md.
+  const CLAUDE_MARK = "M 233.9 800.2 L 468.6 668.5 L 472.5 657.1 L 468.6 650.7 L 457.2 650.7 L 417.9 648.3 L 283.8 644.6 L 167.5 639.8 L 54.9 633.8 L 26.5 627.7 L 3.3e-05 592.7 L 2.7 575.2 L 26.5 559.2 L 60.7 562.2 L 136.1 567.3 L 249.4 575.1 L 331.5 580.0 L 453.2 592.6 L 472.5 592.6 L 475.3 584.8 L 468.7 580.0 L 463.5 575.1 L 346.3 495.7 L 219.5 411.8 L 153.1 363.5 L 117.1 339.0 L 99.0 316.1 L 91.2 266.0 L 123.8 230.0 L 167.6 233.0 L 178.8 236.0 L 223.2 270.2 L 318.0 343.5 L 441.8 434.7 L 459.9 449.7 L 467.1 444.6 L 468.0 441.0 L 459.9 427.4 L 392.6 305.7 L 320.7 181.9 L 288.8 130.6 L 280.3 99.8 C 277.3 87.2 275.1 76.5 275.1 63.6 L 312.3 13.2 L 332.8 6.6 L 382.3 13.2 L 403.2 31.3 L 434.0 101.7 L 483.8 212.5 L 561.1 363.2 L 583.8 407.9 L 595.8 449.3 L 600.4 461.9 L 608.2 461.9 L 608.2 454.7 L 614.5 369.8 L 626.3 265.6 L 637.7 131.5 L 641.7 93.7 L 660.4 48.4 L 697.5 24.0 L 726.5 37.8 L 750.3 72 L 747.0 94.0 L 732.8 186.2 L 705.1 330.5 L 686.9 427.1 L 697.5 427.1 L 709.6 415.0 L 758.4 350.1 L 840.6 247.4 L 876.8 206.7 L 919.1 161.7 L 946.3 140.2 L 997.6 140.2 L 1035.3 196.4 L 1018.4 254.4 L 965.6 321.4 L 921.8 378.2 L 859.0 462.7 L 819.7 530.4 L 823.4 535.8 L 832.7 534.9 L 974.6 504.7 L 1051.3 490.8 L 1142.8 475.1 L 1184.2 494.4 L 1188.7 514.1 L 1172.4 554.3 L 1074.6 578.4 L 959.8 601.4 L 788.9 641.8 L 786.8 643.4 L 789.2 646.3 L 866.2 653.6 L 899.1 655.4 L 979.8 655.4 L 1129.9 666.6 L 1169.1 692.5 L 1192.6 724.2 L 1188.7 748.4 L 1128.3 779.1 L 1046.8 759.8 L 856.5 714.6 L 791.3 698.3 L 782.3 698.3 L 782.3 703.7 L 836.6 756.8 L 936.3 846.8 L 1061.0 962.8 L 1067.4 991.4 L 1051.4 1014.1 L 1034.4 1011.7 L 924.8 929.2 L 882.6 892.1 L 786.8 811.4 L 780.4 811.4 L 780.4 819.9 L 802.5 852.2 L 919.0 1027.4 L 925.1 1081.1 L 916.6 1098.6 L 886.4 1109.1 L 853.2 1103.1 L 785.0 1007.3 L 714.6 899.5 L 657.9 802.8 L 650.9 806.8 L 617.4 1167.7 L 601.7 1186.1 L 565.5 1200 L 535.3 1177.0 L 519.3 1139.9 L 535.3 1066.5 L 554.6 970.7 L 570.3 894.6 L 584.5 800.1 L 592.9 768.7 L 592.4 766.6 L 585.5 767.5 L 514.2 865.3 L 405.8 1011.8 L 320.0 1103.6 L 299.5 1111.8 L 263.9 1093.3 L 267.2 1060.4 L 287.1 1031.1 L 405.8 880.1 L 477.4 786.5 L 523.6 732.4 L 523.3 724.6 L 520.5 724.6 L 205.2 929.3 L 149.1 936.6 L 124.9 914.0 L 127.9 876.8 L 139.4 864.8 L 234.2 799.5 L 233.8 799.8 Z";
+  function claudeMark() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 1200 1200");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("class", "claude-mark");
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", CLAUDE_MARK);
+    svg.append(path);
+    return svg;
+  }
+
+  // iconLabel shows icon name on button, named label.
+  function iconLabel(button, name, label) {
+    if (button.dataset.icon !== name) {
+      button.replaceChildren(icon(name));
+      button.dataset.icon = name;
+    }
+    if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
+  }
 
   function frame(title, chip) {
     panel?.remove();
@@ -176,9 +223,21 @@
     }
     const list = el("ol", "picked");
     list.setAttribute("aria-label", "Elements in this tweak");
+    mode.hot = 0; // the list is new: no row is under the pointer or focus yet
     if (targets.elements.length > 1) {
       targets.elements.forEach((e, i) => {
         const item = el("li");
+        // Pointing at a row, or focusing its ×, highlights it and its element
+        // on the page (marked(), every frame).
+        const hot = (on) => {
+          item.classList.toggle("hot", on);
+          if (on) mode.hot = i + 1;
+          else if (mode.hot === i + 1) mode.hot = 0;
+        };
+        item.addEventListener("pointerenter", () => hot(true));
+        item.addEventListener("pointerleave", () => hot(item.matches(":focus-within")));
+        item.addEventListener("focusin", () => hot(true));
+        item.addEventListener("focusout", (ev) => hot(item.contains(ev.relatedTarget) || item.matches(":hover")));
         const remove = el("button", "remove", "×");
         remove.type = "button";
         remove.setAttribute("aria-label", `Remove element ${i + 1}, ${e.label}`);
@@ -213,7 +272,8 @@
       const { pick } = mode;
       if (pick.kind === "text") return [...pick.range.getClientRects()].filter((r) => r.width && r.height).map((r) => ({ kind: "text", ...box(r) }));
       if (pick.kind === "area") return [...areaBox(mode.targets.area), ...inArea(pick.elements)];
-      return pick.elements.length > 1 ? pick.elements.flatMap((e, i) => of(e, "element", i + 1)) : [];
+      if (pick.elements.length < 2) return [];
+      return pick.elements.flatMap((e, i) => of(e, "element", i + 1).map((m) => (mode.hot === i + 1 ? { ...m, hot: true } : m)));
     }
     if (mode?.kind === "card") {
       const targets = ns.page.tweak(mode.number)?.targets;
@@ -309,9 +369,13 @@
 
   function drawCard() {
     const tweak = ns.page.tweak(mode.number);
-    frame(`Tweak ${mode.number}`, mode.label);
+    // A tweak's card has no chip: the pin and the outline already say what
+    // it points at. The composer keeps one ("3 elements").
+    frame(`Tweak ${mode.number}`, "");
     const status = el("div", "status");
     const dot = el("span", "dot");
+    // Claude's spark stands in for the dot while Claude has the tweak.
+    const mark = claudeMark();
     const statusText = el("span", "status-text");
     // "Change saved · Reload" while the page's reload is held back, with
     // the reason under it (reload.js).
@@ -322,7 +386,7 @@
     const reloadSep = el("span", "reload-sep", "·");
     reloadSep.setAttribute("aria-hidden", "true");
     reloadSep.hidden = true;
-    status.append(dot, statusText, reloadSep, reloadNow);
+    status.append(dot, mark, statusText, reloadSep, reloadNow);
     // Its own live region, so it never talks over the card's read-outs.
     const reloadWhy = el("p", "reload-why");
     reloadWhy.setAttribute("role", "status");
@@ -388,40 +452,37 @@
     retry.append(retryError, resend);
     retry.hidden = true;
 
-    // What the tweak changed, once Claude is done (design.md § On the card).
-    const changed = el("section", "change");
-    changed.hidden = true;
-    changed.setAttribute("aria-label", "What changed");
-
-    // Undo, or where an undo with Claude stands, below what changed.
+    // Where an undo with Claude stands, below the conversation. Its button sits
+    // in the foot, beside Resolve.
     const undoRow = el("div", "undo");
     undoRow.hidden = true;
     const undoNote = el("p", "undo-note");
     const undoError = el("span", "error");
     undoError.setAttribute("role", "alert");
-    const undoButton = el("button", "send secondary", "Undo");
+    const undoButton = el("button", "send secondary icon undo-button");
+    iconLabel(undoButton, "undo", "Undo");
     undoButton.type = "button";
     undoButton.addEventListener("click", submitUndo);
-    undoRow.append(undoNote, undoError, undoButton);
+    undoButton.hidden = true;
+    undoRow.append(undoNote, undoError);
 
-    // Withdraw while Claude is still on it; Resolve once it's finished.
+    // Withdraw while Claude is still on it; Undo and Resolve once it's finished.
     const actions = el("div", "actions");
     actions.hidden = true;
     const actionError = el("span", "error");
     actionError.setAttribute("role", "alert");
-    const actionButton = el("button", "send quiet", "Withdraw");
+    const actionButton = el("button", "send icon quiet finish");
     actionButton.type = "button";
     actionButton.addEventListener("click", submitFinish);
-    actions.append(actionError, actionButton);
+    actions.append(actionError, undoButton, actionButton);
 
-    panel.append(status, reloadWhy, retry, request, thread, changed, undoRow, answer, actions, heard);
+    panel.append(status, reloadWhy, retry, request, thread, undoRow, answer, actions, heard);
     status.setAttribute("aria-live", "polite");
     // heardUpTo is how many entries have been read out or were there when the
     // card opened; a card opened by Claude's question reads that one out.
     const entries = ns.describe.thread(tweak);
     const heardUpTo = mode.announce ? Math.max(0, entries.length - 1) : entries.length;
     parts = {
-      chip: panel.querySelector(".chip"),
       status,
       statusText,
       reloadNow,
@@ -430,8 +491,6 @@
       request,
       thread,
       said: "",
-      changed,
-      listed: "",
       heard,
       heardUpTo,
       answer,
@@ -454,13 +513,11 @@
   }
 
   function updateCard(tweak = ns.page.tweak(mode.number)) {
-    const { chip, status, statusText, request, thread, answer, box } = parts;
-    const label = (tweak && ns.describe.pointedAt(tweak.targets)) || mode.label || "";
-    if (chip.textContent !== label) chip.textContent = label;
-    chip.hidden = !label;
+    const { status, statusText, request, thread, answer, box } = parts;
     const s = ns.describe.status(tweak);
     const unanswered = ns.describe.unanswered(tweak);
-    const statusClass = `status ${ns.describe.classes(tweak)}${unanswered || s.quiet ? " unanswered" : ""}`;
+    const withClaude = ns.describe.WITH_CLAUDE.has(tweak?.status) ? " with-claude" : "";
+    const statusClass = `status ${ns.describe.classes(tweak)}${unanswered || s.quiet ? " unanswered" : ""}${withClaude}`;
     if (status.className !== statusClass) status.className = statusClass;
     if (statusText.textContent !== s.text) {
       // A folder in the text shows as code.
@@ -483,7 +540,9 @@
       thread.replaceChildren(
         ...entries.map((e) => {
           const item = el("div", e.className);
-          item.append(el("div", "entry-label", e.label), el("p", "entry-text", e.text));
+          const label = el("div", "entry-label", e.label);
+          if (e.className.includes("from-claude")) label.prepend(claudeMark());
+          item.append(label, el("p", "entry-text", e.text));
           return item;
         }),
       );
@@ -493,9 +552,7 @@
       parts.heardUpTo = entries.length;
     }
 
-    // New entries and a change that arrives are read out together.
-    const change = drawChange(ns.describe.change(tweak));
-    if (change) toSay.push(change);
+    // New entries and where an undo stands are read out together.
     const undone = drawUndo(tweak);
     if (undone) toSay.push(undone);
     announce(toSay);
@@ -533,19 +590,22 @@
     const { actions, actionButton, actionError } = parts;
     const offer = ns.describe.finish(tweak);
     const kind = mode.finishing ?? (mode.finishError ? mode.finishKind : offer?.kind);
-    if (actions.hidden === Boolean(kind)) {
+    if (actionButton.hidden === Boolean(kind)) {
       if (!kind && ns.overlay.root?.activeElement === actionButton) panel.focus({ preventScroll: true });
-      actions.hidden = !kind;
+      actionButton.hidden = !kind;
     }
+    // The foot also holds Undo, so it shows while either button does.
+    const foot = !kind && parts.undoButton.hidden;
+    if (actions.hidden !== foot) actions.hidden = foot;
     if (!kind) return;
-    const className = `send ${kind === "resolve" ? "secondary" : "quiet"}`;
+    const className = `send icon finish ${kind === "resolve" ? "secondary" : "quiet"}`;
     if (actionButton.className !== className) actionButton.className = className;
     const connected = ns.worker.connection === "connected";
     if (actionButton.disabled !== !connected) actionButton.disabled = !connected;
     const busy = String(Boolean(mode.finishing));
     if (actionButton.getAttribute("aria-disabled") !== busy) actionButton.setAttribute("aria-disabled", busy);
-    const label = mode.finishing ? { withdraw: "Withdrawing…", resolve: "Resolving…" }[kind] : { withdraw: "Withdraw", resolve: "Resolve" }[kind];
-    if (actionButton.textContent !== label) actionButton.textContent = label;
+    const label = mode.finishing ? { withdraw: "Stopping and withdrawing…", resolve: "Resolving…" }[kind] : { withdraw: "Stop and withdraw", resolve: "Resolve" }[kind];
+    iconLabel(actionButton, kind, label);
     const why = mode.finishError || (connected ? "" : "Not connected to Tweak");
     if (actionError.textContent !== why) actionError.textContent = why;
   }
@@ -609,53 +669,6 @@
     reloadNow.hidden = reloadSep.hidden = !notice;
   }
 
-  // drawChange lists what the tweak changed, redrawn only when it changes:
-  // the recorded files, then the files that changed without being recorded;
-  // files outside the session's project are labelled so.
-  // It returns the change to read out when one arrives while the card is
-  // open (not one already there when it opened), or null.
-  function drawChange(c) {
-    const { changed } = parts;
-    const listed = JSON.stringify(c);
-    if (listed === parts.listed) return null;
-    const arrived = parts.listed !== "" && c;
-    parts.listed = listed;
-    changed.hidden = !c;
-    if (!c) {
-      changed.replaceChildren();
-      changed.removeAttribute("tabindex");
-      return null;
-    }
-    const { OUTSIDE, UNRECORDED } = ns.describe;
-    const file = (f) => {
-      const item = el("li", f.outside ? "file outside" : "file");
-      item.append(el("code", "path", f.path));
-      if (f.outside) item.append(el("span", "where", OUTSIDE));
-      return item;
-    };
-    changed.className = "change change-" + c.kind;
-    changed.replaceChildren(el("div", "entry-label", c.title));
-    // list-style: none drops list semantics in Safari and VoiceOver: keep them.
-    const list = (files) => {
-      const ul = el("ul", "files");
-      ul.setAttribute("role", "list");
-      ul.append(...files.map(file));
-      return ul;
-    };
-    if (c.files.length) changed.append(list(c.files));
-    if (c.unrecorded.length) {
-      const also = el("div", "unrecorded");
-      also.append(el("p", "note", UNRECORDED), list(c.unrecorded));
-      changed.append(also);
-    }
-    // A tab stop only when the list overflows and needs scrolling.
-    requestAnimationFrame(() => {
-      if (changed.scrollHeight > changed.clientHeight) changed.tabIndex = 0;
-      else changed.removeAttribute("tabindex");
-    });
-    return arrived ? c : null;
-  }
-
   // drawUndo shows Undo (or Ask Claude to undo) for a finished change, or
   // where its undo stands: with Claude, waiting for a session, or undone.
   // It returns what to read out when that changes while the card is open.
@@ -667,12 +680,12 @@
     if (said !== parts.undoSaid) {
       if (parts.undoSaid !== "" && u && u.kind !== "offer") arrived = u;
       parts.undoSaid = said;
-      undoRow.hidden = !u;
       undoRow.className = `undo${u ? ` undo-${u.kind}` : ""}`;
       const offer = u?.kind === "offer";
       // The button goes once the undo is under way: the focus stays in the card.
       if (!offer && ns.overlay.root?.activeElement === undoButton) panel.focus({ preventScroll: true });
       undoButton.hidden = !offer;
+      refreshFinish(tweak);
       if (u?.kind === "waiting") undoNote.replaceChildren(u.text, " ", el("code", "command", u.command));
       else undoNote.replaceChildren(offer ? u.note : (u?.text ?? ""));
       undoNote.hidden = !undoNote.textContent;
@@ -684,7 +697,7 @@
   }
 
   function refreshUndo(u = ns.describe.undo(ns.page.tweak(mode.number))) {
-    const { undoButton, undoError } = parts;
+    const { undoRow, undoButton, undoError } = parts;
     const connected = ns.worker.connection === "connected";
     // While its answer is on the way the button keeps the focus (a disabled
     // button would drop it), so it's only marked unavailable.
@@ -693,10 +706,14 @@
     if (undoButton.getAttribute("aria-disabled") !== busy) undoButton.setAttribute("aria-disabled", busy);
     const asking = u?.label === "Ask Claude to undo";
     const label = mode.undoing ? (asking ? "Asking Claude…" : "Undoing…") : (u?.label ?? "Undo");
-    if (undoButton.textContent !== label) undoButton.textContent = label;
+    iconLabel(undoButton, "undo", label);
     const why = u?.kind === "offer" ? mode.undoError || (connected ? "" : "Not connected to Tweak") : "";
     if (undoError.textContent !== why) undoError.textContent = why;
     if (undoError.hidden !== !why) undoError.hidden = !why;
+    // The row says where an undo stands, or why Undo can't: with only a
+    // button to offer, it has nothing to show (the button is in the foot).
+    const quiet = !u || (u.kind === "offer" && !u.note && !why);
+    if (undoRow.hidden !== quiet) undoRow.hidden = quiet;
   }
 
   function submitUndo() {
@@ -852,7 +869,7 @@
     // show opens the card of tweak number. With focus, it takes the focus,
     // and gives it back to returnTo when it closes; a card reopened after a
     // reload doesn't take it.
-    show(number, { request, label, focus = false, returnTo = null, announce = false, range = null } = {}) {
+    show(number, { request, focus = false, returnTo = null, announce = false, range = null } = {}) {
       // A composer this card replaces unsent takes its capture with it; a
       // sent one's went to the worker with its create.
       if (mode?.kind === "compose" && !mode.created) ns.screenshot.drop(mode.shot);
@@ -860,7 +877,7 @@
       ns.picker.release();
       composing(false);
       opened++;
-      mode = { kind: "card", number, request, label, returnTo, announce, range };
+      mode = { kind: "card", number, request, returnTo, announce, range };
       drawCard();
       place();
       if (focus) focusIn();
@@ -924,7 +941,6 @@
         mode.created = true; // its capture is the worker's now
         this.show(msg.number, {
           request: parts.text.value.trim(),
-          label: ns.describe.pointedAt(mode.targets),
           focus: true,
           returnTo: mode.pick.elements[0],
           range: mode.pick.range ?? null, // the selection just sent, kept while it's on the page

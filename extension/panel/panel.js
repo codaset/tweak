@@ -78,12 +78,10 @@ function render(state) {
   $("unclaimed-command").textContent = `/tweak ${activeOrigin ?? ""}`;
   $("pins-setting").hidden = kind === "none";
   $("pins-setting").dataset.origin = activeOrigin ?? "";
-  $("pins-site").textContent = (activeOrigin ?? "").replace(/^https?:\/\//, "");
   $("pins-shown").checked = !pinsHidden[activeOrigin];
   // Its reload setting, beside it, where a change can land.
   $("reload-setting").hidden = kind === "none";
   $("reload-setting").dataset.origin = activeOrigin ?? "";
-  $("reload-site").textContent = (activeOrigin ?? "").replace(/^https?:\/\//, "");
   $("auto-reload").checked = autoReload[activeOrigin] !== false;
   const gone = (state.gone ?? []).filter((g) => g.tabId === activeTab);
   $("gone").hidden = gone.length === 0;
@@ -278,6 +276,7 @@ function listen() {
     if (msg.type === "undid") undid(msg);
   });
   port.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError; // expected when the worker restarts
     port = null;
     for (const [number, u] of undos) if (!u.error) undos.set(number, { ...u, error: "Not connected to Tweak" });
     setTimeout(listen, 100);

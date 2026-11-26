@@ -511,7 +511,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
 - **Not tied to one agent**: a session records which agent it is (`agent: claude-code` in v1). The
   CLI takes the session ID from the agent's environment (`CLAUDE_CODE_SESSION_ID`) or `--session`.
 
-**Tweak numbers** are bridge-wide and permanent: "Tweak 12" on pins and cards, `12` in the CLI.
+**Tweak numbers** are bridge-wide and permanent: "Tweak 12" on cards (and a pin's accessible name;
+the pin itself shows no number, which would read as a count), `12` in the CLI.
 
 **Statuses** and who sets them:
 
@@ -1177,6 +1178,9 @@ Don't stop the Monitor yourself.
 Opens when you send a tweak, in place of the composer, and stays open until **esc** or **×**.
 Clicking around the page leaves it open. It shows the status (with the time spent while working),
 Claude's plan, any question with a reply box, the summary, and **Withdraw** while the tweak is open. It reopens in place after a reload.
+**Withdraw**, **Resolve** and **Undo** are icon buttons (a stop sign, a tick, an arrow turning
+back), each named by its label, which shows as a tooltip on hover or focus. Neither the pin nor the
+card's head names the elements: the pin is a plain marker, and the card's title is "Tweak 12".
 A question opens its card by itself, without taking the focus, unless a composer or a reply being
 written is open.
 
@@ -1365,17 +1369,16 @@ resolved tweaks in the side panel; not while the tweak is `working` or has a `qu
 doesn't resolve the tweak or remove its pin. It stays available until the change is deleted, 7 days
 after resolution.
 
-- **Every edit recorded**: the files changed, and **Undo**.
-- **Some unrecorded**: also "Also changed while Claude worked, not recorded: `a.rb`, `b.css`". Undo
-  reverts only the recorded files, and says so.
-- **Nothing recorded, but the git check found changes, or there's no repo to check**: "No edits
-  recorded", and **Ask Claude to undo**, which goes to the session as an undo conflict
+The card doesn't list the files changed (the side panel's resolved tweaks say how many); what it
+shows depends on what was recorded:
+
+- **Every edit recorded**: **Undo**.
+- **Some unrecorded**: **Undo**, which says it reverts only the recorded files.
+- **Nothing recorded, but the git check found changes, or there's no repo to check**: **Ask Claude
+  to undo**, which goes to the session as an undo conflict
   (`tweak 12 undo-conflict: no edits recorded, undo by hand`). `tweak undo` then prints Claude's
   summary and the unrecorded files, and a declined undo leaves the change `nothing-recorded`.
-- **Nothing changed**: "No files changed", and no Undo. A tweak declined before anything changed
-  says nothing about files.
-- Files outside the project carry an "outside this project" label in any of these lists, and are
-  shown by their absolute path (`~/` for the home folder); the others are relative to the project.
+- **Nothing changed**: no Undo.
 - While `undo-requested`: "Undo needs Claude: 1 of 2 files changed since" (or "no edits were
   recorded"); afterwards "Undone", or Claude's reason if it declined the undo, and Undo again.
 

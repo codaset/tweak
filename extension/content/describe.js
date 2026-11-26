@@ -26,6 +26,9 @@
   const FINAL = new Set([...ENDED_BY_CLAUDE, "withdrawn"]);
   // How sent and delivered read once the developer has replied to a question.
   const REPLIED = { sent: "Reply sent", delivered: "Claude has your reply" };
+  // WITH_CLAUDE: the statuses that say Claude has the tweak; the card shows
+  // Claude's spark for them instead of the status dot.
+  const WITH_CLAUDE = new Set(["delivered", "working", "question"]);
   // The statuses that wait on the session to hear of the tweak: these need
   // its watcher.
   const WAITS = { sent: true, delivered: true };
@@ -199,7 +202,7 @@
   // is done or has declined; neither once it's resolved.
   function finish(tweak) {
     if (!tweak || tweak.resolvedAt) return null;
-    if (OPEN.has(tweak.status)) return { kind: "withdraw", label: "Withdraw" };
+    if (OPEN.has(tweak.status)) return { kind: "withdraw", label: "Stop and withdraw" };
     if (ENDED_BY_CLAUDE.has(tweak.status)) return { kind: "resolve", label: "Resolve" };
     return null;
   }
@@ -260,7 +263,7 @@
   // element is one element as a tweak's targets carry it (schema/create.json).
   const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
 
-  // pointedAt is what a tweak's targets point at, as the card's chip says
+  // pointedAt is what a tweak's targets point at, as the composer's chip says
   // it: element 1's label, "3 elements", the selected text quoted, or the
   // area's size.
   function pointedAt(targets) {
@@ -274,5 +277,5 @@
     return els[0]?.label ?? "";
   }
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, span, ago, origin, OPEN, ENDED_BY_CLAUDE, FINAL, UNRECORDED, OUTSIDE, label, text, selector, element, pointedAt };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, span, ago, origin, OPEN, ENDED_BY_CLAUDE, WITH_CLAUDE, FINAL, UNRECORDED, OUTSIDE, label, text, selector, element, pointedAt };
 })();

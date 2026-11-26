@@ -141,11 +141,19 @@
       font-variant-numeric: tabular-nums;
       box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
     }
+    /* The element whose row in the composer's list is pointed at */
+    .mark { transition: opacity 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
+    .mark.hot { background: color-mix(in srgb, var(--outline) 16%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--outline) 35%, transparent); }
+    .mark.hot .mark-number { transform: scale(1.15); }
+    .mark-number { transition: transform 120ms ease; }
     .mark.kind-inside .mark-number { background: var(--bg); color: var(--outline); border-color: color-mix(in srgb, var(--outline) 55%, transparent); }
 
     /* The composer's list of what it points at */
-    .picked { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 168px; overflow: auto; overscroll-behavior: contain; }
-    .picked li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    /* Rows carry their own padding, for their highlight; the list's negative margin keeps them aligned */
+    .picked { display: grid; gap: 0; margin: -3px -6px; padding: 0; list-style: none; max-height: 168px; overflow: auto; overscroll-behavior: contain; }
+    .picked li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 6px; border-radius: 7px; transition: background-color 120ms ease; }
+    .picked li.hot { background: color-mix(in srgb, var(--outline) 12%, transparent); }
+    .picked li.hot .what { color: var(--text); }
     .picked .n {
       flex: none;
       min-width: 18px;
@@ -196,14 +204,14 @@
     /* Pins */
     .pin {
       position: fixed;
-      width: 24px;
-      height: 24px;
-      margin: -24px 0 0 0; /* the pointed corner, bottom left, sits on the click point */
+      width: 20px;
+      height: 20px;
+      margin: -20px 0 0 0; /* the pointed corner, bottom left, sits on the click point */
       transform-origin: 0 100%;
       display: grid;
       place-items: center;
       border: 2px solid var(--bg);
-      border-radius: 50% 50% 50% 4px;
+      border-radius: 50% 50% 50% 3px;
       background: var(--tone, var(--tone-sent));
       color: var(--on-tone, var(--on-sent));
       font: 650 11px/1 system-ui, -apple-system, sans-serif;
@@ -216,15 +224,19 @@
     .pin:hover { transform: scale(1.12); }
     .pin:focus-visible { outline: 2px solid var(--outline); outline-offset: 2px; }
     .pin.open { transform: scale(1.12); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 35%, transparent), 0 1px 3px rgb(0 0 0 / 0.3); }
-    .pin.working::after {
+    /* Working: two rings ripple out in turn, and a halo breathes on the pin. */
+    .pin.working { animation: breathe 1.8s ease-in-out infinite; }
+    .pin.working::before, .pin.working::after {
       content: "";
       position: absolute;
-      inset: -6px;
+      inset: -4px;
       border-radius: inherit;
       border: 2px solid var(--tone);
       opacity: 0;
-      animation: ripple 1.6s ease-out infinite;
+      pointer-events: none;
+      animation: ripple 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
     }
+    .pin.working::after { animation-delay: -0.9s; }
     .picking .pin { opacity: 0.3; pointer-events: none; }
     /* While the bridge is down, pins and the card are from the last snapshot:
        faded, and the card read-only. The fade waits a moment, so a short
@@ -268,8 +280,8 @@
     }
     /* The card stays opaque, so the page never shows through: what it shows
        from the snapshot fades, and what you type stays crisp. */
-    .panel > .status, .panel > .request, .panel > .thread, .panel > .change, .panel > .pointed-at { transition: opacity 200ms ease; }
-    .panel.offline > .status, .panel.offline > .request, .panel.offline > .thread, .panel.offline > .change, .panel.offline > .pointed-at { opacity: 0.72; }
+    .panel > .status, .panel > .request, .panel > .thread, .panel > .pointed-at { transition: opacity 200ms ease; }
+    .panel.offline > .status, .panel.offline > .request, .panel.offline > .thread, .panel.offline > .pointed-at { opacity: 0.72; }
     .panel.offline .status .dot { background: var(--tone-ended); animation: none; }
 
     /* The composer and the card share one panel */
@@ -357,6 +369,13 @@
     .status { display: flex; align-items: center; gap: 8px; font-weight: 550; }
     .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); transition: background-color 200ms ease; }
     .status.working .dot { animation: pulse 1.4s ease-in-out infinite; }
+    /* While Claude has the tweak, its spark stands in for the dot, turning while it works. */
+    .status .claude-mark { display: none; width: 12px; height: 12px; }
+    .status.with-claude .dot { display: none; }
+    .status.with-claude .claude-mark { display: block; }
+    .status.with-claude.working .claude-mark { animation: turn 3s linear infinite; }
+    .status.unanswered .claude-mark { margin-top: 0.3em; align-self: flex-start; }
+    .panel.offline .status .claude-mark { fill: var(--tone-ended); animation: none; }
     /* Claude hasn't picked it up: two lines, the dot on the first */
     .status.unanswered { align-items: flex-start; text-wrap: pretty; }
     .status.unanswered .dot { margin-top: 0.42em; }
@@ -395,6 +414,8 @@
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .entry { display: grid; gap: 2px; }
     .entry-label { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .entry-label:has(.claude-mark) { display: flex; align-items: center; gap: 5px; }
+    .claude-mark { flex: none; width: 13px; height: 13px; fill: #d97757; }
     .entry-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
     .entry.kind-question {
       padding: 8px 10px;
@@ -409,24 +430,6 @@
     /* Tweak's own word, such as a handover: set apart from the conversation */
     .entry.kind-notice { padding: 6px 8px; border-radius: 6px; background: var(--surface); }
     .entry.kind-notice .entry-text { color: var(--muted); font-size: 12px; }
-    /* What the tweak changed */
-    .change { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); max-height: 200px; overflow: auto; overscroll-behavior: contain; }
-    .change:focus-visible { outline: 2px solid var(--outline); outline-offset: 2px; }
-    .change .files { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
-    .change .file { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
-    .change .path { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; min-width: 0; }
-    .change .where {
-      padding: 0 6px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.5;
-      white-space: nowrap;
-    }
-    .change .unrecorded { display: grid; gap: 3px; padding: 6px 8px; border-radius: 6px; background: var(--surface); }
-    .change .note { margin: 0; color: var(--muted); font-size: 12px; }
-    .change-unchanged .entry-label, .change-nothing-recorded .entry-label { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 550; }
     /* Undo, or where an undo with Claude stands */
     .undo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: -4px; }
     .undo-note { flex: 1 1 160px; min-width: 0; margin: 0; color: var(--muted); font-size: 12px; text-wrap: pretty; }
@@ -448,6 +451,31 @@
     .actions .error { flex: 1; min-width: 0; text-wrap: pretty; }
     .send.quiet { padding: 5px 10px; background: transparent; color: var(--muted); font-weight: 550; transition: color 120ms ease, background-color 120ms ease; }
     .send.quiet:hover:not(:disabled, [aria-disabled="true"]) { filter: none; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+    /* An icon button (Withdraw, Undo): its label is its name and, on hover or focus, its tooltip. */
+    .send.icon { position: relative; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; }
+    .send.icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .send.icon svg .solid { fill: currentColor; stroke: none; }
+    .send.icon svg .knock { stroke: var(--bg); stroke-width: 2; }
+    .actions .send.icon { margin-left: 0; } /* the error before them grows, so they sit at the right */
+    .send.icon::after {
+      content: attr(aria-label);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      right: 0;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: var(--text);
+      color: var(--bg);
+      font: 550 11.5px/1.3 system-ui, -apple-system, sans-serif;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(2px);
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+    .send.icon:hover::after, .send.icon:focus-visible::after { opacity: 1; transform: none; transition-delay: 300ms; }
+    .send.icon:focus-visible::after { transition-delay: 0s; }
+    @media (prefers-reduced-motion: reduce) { .send.icon::after { transition: none; } }
     .answer { display: grid; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
     .answer textarea { min-height: 52px; }
 
@@ -460,9 +488,16 @@
     @keyframes rise { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
     @keyframes fade { from { opacity: 0; } }
     @keyframes pulse { 50% { opacity: 0.35; } }
-    @keyframes ripple { 0% { opacity: 0.6; transform: scale(0.8); } 100% { opacity: 0; transform: scale(1.4); } }
+    @keyframes turn { to { transform: rotate(1turn); } }
+    @keyframes ripple { 0% { opacity: 0.75; transform: scale(0.9); } 100% { opacity: 0; transform: scale(1.9); } }
+    @keyframes breathe {
+      0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 0%, transparent), 0 1px 3px rgb(0 0 0 / 0.3); }
+      50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 30%, transparent), 0 1px 3px rgb(0 0 0 / 0.3); }
+    }
     @media (prefers-reduced-motion: reduce) {
-      *, *::after { animation: none !important; transition: none !important; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      /* Without motion, a working pin keeps a steady halo instead. */
+      .pin.working { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 40%, transparent), 0 1px 3px rgb(0 0 0 / 0.3); }
     }
   `;
 

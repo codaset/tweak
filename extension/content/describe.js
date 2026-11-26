@@ -29,7 +29,7 @@
     reply: "You replied",
     summary: "Claude",
     reason: "Why Claude declined",
-    undo: "Undo",
+    undo: { you: "You undid it", claude: "Claude undid it" },
     notice: "Tweak",
   };
   const ANNOUNCED = { you: false, claude: true, bridge: true }; // your own words aren't read back
@@ -86,7 +86,8 @@
   // screen reader hears when it arrives ("" for none).
   const thread = (tweak) =>
     (tweak?.entries ?? []).slice(1).map((e) => {
-      const label = ENTRY[e.kind] ?? e.kind;
+      const named = ENTRY[e.kind] ?? e.kind;
+      const label = typeof named === "string" ? named : (named[e.from] ?? e.kind);
       return {
         kind: e.kind,
         from: e.from,
@@ -126,6 +127,32 @@
     if (tweak.status === "declined") return null; // declined before changing anything: nothing to say
     return { kind: "unchanged", title: "No files changed", files, unrecorded };
   }
+  // undo is what the card offers to undo a finished change, or where its
+  // undo is (design.md § On the card), or null for nothing:
+  // - offer: a button labelled Undo (every edit recorded; note says when
+  //   only the recorded files revert), or Ask Claude to undo (nothing
+  //   recorded, but something changed);
+  // - asked: the undo is with Claude, which reverses it by hand;
+  // - waiting: it is, but no session claims the page: text, then command
+  //   to copy, the claim that would take it;
+  // - undone.
+  // Never while Claude works or asks, and never for no files changed.
+  function undo(tweak) {
+    const c = described(tweak);
+    if (!c) return null;
+    const state = tweak.change.state;
+    if (state === "undone") return { kind: "undone", text: "Undone" };
+    if (state === "undo-requested") {
+      if (tweak.change.waiting) return { kind: "waiting", text: "Needs a session to resolve: run", command: `/tweak ${origin(tweak.url)}` };
+      const why = c.files.length ? `${tweak.change.conflicts ?? 0} of ${c.files.length} files changed since` : "no edits were recorded";
+      return { kind: "asked", text: `Undo needs Claude: ${why}` };
+    }
+    if (c.kind === "recorded") return { kind: "offer", label: "Undo", note: c.unrecorded.length ? "Undo reverts only the recorded files." : "" };
+    if (c.kind === "nothing-recorded") return { kind: "offer", label: "Ask Claude to undo", note: "" };
+    return null;
+  }
+  // origin is a page URL's scheme, host and port: what /tweak claims.
+  const origin = (url = "") => url.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+/i)?.[0] ?? url;
   const UNRECORDED = "Also changed while Claude worked, not recorded:";
   const OUTSIDE = "outside this project";
 
@@ -188,5 +215,5 @@
     return els[0]?.label ?? "";
   }
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, change, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element, pointedAt };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element, pointedAt };
 })();

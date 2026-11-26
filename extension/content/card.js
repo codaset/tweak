@@ -2,7 +2,8 @@
 // at once on a pick; Send turns it into the card, which shows the status live
 // (with the time spent while working), the request and the conversation after
 // it: Claude's plan, its question, your reply, its summary or its reason for
-// declining; once Claude is done, the files it changed. While Claude has a
+// declining; once Claude is done, the files it changed, and Undo (or where
+// an undo with Claude stands). While Claude has a
 // question, the card has a reply box, and the card opens by itself when the
 // question arrives (without taking the focus). When Claude hasn't picked a
 // delivered tweak up after the bridge sent it twice more, the card says so
@@ -26,9 +27,10 @@
 
   // mode: null, {kind: "compose", element, targets, anchor, sending, error, ref}
   // or {kind: "card", number, request, label, replying, replyError, replyRef,
-  // resending, resendError, resendRef} (request and label are the local
-  // copies while the bridge's tweak hasn't arrived yet; the reply fields are
-  // a reply on its way, the resend fields a Send again). Both may carry
+  // resending, resendError, resendRef, undoing, undoError, undoRef} (request
+  // and label are the local copies while the bridge's tweak hasn't arrived
+  // yet; the reply fields are a reply on its way, the resend fields a Send
+  // again, the undo fields an Undo). Both may carry
   // returnTo, the element focus goes back to on close.
   let mode = null;
   let panel = null;
@@ -348,7 +350,18 @@
     changed.hidden = true;
     changed.setAttribute("aria-label", "What changed");
 
-    panel.append(status, retry, request, thread, changed, answer, heard);
+    // Undo, or where an undo with Claude stands, below what changed.
+    const undoRow = el("div", "undo");
+    undoRow.hidden = true;
+    const undoNote = el("p", "undo-note");
+    const undoError = el("span", "error");
+    undoError.setAttribute("role", "alert");
+    const undoButton = el("button", "send secondary", "Undo");
+    undoButton.type = "button";
+    undoButton.addEventListener("click", submitUndo);
+    undoRow.append(undoNote, undoError, undoButton);
+
+    panel.append(status, retry, request, thread, changed, undoRow, answer, heard);
     status.setAttribute("aria-live", "polite");
     // heardUpTo is how many entries have been read out or were there when the
     // card opened; a card opened by Claude's question reads that one out.
@@ -372,6 +385,11 @@
       retry,
       resend,
       retryError,
+      undoRow,
+      undoNote,
+      undoError,
+      undoButton,
+      undoSaid: "",
     };
     updateCard(tweak);
   }
@@ -413,6 +431,8 @@
     // New entries and a change that arrives are read out together.
     const change = drawChange(ns.describe.change(tweak));
     if (change) toSay.push(change);
+    const undone = drawUndo(tweak);
+    if (undone) toSay.push(undone);
     announce(toSay);
 
     const asking = tweak?.status === "question";
@@ -515,6 +535,63 @@
       else changed.removeAttribute("tabindex");
     });
     return arrived ? c : null;
+  }
+
+  // drawUndo shows Undo (or Ask Claude to undo) for a finished change, or
+  // where its undo stands: with Claude, waiting for a session, or undone.
+  // It returns what to read out when that changes while the card is open.
+  function drawUndo(tweak) {
+    const { undoRow, undoNote, undoButton } = parts;
+    const u = ns.describe.undo(tweak);
+    const said = JSON.stringify(u);
+    let arrived = null;
+    if (said !== parts.undoSaid) {
+      if (parts.undoSaid !== "" && u && u.kind !== "offer") arrived = u;
+      parts.undoSaid = said;
+      undoRow.hidden = !u;
+      undoRow.className = `undo${u ? ` undo-${u.kind}` : ""}`;
+      const offer = u?.kind === "offer";
+      // The button goes once the undo is under way: the focus stays in the card.
+      if (!offer && ns.overlay.root?.activeElement === undoButton) panel.focus({ preventScroll: true });
+      undoButton.hidden = !offer;
+      if (u?.kind === "waiting") undoNote.replaceChildren(u.text, " ", el("code", "command", u.command));
+      else undoNote.replaceChildren(offer ? u.note : (u?.text ?? ""));
+      undoNote.hidden = !undoNote.textContent;
+      if (!offer) mode.undoError = "";
+    }
+    refreshUndo(u);
+    if (!arrived) return null;
+    return { announce: arrived.kind === "waiting" ? `${arrived.text} ${arrived.command}` : arrived.text };
+  }
+
+  function refreshUndo(u = ns.describe.undo(ns.page.tweak(mode.number))) {
+    const { undoButton, undoError } = parts;
+    const connected = ns.worker.connection === "connected";
+    const disabled = Boolean(mode.undoing) || !connected;
+    if (undoButton.disabled !== disabled) undoButton.disabled = disabled;
+    const asking = u?.label === "Ask Claude to undo";
+    const label = mode.undoing ? (asking ? "Asking Claude…" : "Undoing…") : (u?.label ?? "Undo");
+    if (undoButton.textContent !== label) undoButton.textContent = label;
+    const why = u?.kind === "offer" ? mode.undoError || (connected ? "" : "Not connected to Tweak") : "";
+    if (undoError.textContent !== why) undoError.textContent = why;
+    if (undoError.hidden !== !why) undoError.hidden = !why;
+  }
+
+  function submitUndo() {
+    if (mode?.kind !== "card" || parts.undoButton.disabled) return;
+    mode.undoing = true;
+    mode.undoError = "";
+    mode.undoRef = `t${++refs}`;
+    refreshUndo();
+    ns.worker.post({ type: "undo", ref: mode.undoRef, number: mode.number });
+  }
+
+  // undoEnded finishes an Undo: under way (the tweak's next event shows
+  // where it stands), or refused with why, the button still offered.
+  function undoEnded(why) {
+    mode.undoing = false;
+    mode.undoError = why;
+    refreshUndo();
   }
 
   // announce reads new entries out through the live region. The text is set
@@ -725,6 +802,11 @@
       if (mode?.kind !== "card" || msg.ref !== mode.replyRef || !mode.replying) return;
       replyEnded(msg.number ? "" : msg.error || "Couldn't send the reply");
     },
+    // undid is the bridge's answer to an Undo.
+    undid(msg) {
+      if (mode?.kind !== "card" || msg.ref !== mode.undoRef || !mode.undoing) return;
+      undoEnded(msg.number ? "" : msg.message || msg.error || "Couldn't undo it");
+    },
     // resent is the bridge's answer to a Send again.
     resent(msg) {
       if (mode?.kind !== "card" || msg.ref !== mode.resendRef || !mode.resending) return;
@@ -735,6 +817,7 @@
     unsent(why) {
       if (mode?.kind === "card" && mode.replying) replyEnded(why);
       if (mode?.kind === "card" && mode.resending) resendEnded(why);
+      if (mode?.kind === "card" && mode.undoing) undoEnded(why);
       if (mode?.kind !== "compose" || !mode.sending) return;
       mode.sending = false;
       mode.error = why;

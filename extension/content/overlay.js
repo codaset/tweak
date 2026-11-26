@@ -360,6 +360,21 @@
     .change .unrecorded { display: grid; gap: 3px; padding: 6px 8px; border-radius: 6px; background: var(--surface); }
     .change .note { margin: 0; color: var(--muted); font-size: 12px; }
     .change-unchanged .entry-label, .change-nothing-recorded .entry-label { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 550; }
+    /* Undo, or where an undo with Claude stands */
+    .undo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: -4px; }
+    .undo-note { flex: 1 1 160px; min-width: 0; margin: 0; color: var(--muted); font-size: 12px; text-wrap: pretty; }
+    .undo-undone .undo-note, .undo-asked .undo-note, .undo-waiting .undo-note { color: var(--text); font-weight: 550; font-size: 12.5px; }
+    .undo .command {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--surface);
+      font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+      user-select: all;
+    }
+    .undo .error { flex-basis: 100%; order: 3; }
+    .send.secondary { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+    .send.secondary:hover:not(:disabled) { filter: none; background: var(--surface); }
     .answer { display: grid; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
     .answer textarea { min-height: 52px; }
 

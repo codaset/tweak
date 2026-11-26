@@ -3,7 +3,8 @@
 // case. See test/e2e/static.test.js.
 import { after, before } from "node:test";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { contentScript, inWorker, launch } from "./browser.js";
 import { devBridge, standIn } from "./claude.js";
 import { testCopy } from "./extension.js";
@@ -31,6 +32,10 @@ export const CARD_RESEND = ".panel .retry .send";
 // recorded", "No files changed") and the recorded files' paths.
 export const CARD_CHANGE = ".panel .change .entry-label";
 export const CARD_FILES = ".panel .change > .files .path";
+// Undo below it: the button (Undo, or Ask Claude to undo), and the note:
+// where an undo with Claude stands, or Undone.
+export const CARD_UNDO = ".panel .undo .send";
+export const CARD_UNDO_NOTE = ".panel .undo .undo-note";
 const text = (selector) => `root.querySelector(${JSON.stringify(selector)})?.textContent`;
 const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 
@@ -247,13 +252,24 @@ async function pickCase(env, c) {
   return pick(env, c.pick);
 }
 
+// Clicks the open card's Undo (or Ask Claude to undo) the way the
+// developer would, and resolves once the card says where the undo stands:
+// the note's text, such as "Undone".
+export async function undoFromCard(env, { label = "Undo", note = "Undone" } = {}) {
+  await env.tab.until(text(CARD_UNDO), { is: (s) => s === label, what: `the card's ${label} button` });
+  await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).focus()`);
+  await env.page.keyboard.press("Enter");
+  await env.tab.until(text(CARD_UNDO_NOTE), { is: (s) => (note instanceof RegExp ? note.test(s ?? "") : s === note), what: `the card to say ${note}` });
+}
+
 // A golden case through the tracer: pick it, send a tweak, let the stand-in
 // work it, check the brief against the case, finish it, and see the card
 // reach Done. A round-trip case (with `edit`) makes its edit through the
-// edit hook between work and done, and the Done card lists the file; Undo
-// is still to come. The brief's and the watch line's own layout are
+// edit hook between work and done; the Done card lists the file, and its
+// Undo puts the file back byte for byte. The brief's and the watch line's own layout are
 // golden-tested in Go; this checks the wiring.
-export async function tracer(env, c, { request = `tweak the ${c.name}`, summary = `tweaked the ${c.name}`, edit = c.edit } = {}) {
+// undo: false leaves the change in place, for a test that undoes it later.
+export async function tracer(env, c, { request = `tweak the ${c.name}`, summary = `tweaked the ${c.name}`, edit = c.edit, undo = true } = {}) {
   const element = await pickCase(env, c);
   await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
   await env.page.keyboard.type(request);
@@ -273,6 +289,8 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
   // A round-trip case's edit, through the edit hook, as Claude makes it.
   // A case's edit is made once, by its own tracer test: other tests reuse
   // the case on the same copy, and pass edit: null.
+  const edited = edit && join(env.app.folder, edit.file);
+  const original = edit && readFileSync(edited);
   if (edit) await env.claude.edit(edit);
 
   // The summary goes in on stdin, as `tweak done <n> -` reads it.
@@ -280,13 +298,21 @@ export async function tracer(env, c, { request = `tweak the ${c.name}`, summary 
   await env.tab.until(text(CARD_STATUS), { is: (s) => s === "Change saved", what: "the card to show Done" });
   assert.equal(await env.tab.evaluate(text(CARD_SUMMARY)), summary);
   if (edit) {
-    // The card lists the file the hook recorded. Undo comes with #40.
+    // The card lists the file the hook recorded.
     await env.tab.until(text(CARD_CHANGE), { is: (s) => s === "Files changed", what: "the card to list the files changed" });
     assert.deepEqual(await env.tab.evaluate(`[...root.querySelectorAll(${JSON.stringify(CARD_FILES)})].map((f) => f.textContent)`), [edit.file]);
     // It's read out as it arrives, and the list keeps its list semantics.
     await env.tab.until(text(".panel .sr-only"), { is: (s) => s?.includes("1 file changed"), what: "the change to be read out" });
     assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change > .files").getAttribute("role")`), "list");
     assert.equal(await env.tab.evaluate(`root.querySelector(".panel .change").hasAttribute("tabindex")`), false, "a short list is no tab stop");
+
+  }
+  if (edit && undo) {
+    // Undo puts it back, byte for byte.
+    await undoFromCard(env);
+    assert.ok(readFileSync(edited).equals(original), `${edit.file} is back as it was`);
+    assert.equal(await env.tab.evaluate(`root.querySelector(${JSON.stringify(CARD_UNDO)}).hidden`), true, "no Undo once undone");
+    assert.equal(await env.tab.evaluate(`root.activeElement === root.querySelector(".panel")`), true, "the focus stays in the card");
   }
   await env.page.keyboard.press("Escape");
   await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "esc to close the card" });

@@ -168,3 +168,50 @@ test("the card's chip says what a tweak points at", () => {
   assert.equal(pointedAt({ ...one, area: { page: { x: 0, y: 0, width: 320.4, height: 179.6 } } }), "Area 320×180");
   assert.equal(pointedAt(undefined), "");
 });
+
+test("a finished change offers Undo, then says where the undo is", () => {
+  const { undo, thread } = ns.describe;
+  const file = (path) => ({ path, outside: false });
+  const url = "https://ernie.localhost:3000/admin?tab=2";
+  const tweak = (status, c) => ({ status, url, change: { state: "recorded", checked: true, files: [file("a.css")], unrecorded: [], ...c } });
+
+  // Every edit recorded: Undo.
+  assert.deepEqual({ ...undo(tweak("done")) }, { kind: "offer", label: "Undo", note: "" });
+  // Some unrecorded: Undo, which says it reverts only the recorded files.
+  assert.deepEqual({ ...undo(tweak("done", { unrecorded: [file("b.rb")] })) }, { kind: "offer", label: "Undo", note: "Undo reverts only the recorded files." });
+  // Declined after edits: Undo too.
+  assert.equal(undo(tweak("declined")).label, "Undo");
+  // Nothing recorded, but something changed (or no repo to check): Ask Claude.
+  assert.equal(undo(tweak("done", { state: "nothing-recorded", files: [], unrecorded: [file("b.rb")] })).label, "Ask Claude to undo");
+  assert.equal(undo(tweak("done", { state: "nothing-recorded", files: [], checked: false })).label, "Ask Claude to undo");
+  // Nothing changed: no Undo. Never while Claude works or asks.
+  assert.equal(undo(tweak("done", { state: "nothing-recorded", files: [] })), null);
+  assert.equal(undo(tweak("working")), null);
+  assert.equal(undo(tweak("question")), null);
+  assert.equal(undo({ status: "done", url }), null);
+
+  // An undo with Claude: how many files conflict, or nothing recorded; with
+  // no session claiming the page, the command that brings one.
+  assert.deepEqual({ ...undo(tweak("done", { state: "undo-requested", files: [file("a.css"), file("b.css")], conflicts: 1 })) }, {
+    kind: "asked",
+    text: "Undo needs Claude: 1 of 2 files changed since",
+  });
+  assert.equal(undo(tweak("done", { state: "undo-requested", files: [], unrecorded: [file("b.rb")] })).text, "Undo needs Claude: no edits were recorded");
+  assert.deepEqual({ ...undo(tweak("done", { state: "undo-requested", conflicts: 1, waiting: true })) }, {
+    kind: "waiting",
+    text: "Needs a session to resolve: run",
+    command: "/tweak https://ernie.localhost:3000",
+  });
+  assert.deepEqual({ ...undo(tweak("done", { state: "undone" })) }, { kind: "undone", text: "Undone" });
+
+  // Who undid it, in the conversation.
+  const entries = [
+    { kind: "request", from: "you" },
+    { kind: "undo", from: "you", text: "Undid the change to a.css" },
+    { kind: "undo", from: "claude", text: "by hand" },
+  ];
+  assert.deepEqual(
+    thread({ entries }).map((e) => e.label),
+    ["You undid it", "Claude undid it"],
+  );
+});

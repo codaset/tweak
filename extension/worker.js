@@ -147,8 +147,9 @@ async function onTabMessage(port, msg) {
       break;
     case "create":
     case "reply":
-    case "again": {
-      const answered = { create: "created", reply: "replied", again: "resent" }[msg.type];
+    case "again":
+    case "undo": {
+      const answered = { create: "created", reply: "replied", again: "resent", undo: "undid" }[msg.type];
       const ref = bridge.request(msg, (answer) => {
         if (msg.type === "create" && answer.number) rememberSender(answer.number, tabId);
         port.postMessage({ type: answered, ref: msg.ref, ...answer });
@@ -184,7 +185,7 @@ function adoptTweaks(next, msg) {
   const shown = [...tabs].filter((port) => port.page);
   for (const port of shown) {
     if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forTab(next, port), claimed: claimed(port.url) });
-    else if (reachesTab(msg.tweak, port)) port.postMessage({ type: "tweak", tweak: msg.tweak });
+    else if (reachesTab(msg.tweak, port)) port.postMessage({ type: "tweak", tweak: msg.tweak, event: msg.event });
   }
   if (msg.type === "snapshot") {
     // Only open tweaks can still ask, so the rest are forgotten.

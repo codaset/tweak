@@ -387,7 +387,10 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   starts undo capture for the session; a POST because fetching changes state),
   `POST /tweaks/:n/status` (`{status, message}`: `done`, `question` or `declined` with Claude's
   summary, question or reason, or `queued` with none; it answers `{number, status}`),
-  `POST /tweaks/:n/entries` (`{kind: "plan", text}`, answered the same way), and `POST /edits/before` (`{path}`, absolute: the edit hook sends a file's path
+  `POST /tweaks/:n/entries` (`{kind: "plan", text}`, answered the same way), `GET /tweaks/:n/undo`
+  (`tweak undo`: the change to reverse by hand, as text) and `POST /tweaks/:n/undone` (`{message}`,
+  answered like a status change with `undo: "undone"`; a decline of an undo-requested change answers
+  with `undo: "declined"`), and `POST /edits/before` (`{path}`, absolute: the edit hook sends a file's path
   before an agent edits it; the bridge saves the before copy if the session is capturing, then
   answers 204 either way; see [Undo](#undo)). Every CLI request counts as the
   session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
@@ -400,8 +403,10 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `bad-request` for a malformed one, and `no-claim` for a page no claim covers (so every stored
   tweak has a session). `reply` is `{ref, number, text}`, answered with the number, or `not-asked`
   when Claude isn't waiting on a question, `no-tweak` or `bad-request`. `again` is `{ref, number}`, the card's
-  **Send again**, answered with the number, or `picked-up` once Claude has confirmed the tweak. A snapshot holds only the open (unresolved) tweaks, and `tweak-created`,
-  `tweak-status`, `tweak-replied` and `tweak-again` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`
+  **Send again**, answered with the number, or `picked-up` once Claude has confirmed the tweak. `undo` is `{ref, number}`, the card's
+  **Undo** or **Ask Claude to undo**, answered with the number, `not-undoable` (with why, as the card shows it) or `undo-failed`
+  (a write failed and nothing changed); a `tweak-undone` or `tweak-undo-conflict` event follows (see [Undo](#undo)). A snapshot holds only the open (unresolved) tweaks, and `tweak-created`,
+  `tweak-status`, `tweak-replied`, `tweak-again`, `tweak-undo-conflict` and `tweak-undone` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`
   reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
   `tweak watch` exits on), are in `schema/`.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
@@ -459,7 +464,7 @@ when a tweak passes to another session; see [When the session goes quiet](#when-
 | `claims` | id, session, pattern, created |
 | `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
 | `entries` | tweak, from, kind, text, at |
-| `changes` | tweak (one change each), state, unrecorded files (JSON), capturing session, folder, git repo and tree, whether the check ran |
+| `changes` | tweak (one change each), state, unrecorded files (JSON), capturing session, folder, git repo and tree, whether the check ran, conflicts (while `undo-requested`) |
 | `change_files` | change, path (once per change), contents before (or absent), contents after, path as shown, outside the project, recordable |
 | `events` | sequence, type, tweak or claim, payload (JSON), at |
 | `deliveries` | session, last acknowledged sequence |
@@ -874,7 +879,7 @@ to read it from stdin.
 | `tweak plan <n> <msg>` | posts an optional plan entry | `tweak 12: plan posted` |
 | `tweak ask <n> <msg>` | sets `question` | `tweak 12: question` |
 | `tweak done <n> <msg>` | sets `done` with the summary | `tweak 12: done` |
-| `tweak decline <n> <msg>` | sets `declined` with the reason; on an `undo-requested` change, refuses the undo instead and keeps the change (back to `recorded`, or `nothing-recorded`) | `tweak 12: declined` |
+| `tweak decline <n> <msg>` | sets `declined` with the reason; on an `undo-requested` change, refuses the undo instead and keeps the change (back to `recorded`, or `nothing-recorded`) | `tweak 12: declined` (`tweak 12: undo declined, change kept`) |
 | `tweak queue <n>…` | sets `queued` on one or more tweaks | one line per tweak |
 | `tweak undo <n>` | prints the change to reverse by hand, conflicting files marked; with nothing recorded, Claude's summary and the unrecorded files instead; starts no capture, changes no status | each file's diff |
 | `tweak undone <n> <msg>` | reports a conflicting undo resolved by hand; the change becomes `undone` | `tweak 12: undone` |
@@ -1167,16 +1172,25 @@ before writing any:
   the file if Claude created it.
 - **Already back to before**: nothing to do.
 - **Edited since**: a three-way merge in Go (base: after; one side: the file now; the other: before)
-  reverses the change around the later edits. A clean merge counts as clean.
-- **Conflicting merge, or the file deleted or recreated since**: the file conflicts.
+  reverses the change around the later edits. A clean merge counts as clean. The merge is
+  `internal/merge`, a small diff3 over lines written for Tweak: lines keep their endings (CRLF, a
+  last line with no newline), and changes on both sides that overlap or touch conflict unless
+  they're the same. (The Go diff3 libraries either drop line endings or match repeated lines wrongly,
+  and `tweak undo` needs a unified diff from the same code.)
+- **Conflicting merge, or the file deleted or recreated since, edited since Claude created it, or now
+  binary or over 2 MB**: the file conflicts.
 
-If every file is clean, the bridge writes them all, the change becomes `undone`, an `undo` entry from
-you goes in the conversation, and the page reloads as after a change. If any file conflicts, nothing
+If every file is clean, the bridge writes them all (if a write fails, the files already written are
+put back, and the card says so), the change becomes `undone`, an `undo` entry from you goes in the
+conversation, and the page reloads as after a change (on the `tweak-undone` event, which `tweak undone`
+logs too). If any file conflicts, nothing
 is written and the change becomes `undo-requested`. It goes to the session that now claims the
-tweak's page as `tweak <n> undo-conflict: 2 of 3 files need resolving`, and Claude reverses it by
-hand (`tweak undo`, then `tweak undone` or `tweak decline`; see the skill). If no session claims the
-page, the request waits, and the card says "Needs a session to resolve: run `/tweak <origin>`"; it
-is delivered as soon as a claim covers the page. Undo work is never captured.
+tweak's page as `tweak <n> undo-conflict: 2 of 3 files need resolving`, and the tweak passes to that
+session. Claude reverses it by hand (`tweak undo`, then `tweak undone` or `tweak decline`; see the
+skill). If no session claims the page, the request waits, and the card says "Needs a session to
+resolve: run `/tweak <origin>`"; it is delivered as soon as a claim covers the page, and goes back to
+waiting if that session releases the page first. Undo work is never captured: the bridge's writes
+don't pass the edit hook, and `tweak undo` starts no capture.
 
 ### On the card
 
@@ -1196,8 +1210,8 @@ after resolution.
   says nothing about files.
 - Files outside the project carry an "outside this project" label in any of these lists, and are
   shown by their absolute path (`~/` for the home folder); the others are relative to the project.
-- While `undo-requested`: "Undo needs Claude…"; afterwards "Undone", or Claude's reason if it
-  declined the undo.
+- While `undo-requested`: "Undo needs Claude: 1 of 2 files changed since" (or "no edits were
+  recorded"); afterwards "Undone", or Claude's reason if it declined the undo, and Undo again.
 
 ## Testing
 

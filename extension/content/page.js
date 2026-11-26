@@ -91,6 +91,8 @@
         if (msg.card && tweaks.has(msg.card) && !ns.panel.open() && ns.panel.showing() === null) ns.panel.show(msg.card);
         break;
       case "tweak":
+        // msg.event is the bridge's event: tweak-undone means a change was
+        // undone, which reloads the page as after a change (#42).
         tweaks.set(msg.tweak.number, msg.tweak);
         ns.page.redraw();
         break;
@@ -118,6 +120,9 @@
         break;
       case "resent":
         ns.panel.resent(msg);
+        break;
+      case "undid":
+        ns.panel.undid(msg);
         break;
     }
   });

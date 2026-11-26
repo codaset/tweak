@@ -121,6 +121,68 @@ func TestTheEditHookIsAQuietNoOpOtherwise(t *testing.T) {
 	}
 }
 
+// During a handover (the handover file there, the bridge restarting) the
+// edit hook waits up to 3 seconds for the new bridge, so the edit keeps its
+// before copy. A handover file left behind by a command that died is old,
+// and the hook gives up in its usual time.
+func TestTheEditHookWaitsForABridgeMidHandover(t *testing.T) {
+	s := newSandbox(t)
+	ernie := s.folder("ernie")
+	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
+	ext := s.extension()
+	n := ext.create("https://ernie.localhost/", "make it green")
+	if r := s.tweak("s1", ernie, "work", fmt.Sprint(n)); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	css := filepath.Join(ernie, "app.css")
+	os.WriteFile(css, []byte("red\n"), 0o644)
+	edit := hookJSON("s1", ernie, "Edit", map[string]any{"file_path": css, "old_string": "red", "new_string": "green"})
+
+	// A handover file from a command that died a minute ago: no wait.
+	handover := filepath.Join(s.state, "handover")
+	os.WriteFile(handover, []byte("1\n"), 0o600)
+	old := time.Now().Add(-time.Minute)
+	os.Chtimes(handover, old, old)
+	ext.c.CloseNow()
+	s.stopBridge()
+	s.hook(ernie, edit)
+	if _, ok := s.bridgeFile(); ok {
+		t.Fatal("the hook started a bridge")
+	}
+
+	// A handover under way: the bridge is back a second later.
+	os.WriteFile(handover, []byte("1\n"), 0o600)
+	go func() {
+		time.Sleep(time.Second)
+		s.tweak("", ernie, "claims")
+	}()
+	began := time.Now()
+	r := s.tweakIn(strings.NewReader(edit), "", ernie, "hook", "pre-edit")
+	if took := time.Since(began); r.code != 0 || r.stdout != "" || r.stderr != "" || took > 4*time.Second || took < time.Second {
+		t.Fatalf("exit %d, stdout %q, stderr %q, after %s", r.code, r.stdout, r.stderr, took)
+	}
+	os.Remove(handover)
+	os.WriteFile(css, []byte("green\n"), 0o644)
+
+	ext = s.extension()
+	if r := s.tweak("s1", ernie, "done", fmt.Sprint(n), "made it green"); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	for {
+		ev := ext.until("event")
+		tw, _ := ev["tweak"].(map[string]any)
+		if tw == nil || tw["status"] != "done" {
+			continue
+		}
+		change, _ := tw["change"].(map[string]any)
+		files, _ := change["files"].([]any)
+		if len(files) != 1 || files[0].(map[string]any)["path"] != "app.css" {
+			t.Fatalf("change %v", change)
+		}
+		return
+	}
+}
+
 // A hook whose stdin never closes still exits in time.
 func TestTheEditHookNeverHangs(t *testing.T) {
 	s := newSandbox(t)

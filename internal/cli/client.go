@@ -26,27 +26,47 @@ type client struct {
 	warn    func(string) // prints the bridge's warnings; nil (a hook) prints nothing
 }
 
-// connect finds the running bridge or starts one.
+// connect finds the running bridge, handing over from an older one, or
+// starts one.
 func (c *context) connect() (*client, error) {
-	if cl, ok := c.find(); ok {
-		return cl, nil
+	cl, err := c.running()
+	if cl != nil || err != nil {
+		return cl, err
 	}
 	return c.started()
 }
 
+// running finds the running bridge. One older than this binary is first
+// replaced by this version's (handover.go), once per command, so a
+// watcher kept on an older bridge after a failed handover doesn't try on
+// every poll. With no bridge answering it returns nil, nil.
+func (c *context) running() (*client, error) {
+	cl, info, ok := c.find()
+	if !ok {
+		return nil, nil
+	}
+	if c.handedOver || !version.Older(info.Version, version.Version) {
+		return cl, nil
+	}
+	c.handedOver = true
+	return c.handover(cl, info)
+}
+
 // find looks for a running bridge: on bridge.json's port, then the
-// configured one.
-func (c *context) find() (*client, bool) {
-	cl := c.newClient()
-	if f, err := bridge.ReadBridgeFile(c.cfg.StateDir); err == nil && cl.ping(f.Port) {
-		cl.port = f.Port
-		return cl, true
+// configured one. info is what it says about itself in GET /bridge.
+func (c *context) find() (cl *client, info bridge.Info, ok bool) {
+	cl = c.newClient()
+	if f, err := bridge.ReadBridgeFile(c.cfg.StateDir); err == nil {
+		if info, ok = cl.ping(f.Port); ok {
+			cl.port = f.Port
+			return cl, info, true
+		}
 	}
-	if cl.ping(c.cfg.Port) {
+	if info, ok = cl.ping(c.cfg.Port); ok {
 		cl.port = c.cfg.Port
-		return cl, true
+		return cl, info, true
 	}
-	return nil, false
+	return nil, info, false
 }
 
 // started starts a bridge and returns a client for it.
@@ -68,23 +88,31 @@ func (c *context) newClient() *client {
 	return &client{session: c.session, http: &http.Client{Timeout: 30 * time.Second}, warn: c.warn}
 }
 
-// ping reports whether a bridge answers on port.
-func (cl *client) ping(port int) bool {
+// ping reports whether a bridge answers on port, and what it says about
+// itself. Its version is the x-tweak-version header, which every bridge
+// sends.
+func (cl *client) ping(port int) (bridge.Info, bool) {
+	var info bridge.Info
 	r, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/bridge", port), nil)
 	r.Header.Set(bridge.HeaderTweak, "1")
 	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(r)
 	if err != nil {
-		return false
+		return info, false
 	}
-	resp.Body.Close()
-	return resp.Header.Get(bridge.HeaderVersion) != ""
+	defer resp.Body.Close()
+	json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&info)
+	info.Version = resp.Header.Get(bridge.HeaderVersion)
+	return info, info.Version != ""
 }
 
 // refusal is the bridge saying no: its one-line message, as-is, and the
 // HTTP status. Any other error from a call means the bridge didn't answer.
 type refusal struct {
-	message string
-	status  int
+	message  string
+	status   int
+	code     string   // the error code, such as protocol
+	patterns []string // with protocol: the session's claims
+	version  string   // the refusing bridge's x-tweak-version
 }
 
 func (r *refusal) Error() string { return r.message }
@@ -147,11 +175,15 @@ func (cl *client) send(timeout time.Duration, method, path string, body any) ([]
 		return nil, fmt.Errorf("the bridge didn't answer: %v", err)
 	}
 	if resp.StatusCode >= 300 {
-		var e struct{ Message string }
-		if json.Unmarshal(raw, &e) == nil && e.Message != "" {
-			return nil, &refusal{e.Message, resp.StatusCode}
+		ref := &refusal{message: fmt.Sprintf("the bridge answered %s", resp.Status), status: resp.StatusCode, version: resp.Header.Get(bridge.HeaderVersion)}
+		var e struct {
+			Error, Message string
+			Patterns       []string
 		}
-		return nil, &refusal{fmt.Sprintf("the bridge answered %s", resp.Status), resp.StatusCode}
+		if json.Unmarshal(raw, &e) == nil && e.Message != "" {
+			ref.message, ref.code, ref.patterns = e.Message, e.Error, e.Patterns
+		}
+		return nil, ref
 	}
 	return raw, nil
 }
@@ -172,6 +204,12 @@ func (c *context) startBridge() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("couldn't start the bridge: %v", err)
 	}
+	return c.startBinary(exe, 10*time.Second)
+}
+
+// startBinary is startBridge with another binary, such as a previous
+// version's, giving it within to say how its start went.
+func (c *context) startBinary(exe string, within time.Duration) (int, error) {
 	if err := os.MkdirAll(c.cfg.StateDir, 0o700); err != nil {
 		return 0, fmt.Errorf("couldn't start the bridge: %v", err)
 	}
@@ -202,10 +240,10 @@ func (c *context) startBridge() (int, error) {
 	var line string
 	select {
 	case line = <-first:
-	case <-time.After(10 * time.Second):
+	case <-time.After(within):
 		cmd.Process.Kill()
 		cmd.Wait()
-		return 0, fmt.Errorf("the bridge didn't start within 10 seconds (log: %s)", c.cfg.Log())
+		return 0, fmt.Errorf("the bridge didn't start within %s (log: %s)", seconds(within), c.cfg.Log())
 	}
 
 	switch {

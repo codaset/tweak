@@ -127,5 +127,9 @@ func markerName(session string) string {
 	return b.String()
 }
 
+// Handover is the file a command leaves while it hands over to a newer
+// bridge, so tweak hook pre-edit waits for the new one.
+func (c Config) Handover() string { return filepath.Join(c.StateDir, "handover") }
+
 // Log is where a bridge started by the CLI writes its output.
 func (c Config) Log() string { return filepath.Join(c.StateDir, "bridge.log") }

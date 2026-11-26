@@ -282,6 +282,9 @@ files, fires `onInstalled` with reason `update`, wipes runtime registrations and
 **Handing over to a newer bridge**: any CLI command, not only `tweak claim`, that finds a bridge older
 than itself (from `bridge.json`, or the `x-tweak-version` header on every bridge response) replaces it
 and retries. This also covers an old session starting an old bridge after the newer one quit idle.
+Versions compare as numbers (1.10.0 is newer than 1.9.0); a development build (`dev`) never hands
+over and is never replaced. A command tries the handover once, so a watcher kept on the old bridge
+after a failed one doesn't try again on every poll.
 
 1. The CLI sends `POST /shutdown`. The bridge closes WebSockets with a "restarting" close code,
    finishes requests in flight, closes SQLite, removes `bridge.json` and exits.
@@ -290,20 +293,30 @@ and retries. This also covers an old session starting an old bridge after the ne
    CLI starts the previous version again (see
    [When the bridge or extension is down](#when-the-bridge-or-extension-is-down)).
 3. Two sessions upgrading at once race on the port: the bridge that fails to bind exits quietly, and
-   its CLI uses the winner.
+   its CLI uses the winner. A CLI that finds a bridge at its own version or newer while it waits
+   (another's handover won) uses it without starting one, and sends `POST /shutdown` only to the
+   PID it found, never to a bridge started since.
 
 Watchers and the extension reconnect by themselves. `tweak hook pre-edit` waits up to 3 seconds for a
-bridge mid-restart, so an edit made during a handover keeps its before copy.
+bridge mid-restart, so an edit made during a handover keeps its before copy. The handing-over CLI
+leaves a `handover` file in the state folder while it runs, which is how the hook tells a restart
+from a bridge that's down; a file older than 30 seconds (its CLI died) doesn't count. `hooks.json`
+gives `pre-edit` 5 seconds for this.
 
 **Older clients**: a bridge refuses a CLI or extension only when the protocol integer differs, not the
 version, so a session still on the previous plugin version keeps working through most releases. On a
 refusal `tweak watch` prints `bridge updated: run /reload-plugins, then /tweak <pattern> again` and
 exits. The session's claims stay (the session ID survives `/reload-plugins`, so claiming again is the
-same session) and lapse after 10 minutes if it doesn't.
+same session) and lapse after 10 minutes if it doesn't. The protocol refusal names the session's
+patterns (`patterns`, a field every protocol keeps), and a session with several gets
+`/tweak A and /tweak B again`; with none known, `/tweak <url> again`. A protocol refusal from an older
+bridge (kept after a failed handover) isn't an update: the watcher exits with its message instead.
 
 **Old binaries**: a starting bridge keeps the two newest version folders under `bin/` (old sessions'
-launchers still point at the previous one until `/reload-plugins`) and deletes the rest, ignoring
-failures (Windows can't delete a running `.exe`) and trying again on the next start.
+launchers still point at the previous one until `/reload-plugins`), and its own, and deletes the rest,
+ignoring failures (Windows can't delete a running `.exe`) and trying again on the next start. A folder
+whose name isn't a version is left alone. It also deletes a launcher's `.tweak.<pid>.download` left in
+a kept folder an hour or more without a write.
 
 **Removing Tweak**: `/plugin uninstall codaset@codaset`, remove the extension in `chrome://extensions`,
 and delete `~/.local/state/codaset-tweak/`. There is no `tweak uninstall` in v1.
@@ -370,7 +383,10 @@ quiet. There's no timeout: without the extension nothing can be sent.
 CLI starts the previous version's binary again (the two newest are kept), prints
 `couldn't start bridge 1.4.0 (<error>); kept 1.3.2 running`, and carries on against it. The warning
 repeats on the next command that tries the handover. The extension reconnects to the old bridge. If
-the old one won't start either, the command fails with both errors.
+the old one won't start either, the command fails with both errors:
+`couldn't start bridge 1.4.0 (<error>), nor 1.3.2 again (<error>); the database backup is <path>`,
+the last part only when a migration left a `tweak.db.bak-*`. The previous version's binary is the
+one the launcher keeps in `bin/<version>/`.
 
 - Each database migration runs in one transaction, so a failed migration leaves `tweak.db` untouched.
 - Before migrating, the bridge copies the database to `tweak.db.bak-<old version>`, keeping only the

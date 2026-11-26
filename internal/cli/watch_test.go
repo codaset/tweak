@@ -16,6 +16,7 @@ import (
 
 	"github.com/codaset/tweak/internal/bridge"
 	"github.com/codaset/tweak/internal/config"
+	"github.com/codaset/tweak/internal/version"
 )
 
 // A stand-in bridge that answers GET /inbox from a script, and a log of what
@@ -281,5 +282,70 @@ func TestWatchAsksAgainWhenTheBridgeFails(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.Join(f.log, "\n"), "print claim released: https://ernie.localhost/*\npoll after 1") {
 		t.Fatalf("log %q", f.log)
+	}
+}
+
+// refusingBridge runs a watcher against a bridge of version v that answers
+// every GET /inbox with one refusal, and returns what it printed and how it
+// ended.
+func refusingBridge(t *testing.T, v string, status int, body string) (string, error) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(bridge.HeaderVersion, v)
+		if r.URL.Path != "/inbox" {
+			return
+		}
+		w.WriteHeader(status)
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	state := t.TempDir()
+	os.WriteFile(filepath.Join(state, "bridge.json"), []byte(fmt.Sprintf(`{"port": %d}`, portOf(srv))), 0o600)
+	var out, errOut strings.Builder
+	c := &context{Env: Env{Getenv: func(string) string { return "" }, Stdout: &out, Stderr: &errOut}, cfg: config.Config{StateDir: state}, session: "s1",
+		handedOver: true} // the stand-in is never handed over from
+	err := watch(c, nil)
+	if errOut.Len() > 0 {
+		t.Fatalf("stderr %q", errOut.String())
+	}
+	return out.String(), err
+}
+
+// A newer bridge refusing the watcher's protocol ends it with the line
+// that tells the session to reload its plugin and claim its pages again.
+func TestAProtocolRefusalEndsTheWatcherWithBridgeUpdated(t *testing.T) {
+	refusal := func(patterns string) string {
+		return `{"error":"protocol","message":"tweak speaks protocol 1; the bridge speaks 2: update the plugin, then /reload-plugins","patterns":` + patterns + `}`
+	}
+	for _, c := range []struct{ patterns, want string }{
+		{`["https://ernie.localhost/*"]`, "bridge updated: run /reload-plugins, then /tweak https://ernie.localhost/* again\n"},
+		{`["https://ernie.localhost/*","http://localhost:3000/*"]`, "bridge updated: run /reload-plugins, then /tweak https://ernie.localhost/* and /tweak http://localhost:3000/* again\n"},
+		{`[]`, "bridge updated: run /reload-plugins, then /tweak <url> again\n"},
+	} {
+		out, err := refusingBridge(t, "9.0.0", 400, refusal(c.patterns))
+		if err != nil || out != c.want {
+			t.Errorf("with %s: err %v, stdout %q, want %q", c.patterns, err, out, c.want)
+		}
+	}
+}
+
+// An older bridge, kept after a failed handover, refusing a newer watcher's
+// protocol isn't an update: reloading the plugin wouldn't help.
+func TestAnOlderBridgesProtocolRefusalIsNoUpdate(t *testing.T) {
+	was := version.Version
+	version.Version = "2.0.0"
+	t.Cleanup(func() { version.Version = was })
+	msg := "tweak speaks protocol 2; the bridge speaks 1: update the plugin, then /reload-plugins"
+	out, err := refusingBridge(t, "1.0.0", 400, `{"error":"protocol","message":"`+msg+`","patterns":["https://ernie.localhost/*"]}`)
+	if out != "" || err == nil || err.Error() != msg {
+		t.Fatalf("stdout %q, err %v", out, err)
+	}
+}
+
+// Any other refusal ends the watcher with the bridge's own line.
+func TestAnotherRefusalEndsTheWatcherWithItsMessage(t *testing.T) {
+	out, err := refusingBridge(t, "9.0.0", 404, `{"error":"no-session","message":"session s1 isn't registered: run tweak claim"}`)
+	if out != "" || err == nil || err.Error() != "session s1 isn't registered: run tweak claim" {
+		t.Fatalf("stdout %q, err %v", out, err)
 	}
 }

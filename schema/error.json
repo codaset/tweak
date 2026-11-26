@@ -34,6 +34,14 @@
     "holder": {
       "description": "With overlap: the claim in the way.",
       "$ref": "#/$defs/claim"
+    },
+    "patterns": {
+      "description": "With protocol, to a session: the patterns it claims, which tweak watch names in its bridge updated line. Every protocol keeps this field, so an older watcher can read it.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "required": [

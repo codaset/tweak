@@ -46,6 +46,16 @@ type sandbox struct {
 	// extra is more environment for every command, and so for the bridge
 	// the first one starts.
 	extra []string
+	// bin is the binary commands run (the test build when empty), such as a
+	// release build kept under the state folder's bin/<version>/.
+	bin string
+}
+
+func (s *sandbox) exe() string {
+	if s.bin != "" {
+		return s.bin
+	}
+	return tweakBin
 }
 
 func freePort(t *testing.T) int {
@@ -94,7 +104,7 @@ type result struct {
 // tweak runs the binary as a session (or none, with "") in folder.
 func (s *sandbox) tweak(session, folder string, args ...string) result {
 	s.t.Helper()
-	cmd := exec.Command(tweakBin, args...)
+	cmd := exec.Command(s.exe(), args...)
 	cmd.Env = s.env()
 	if session != "" {
 		cmd.Env = append(cmd.Env, "CLAUDE_CODE_SESSION_ID="+session)

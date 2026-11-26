@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/codaset/tweak/internal/version"
 )
 
 // The commands Claude runs on tweaks: watch (the Monitor command), work,
@@ -70,8 +72,11 @@ func watch(c *context, args []string) error {
 		c.wait(d)
 	}
 	for {
-		cl, ok := c.find()
-		if !ok {
+		cl, err := c.running()
+		if err != nil {
+			return err // a handover that failed both ways
+		}
+		if cl == nil {
 			if down.IsZero() {
 				down = c.clock()
 			}
@@ -79,7 +84,6 @@ func watch(c *context, args []string) error {
 				retry()
 				continue
 			}
-			var err error
 			if cl, err = c.started(); err != nil {
 				return err
 			}
@@ -97,9 +101,12 @@ func watch(c *context, args []string) error {
 				Text string
 			}
 		}
-		err := cl.callWithin(inboxTimeout, "GET", path, nil, &in)
+		err = cl.callWithin(inboxTimeout, "GET", path, nil, &in)
 		var refused *refusal
 		switch {
+		case errors.As(err, &refused) && refused.updated():
+			fmt.Fprintln(c.Stdout, bridgeUpdated(refused.patterns))
+			return nil
 		case errors.As(err, &refused) && refused.status < 500:
 			return err
 		case errors.As(err, &refused):
@@ -142,6 +149,24 @@ func watch(c *context, args []string) error {
 			return nil
 		}
 	}
+}
+
+// updated reports whether this refusal is a newer bridge's, for this
+// watcher's protocol: its plugin is too old (docs/design.md, "Older
+// clients"). An older bridge's, after a failed handover, is not.
+func (r *refusal) updated() bool {
+	return r.code == "protocol" && !version.Older(r.version, version.Version)
+}
+
+// bridgeUpdated is the watcher's last line when a newer bridge refuses its
+// protocol, naming what to claim again once the plugin is reloaded. The
+// claims stay meanwhile, and the session ID survives /reload-plugins.
+func bridgeUpdated(patterns []string) string {
+	again := "/tweak <url>"
+	if len(patterns) > 0 {
+		again = "/tweak " + strings.Join(patterns, " and /tweak ")
+	}
+	return "bridge updated: run /reload-plugins, then " + again + " again"
 }
 
 // tweakArg reads a tweak number.

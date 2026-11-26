@@ -92,7 +92,7 @@ type watcher struct {
 
 func (s *sandbox) watch(session, folder string) *watcher {
 	s.t.Helper()
-	cmd := exec.Command(tweakBin, "watch")
+	cmd := exec.Command(s.exe(), "watch")
 	cmd.Env = append(s.env(), "CLAUDE_CODE_SESSION_ID="+session)
 	cmd.Dir = folder
 	out, _ := cmd.StdoutPipe()
@@ -312,7 +312,7 @@ func TestWorkAndDoneNeedATweakNumber(t *testing.T) {
 // tweakIn runs the binary with stdin.
 func (s *sandbox) tweakIn(stdin io.Reader, session, folder string, args ...string) result {
 	s.t.Helper()
-	cmd := exec.Command(tweakBin, args...)
+	cmd := exec.Command(s.exe(), args...)
 	cmd.Env = append(s.env(), "CLAUDE_CODE_SESSION_ID="+session)
 	cmd.Dir = folder
 	cmd.Stdin = stdin

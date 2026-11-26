@@ -35,6 +35,15 @@ export function applyTweaks(state = empty, msg) {
   return { seq: msg.seq, tweaks, resolved };
 }
 
+// prune drops the resolved tweaks past their deleteAt at now: the bridge has
+// deleted them (without an event), so the worker's copy goes too. It returns
+// the same state when none has.
+export function prune(state, now = Date.now()) {
+  const kept = [...(state.resolved ?? new Map()).values()].filter((t) => !t.deleteAt || Date.parse(t.deleteAt) > now);
+  if (kept.length === (state.resolved?.size ?? 0)) return state;
+  return { ...state, resolved: byNumber(kept) };
+}
+
 // resolvedList is the side panel's list: the resolved tweaks not yet
 // deleted at now, newest resolved first.
 export const resolvedList = (state, now = Date.now()) =>

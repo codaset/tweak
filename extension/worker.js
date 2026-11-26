@@ -9,7 +9,7 @@ import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
-import { applyTweaks, askedIn, askedSince, forTab, pageOf, reachesTab, resolvedList } from "./lib/tweaks.js";
+import { applyTweaks, askedIn, askedSince, forTab, pageOf, prune, reachesTab, resolvedList } from "./lib/tweaks.js";
 import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
 import { draw, frame, paced } from "./lib/screenshot.js";
@@ -36,7 +36,9 @@ const senders = new Map();
 chrome.runtime.onInstalled.addListener(() => restoreFromCache());
 chrome.runtime.onStartup.addListener(() => restoreFromCache());
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) bridge.connect();
+  if (alarm.name !== ALARM) return;
+  bridge.connect();
+  pruneTweaks(); // resolved tweaks the bridge has deleted since
 });
 chrome.permissions.onAdded.addListener(async () => {
   await refreshAccess();
@@ -326,12 +328,26 @@ function rememberSender(number, tabId) {
 }
 const saveSenders = () => chrome.storage.session.set({ senders: Object.fromEntries(senders) });
 
+// pruneTweaks drops the resolved tweaks past their deleteAt from the
+// worker's copy and its cache in storage.session.
+function pruneTweaks() {
+  const next = prune(tweakState);
+  if (next === tweakState) return;
+  tweakState = next;
+  saveTweaks(next);
+}
+
+function saveTweaks(state) {
+  chrome.storage.session.set({ tweaks: [...state.tweaks.values()], resolved: [...state.resolved.values()] });
+  const resolved = listed(state);
+  if (JSON.stringify(resolved) !== JSON.stringify(view.resolved)) publish({ resolved });
+}
+
 function adoptTweaks(next, msg) {
+  next = prune(next);
   const was = tweakState;
   tweakState = next;
-  chrome.storage.session.set({ tweaks: [...next.tweaks.values()], resolved: [...next.resolved.values()] });
-  const resolved = listed(next);
-  if (JSON.stringify(resolved) !== JSON.stringify(view.resolved)) publish({ resolved });
+  saveTweaks(next);
   const shown = [...tabs].filter((port) => port.page);
   for (const port of shown) {
     if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forTab(next, port), claimed: claimed(port.url) });

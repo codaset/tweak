@@ -83,9 +83,15 @@
       case "closed": // the worker's port is gone: a send in flight is lost with it
         ns.panel.unsent("Not connected to Tweak");
         break;
-      case "tweaks":
+      case "tweaks": {
+        // A card whose tweak was here and isn't now was resolved (or
+        // withdrawn) while its event couldn't arrive: it closes, as on that
+        // event, rather than wait as a card still sending.
+        const card = ns.panel.showing();
+        const had = card !== null && tweaks.has(card);
         tweaks.clear();
         for (const t of msg.tweaks) tweaks.set(t.number, t);
+        if (had && !tweaks.has(card)) ns.panel.close();
         if (typeof msg.claimed === "boolean") setClaimed(msg.claimed); // absent: unchanged
         ns.page.redraw();
         // The drafts kept for this tab come with its first tweaks after a
@@ -99,6 +105,7 @@
         if (adopting && ns.panel.showing() === null && !ns.panel.open()) ns.panel.restore(ns.drafts.compose());
         if (adopting) draftsAdopted = true;
         break;
+      }
       case "tweak":
         // msg.event is the bridge's event: tweak-undone means a change was
         // undone, which reloads the page as after a change (#42). A

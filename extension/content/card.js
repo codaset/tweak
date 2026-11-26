@@ -567,8 +567,11 @@
   function refreshUndo(u = ns.describe.undo(ns.page.tweak(mode.number))) {
     const { undoButton, undoError } = parts;
     const connected = ns.worker.connection === "connected";
-    const disabled = Boolean(mode.undoing) || !connected;
-    if (undoButton.disabled !== disabled) undoButton.disabled = disabled;
+    // While its answer is on the way the button keeps the focus (a disabled
+    // button would drop it), so it's only marked unavailable.
+    if (undoButton.disabled !== !connected) undoButton.disabled = !connected;
+    const busy = String(Boolean(mode.undoing));
+    if (undoButton.getAttribute("aria-disabled") !== busy) undoButton.setAttribute("aria-disabled", busy);
     const asking = u?.label === "Ask Claude to undo";
     const label = mode.undoing ? (asking ? "Asking Claude…" : "Undoing…") : (u?.label ?? "Undo");
     if (undoButton.textContent !== label) undoButton.textContent = label;
@@ -578,7 +581,7 @@
   }
 
   function submitUndo() {
-    if (mode?.kind !== "card" || parts.undoButton.disabled) return;
+    if (mode?.kind !== "card" || mode.undoing || parts.undoButton.disabled) return;
     mode.undoing = true;
     mode.undoError = "";
     mode.undoRef = `t${++refs}`;

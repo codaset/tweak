@@ -374,7 +374,8 @@
     }
     .undo .error { flex-basis: 100%; order: 3; }
     .send.secondary { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
-    .send.secondary:hover:not(:disabled) { filter: none; background: var(--surface); }
+    .send.secondary:hover:not(:disabled, [aria-disabled="true"]) { filter: none; background: var(--surface); }
+    .send[aria-disabled="true"] { opacity: 0.45; cursor: default; }
     .answer { display: grid; gap: 8px; animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
     .answer textarea { min-height: 52px; }
 

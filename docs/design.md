@@ -144,10 +144,12 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | Tab to worker | `page` | `url`: the tab's full URL, sent when the port opens and again after each client-side navigation, a query-only one included |
 | | `card` | `number`: the tab's open card, or `null` when it closes |
 | | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own) |
+| | `reply` | a `reply` for the bridge, with the tab's `ref`, likewise |
 | | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
 | Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
 | | `tweak` | `tweak`: one changed tweak (a page's, or the open card's) |
 | | `created` | `ref`, and the `number` created or an `error` and `message` |
+| | `replied` | `ref`, and the `number` replied to or an `error` and `message` |
 | | `claimed` | `claimed`, sent to every tab whenever the claims change |
 | | `state` | `connection`: connecting, connected, refused or disconnected |
 | Port, local | `open`, `closed` | made by the content script's own port when it connects and when it's lost; `open` is what sends `page`, and `closed` ends a send in flight |
@@ -374,8 +376,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `GET /inbox?after=<seq>` (long-poll; one line of at most 500 characters per event; it also
   acknowledges, see below), `POST /tweaks/:n/work` (returns the brief as text, sets `working` and
   starts undo capture for the session; a POST because fetching changes state),
-  `POST /tweaks/:n/status` (`{status, message}`; only `done`, with its summary, so far; it answers
-  `{number, status}`), `POST /tweaks/:n/entries` (a plan), and `POST /edits/before` (the edit hook sends a file's path
+  `POST /tweaks/:n/status` (`{status, message}`: `done`, `question` or `declined` with Claude's
+  summary, question or reason, or `queued` with none; it answers `{number, status}`),
+  `POST /tweaks/:n/entries` (`{kind: "plan", text}`, answered the same way), and `POST /edits/before` (the edit hook sends a file's path
   before an agent edits it; the bridge reads the file and decides which tweak it belongs to; see
   [Undo](#undo)). Every CLI request counts as the
   session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
@@ -386,8 +389,9 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
   socket stays open. `create` is `{ref, url, request, targets, anchor}`; the bridge refuses it with
   `bad-request` for a malformed one, and `no-claim` for a page no claim covers (so every stored
-  tweak has a session). A snapshot holds only the open (unresolved) tweaks, and `tweak-created` and
-  `tweak-status` events carry whole tweaks, entries included. Their shapes, with the `GET /inbox`
+  tweak has a session). `reply` is `{ref, number, text}`, answered with the number, or `not-asked`
+  when Claude isn't waiting on a question, `no-tweak` or `bad-request`. A snapshot holds only the open (unresolved) tweaks, and `tweak-created`,
+  `tweak-status` and `tweak-replied` events carry whole tweaks, entries included. Their shapes, with the `GET /inbox`
   reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
   `tweak watch` exits on), are in `schema/`.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic

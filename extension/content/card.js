@@ -136,6 +136,7 @@
     status.append(dot, statusText);
     const request = el("p", "request");
     const thread = el("div", "thread");
+    thread.hidden = true;
 
     // The reply box, shown while Claude has a question. It's built once and
     // shown or hidden, so what you type survives every redraw.
@@ -186,10 +187,12 @@
     const words = tweak?.entries?.find((e) => e.kind === "request")?.text ?? mode.request ?? "";
     if (request.textContent !== words) request.textContent = words;
 
-    // The conversation is redrawn only when it changes.
-    const entries = ns.describe.thread(tweak);
-    const said = JSON.stringify(entries);
-    if (said !== parts.said) {
+    // The conversation is redrawn only when it changes (every change brings
+    // a new tweak object), and scrolled to its newest entry.
+    const entries = tweak === parts.tweak ? null : ns.describe.thread(tweak);
+    const said = entries && JSON.stringify(entries);
+    parts.tweak = tweak;
+    if (entries && said !== parts.said) {
       parts.said = said;
       thread.replaceChildren(
         ...entries.map((e) => {
@@ -199,6 +202,7 @@
         }),
       );
       thread.hidden = entries.length === 0;
+      thread.scrollTop = thread.scrollHeight;
     }
 
     const asking = tweak?.status === "question";
@@ -218,12 +222,14 @@
   function refreshReply() {
     const { box, send, error } = parts;
     const connected = ns.worker.connection === "connected";
-    send.disabled = Boolean(mode.replying) || !box.value.trim() || !connected;
-    send.textContent = mode.replying ? "Sending…" : "Reply";
-    box.readOnly = Boolean(mode.replying);
+    const disabled = Boolean(mode.replying) || !box.value.trim() || !connected;
+    if (send.disabled !== disabled) send.disabled = disabled;
+    const label = mode.replying ? "Sending…" : "Reply";
+    if (send.textContent !== label) send.textContent = label;
+    if (box.readOnly !== Boolean(mode.replying)) box.readOnly = Boolean(mode.replying);
     const why = mode.replyError || (connected ? "" : "Not connected to Tweak");
     if (error.textContent !== why) error.textContent = why;
-    error.hidden = !why;
+    if (error.hidden !== !why) error.hidden = !why;
   }
 
   function submitReply() {

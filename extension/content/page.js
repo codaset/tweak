@@ -113,7 +113,10 @@
         const before = new Map(tweaks);
         tweaks.clear();
         for (const t of msg.tweaks) tweaks.set(t.number, t);
-        if (listed && claimed) for (const t of msg.tweaks) if (t.page === shownPage && before.has(t.number)) ns.reload.heard(before.get(t.number), t);
+        if (listed && claimed) {
+          for (const t of msg.tweaks) if (t.page === shownPage && before.has(t.number)) ns.reload.heard(before.get(t.number), t);
+          ns.reload.relisted(msg.tweaks);
+        }
         if (had && !tweaks.has(card)) ns.panel.close();
         if (typeof msg.claimed === "boolean") setClaimed(msg.claimed, msg.lapsed); // absent: unchanged
         // The page's first list: a tweak under way may have reloaded it.

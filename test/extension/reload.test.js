@@ -537,3 +537,20 @@ test("a reloaded page watches only its own tweaks, not an open card's from anoth
   assert.equal(p.ns.reload.state(4), null);
   assert.equal(p.ns.reload.state(5), "watching");
 });
+
+test("a drop-down starts on its first option that can be chosen, outside a disabled group too", () => {
+  const group = { tagName: "OPTGROUP", disabled: true };
+  const a = { selected: false, defaultSelected: false, disabled: false, parentNode: group };
+  const b = { selected: true, defaultSelected: false, disabled: false, parentNode: { tagName: "SELECT" } };
+  assert.equal(unsaved([{ tagName: "SELECT", options: [a, b] }]), false);
+});
+
+test("after a reconnect, an undo with Claude of a tweak that's gone from the list is decided as ended", async () => {
+  const p = page();
+  const resolved = { number: 1, page: "http://localhost:3000/", status: "done", resolvedAt: "2026-11-26T10:00:00Z" };
+  p.event({ ...resolved, change: { ...recorded, state: "undo-requested" } });
+  assert.equal(p.ns.reload.state(1), "watching");
+  p.ns.reload.relisted([]); // the list after the reconnect has no resolved tweaks
+  await p.advance(2000);
+  assert.equal(p.reloads.length, 1, "the undo may have ended: its decision is made, and nothing holds the page");
+});

@@ -72,7 +72,9 @@
         // Without a default, a drop-down starts on its first option; a
         // multiple select or a listbox (size over 1) starts with none.
         const dropDown = !f.multiple && !(f.size > 1);
-        const first = dropDown && !marked ? options.findIndex((o) => !o.disabled) : -1;
+        // An option in a disabled group can't be chosen either.
+        const choosable = (o) => !o.disabled && !(o.parentNode?.tagName === "OPTGROUP" && o.parentNode.disabled);
+        const first = dropDown && !marked ? options.findIndex(choosable) : -1;
         if (options.some((o, i) => o.selected !== (first < 0 ? o.defaultSelected : i === first))) return true;
         continue;
       }
@@ -331,6 +333,13 @@
       const lost = [...presses.values()];
       presses.clear();
       for (const n of lost) notUndone(n);
+    },
+    // relisted is a list after the first (the port or the bridge came
+    // back): an undo with Claude of a tweak no longer in it (resolved, or
+    // withdrawn) may have ended meanwhile unheard, so it's decided as ended.
+    relisted(tweaks) {
+      const listed = new Set(tweaks.map((t) => t.number));
+      for (const [n, m] of [...machines]) if (m.undo === "claude" && !listed.has(n)) ended(n);
     },
     // left drops everything the old page was waiting for: the tab has moved
     // to another page, or gone dormant (a reload there would show no change).

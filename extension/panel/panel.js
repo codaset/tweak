@@ -84,6 +84,8 @@ function renderResolved(state) {
   const list = (state.resolved ?? []).filter((t) => (!site || describe.origin(t.url) === site) && (!t.deleteAt || Date.parse(t.deleteAt) > now));
   for (const t of state.resolved ?? []) if (undos.get(t.number)?.state !== t.change?.state) undos.delete(t.number);
   $("resolved").hidden = list.length === 0;
+  // While the bridge is down the list stays, faded, and Undo is refused.
+  $("resolved").classList.toggle("offline", state.connection === "disconnected" || state.connection === "refused");
   // Rows are rebuilt only when what they show changes, and the focus is
   // kept on the same control of a rebuilt row.
   const focused = document.activeElement?.closest?.("#resolved-list li") ? document.activeElement.dataset.focus : "";

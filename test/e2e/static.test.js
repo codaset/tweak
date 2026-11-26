@@ -13,6 +13,7 @@ import {
   CARD_STATUS,
   CARD_TITLE,
   CARD_UNDO,
+  CARD_ACTION,
   COMPOSER_INPUT,
   REPLY_INPUT,
   REPLY_SEND,
@@ -815,6 +816,26 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
 
     await up();
     await undoFromCard(env); // puts the fixture copy back, too
+  });
+
+  test("Withdraw is refused while down, and withdraws the tweak once connected", async () => {
+    await open(env);
+    await env.page.keyboard.press("Escape"); // an earlier test's card, which may cover the title
+    await env.tab.until(`!root.querySelector(${JSON.stringify(CARD)})`, { what: "no card open" });
+    const n = await send(".plan-title", "make the plan title bolder");
+    const action = `root.querySelector(${JSON.stringify(CARD_ACTION)})`;
+    await env.tab.until(`${action}?.textContent`, { is: (s) => s === "Withdraw", what: "the card's Withdraw" });
+
+    await down();
+    await env.tab.until(`${action}.disabled`, { what: "Withdraw to be refused" });
+    assert.equal(await env.tab.evaluate(`root.querySelector(".panel .actions .error").textContent`), "Not connected to Tweak");
+    await env.tab.evaluate(`${action}.click()`); // refused, not held
+    assert.equal(await env.tab.evaluate(`ns.page.tweak(${n})?.status`), "working", "nothing was withdrawn");
+
+    await up();
+    const from = env.watcher.lines.length;
+    await finishFromCard(env, n, "Withdraw");
+    await env.watcher.line(new RegExp(`^tweak ${n} withdrawn$`), { from });
   });
 
   test("pins and the card stay, faded and read-only; ⌥-click opens the side panel; a half-written reply survives a reload and is sent once connected", async () => {

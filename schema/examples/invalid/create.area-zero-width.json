@@ -1,0 +1,32 @@
+{
+  "type": "create",
+  "ref": "tab-3-1",
+  "url": "https://ernie.localhost/admin/users?tab=2",
+  "request": "make this button green",
+  "targets": {
+    "elements": [
+      {
+        "label": "p",
+        "selector": "p"
+      }
+    ],
+    "area": {
+      "page": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 10
+      },
+      "viewport": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 10
+      }
+    }
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.4
+  }
+}

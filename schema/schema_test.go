@@ -77,7 +77,7 @@ func TestTargetsAreTheSameEverywhere(t *testing.T) {
 	want := defs("create.json")
 	for _, file := range []string{"event.json", "snapshot.json"} {
 		got := defs(file)
-		for _, name := range []string{"targets", "viewport", "element", "location", "clue", "size", "rule", "anchor"} {
+		for _, name := range []string{"targets", "viewport", "element", "location", "clue", "size", "rule", "anchor", "selection", "area", "box"} {
 			if !reflect.DeepEqual(got[name], want[name]) {
 				t.Errorf("%s $defs.%s differs from create.json's", file, name)
 			}

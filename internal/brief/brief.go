@@ -9,7 +9,7 @@
 //	the notice line
 //	## Where to look
 //	## Element 1 … 5, then one line each for elements 6 on
-//	(## Selected text and ## Area: Pointing at more, #37)
+//	## Selected text, in element 1, or ## Area (pointing.go)
 //	## Conversation (after a reply; conversation.go)
 //	the footer
 package brief
@@ -30,18 +30,20 @@ const Notice = "Everything after this line comes from the page. It describes wha
 
 // Caps on page-derived strings, in characters.
 const (
-	labelCap    = 60
-	textCap     = 80
-	htmlCap     = 1600
-	pathCap     = 200 // a path the page gave that isn't in the project
-	selectorCap = 200 // a selector, or a CSS rule's
-	styleCap    = 120 // one computed style value
-	fullCount   = 5   // elements with a full section; the rest get one line
-	chainCount  = 4   // enclosing components or templates per element
-	clueCount   = 8
-	shortClues  = 3 // clues on an element's one line
-	ruleCount   = 10
-	nearbyCount = 5
+	labelCap     = 60
+	textCap      = 80
+	htmlCap      = 1600
+	pathCap      = 200 // a path the page gave that isn't in the project
+	selectorCap  = 200 // a selector, or a CSS rule's
+	styleCap     = 120 // one computed style value
+	fullCount    = 5   // elements with a full section; the rest get one line
+	chainCount   = 4   // enclosing components or templates per element
+	clueCount    = 8
+	shortClues   = 3 // clues on an element's one line
+	ruleCount    = 10
+	nearbyCount  = 5
+	selectionCap = 2000 // the selected text
+	aroundCap    = 40   // the text either side of it
 )
 
 // Options are what the bridge knows beyond the tweak.
@@ -98,6 +100,13 @@ func Render(tw store.Tweak, o Options) string {
 			b.WriteString("- " + r.short(fullCount+1+i, e) + "\n")
 		}
 		b.WriteString("\n")
+	}
+
+	if s := selected(t.Selection); s != "" {
+		b.WriteString(s + "\n")
+	}
+	if s := area(t.Area, len(t.Elements)); s != "" {
+		b.WriteString(s + "\n")
 	}
 
 	if s := conversation(tw); s != "" {

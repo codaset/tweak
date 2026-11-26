@@ -7,8 +7,35 @@ package brief
 
 // Targets is what a tweak points at.
 type Targets struct {
-	Viewport *Viewport `json:"viewport,omitempty"` // once per tweak
-	Elements []Element `json:"elements"`
+	Viewport  *Viewport  `json:"viewport,omitempty"` // once per tweak
+	Elements  []Element  `json:"elements"`
+	Selection *Selection `json:"selection,omitempty"` // selected text, in element 1
+	Area      *Area      `json:"area,omitempty"`      // a box: inside element 1, holding elements 2 on
+}
+
+// Selection is the exact text selected, and about 40 characters either
+// side of it, so Claude can tell which occurrence it is. Element 1 is the
+// element holding it.
+type Selection struct {
+	Text   string `json:"text"`
+	Before string `json:"before,omitempty"`
+	After  string `json:"after,omitempty"`
+}
+
+// Area is a box dragged over the page, in page and viewport coordinates
+// (CSS pixels). Element 1 is the smallest element containing it; elements
+// 2 on are the top-level elements fully inside it, at most 5.
+type Area struct {
+	Page     Box `json:"page"`
+	Viewport Box `json:"viewport"`
+}
+
+// Box is a rectangle in CSS pixels.
+type Box struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }
 
 // Viewport is the page's viewport in CSS pixels, and its device pixel ratio.

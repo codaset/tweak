@@ -1,0 +1,29 @@
+{
+  "type": "create",
+  "ref": "tab-3-1",
+  "url": "https://ernie.localhost/admin/users?tab=2",
+  "request": "make this button green",
+  "targets": {
+    "viewport": {
+      "width": 1100,
+      "height": 800,
+      "dpr": 2
+    },
+    "elements": [
+      {
+        "label": "p.lede",
+        "text": "A page with no framework",
+        "selector": "main > p"
+      }
+    ],
+    "selection": {
+      "text": "no framework",
+      "before": "A page with ",
+      "after": ": search clues and CSS rules only."
+    }
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.4
+  }
+}

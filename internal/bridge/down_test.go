@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -119,7 +120,10 @@ func TestAClaimJustAfterTheExtensionLeftHasNoWarning(t *testing.T) {
 func TestWhenTheExtensionWasLastSeenOutlivesARestart(t *testing.T) {
 	state := t.TempDir()
 	h, c := downBridge(t, func(o *Options) { o.Config.StateDir = state })
-	h.extensionConnects()
+	// Still connected at shutdown, and answering the bridge's close frame as
+	// Chrome does: an unread socket would hold Shutdown for the close
+	// handshake's 5 s timeout.
+	h.extensionConnects().c.CloseRead(context.Background())
 	c.advance(time.Hour)
 	eventually(t, "the sweep marking the extension seen", func() bool {
 		seen, _ := h.b.store.ExtensionSeen()

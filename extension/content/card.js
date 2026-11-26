@@ -452,7 +452,7 @@
     chip.hidden = !label;
     const s = ns.describe.status(tweak);
     const unanswered = ns.describe.unanswered(tweak);
-    const statusClass = `status ${ns.describe.classes(tweak)}${unanswered || s.quiet ? " unanswered" : ""}${s.quiet ? " quiet" : ""}`;
+    const statusClass = `status ${ns.describe.classes(tweak)}${unanswered || s.quiet ? " unanswered" : ""}`;
     if (status.className !== statusClass) status.className = statusClass;
     if (statusText.textContent !== s.text) {
       // A folder in the text shows as code.

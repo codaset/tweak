@@ -103,6 +103,7 @@ type Bridge struct {
 	polls   map[string]int
 	polled  map[string]time.Time
 	upSince time.Time
+	told    map[string]bool // whether each claimed session was last said to be listening (the sweep's)
 }
 
 // Info is bridge.json, and the body of GET /bridge.
@@ -159,7 +160,7 @@ func Start(o Options) (*Bridge, error) {
 		return nil, whyNotListening(o.Config.Port, err)
 	}
 	b := &Bridge{opts: o, listener: l, log: log.New(o.Log, "bridge: ", log.LstdFlags), stop: make(chan struct{}), change: make(chan struct{}),
-		polls: map[string]int{}, polled: map[string]time.Time{}, upSince: o.Clock()}
+		polls: map[string]int{}, polled: map[string]time.Time{}, upSince: o.Clock(), told: map[string]bool{}}
 	b.closing, b.stopSockets = context.WithCancel(context.Background())
 	b.gitSnapshot, b.gitChanged = capture.Snapshot, capture.Changed
 	b.opts.Config.Port = l.Addr().(*net.TCPAddr).Port
@@ -178,6 +179,9 @@ func Start(o Options) (*Bridge, error) {
 		return fail(err)
 	}
 	b.store.SetClock(o.Clock)
+	if home, err := os.UserHomeDir(); err == nil {
+		b.store.SetHome(home) // lines show folders from ~
+	}
 	// Every commit that writes to the event log wakes the sockets.
 	b.store.OnEvent(b.notify)
 	// A capture outlives a restart; a crashed bridge's stale markers don't.
@@ -185,6 +189,10 @@ func Start(o Options) (*Bridge, error) {
 		return fail(fmt.Errorf("can't write the capture markers: %w", err))
 	}
 	// Time the bridge was down doesn't count toward a lapse.
+	// Nor toward a lapsed claim's 24 hours.
+	if err := b.store.Resume(); err != nil {
+		return fail(err)
+	}
 	if err := b.store.CheckInAll(); err != nil {
 		return fail(err)
 	}

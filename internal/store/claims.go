@@ -27,17 +27,20 @@ type Claim struct {
 	// LostTo is, for a lapsed claim that can't come back, the folder of the
 	// session that has since claimed an overlapping pattern.
 	LostTo string
+	// LapsedAt is when a lapsed claim lapsed, moved on by any downtime since.
+	LapsedAt time.Time
 }
 
 // OverlapError refuses a claim that overlaps another session's.
 type OverlapError struct {
 	Pattern string // the pattern asked for
 	Holder  Claim
+	Shown   string // the holder's folder as lines show it, from ~
 }
 
 func (e *OverlapError) Error() string {
 	return fmt.Sprintf("%s overlaps %s, claimed by the session in %s (%s)",
-		e.Pattern, e.Holder.Pattern, e.Holder.Session.Folder, e.Holder.Session.ID)
+		e.Pattern, e.Holder.Pattern, e.Shown, e.Holder.Session.ID)
 }
 
 // RegisterSession records a session, or updates its agent and folder, and
@@ -120,7 +123,7 @@ func (s *Store) Claim(sessionID string, p pattern.Pattern) (Claim, error) {
 			return Claim{}, fmt.Errorf("stored claim %d: %w", c.ID, err)
 		}
 		if held.Overlaps(p) {
-			return Claim{}, &OverlapError{Pattern: want, Holder: c}
+			return Claim{}, &OverlapError{Pattern: want, Holder: c, Shown: s.Shown(c.Session.Folder)}
 		}
 	}
 

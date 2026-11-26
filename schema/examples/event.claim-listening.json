@@ -1,0 +1,1 @@
+{"type":"event","seq":15,"event":"claim-listening","claim":{"id":2,"pattern":"https://bert.localhost:3000/*","session":{"id":"1f2e3d4c-0000-4000-8000-000000000001","agent":"claude-code","folder":"/Users/joel/dev/ernie","label":"","lastCheckIn":"2026-11-25T10:00:00.000Z"},"created":"2026-11-25T10:00:00.000Z","listening":false}}

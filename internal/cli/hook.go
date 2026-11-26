@@ -119,8 +119,26 @@ func sessionEnd(env Env, deadline time.Time) {
 			return
 		}
 	}
-	path := cfg.Released(in.SessionID)
-	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
-		os.WriteFile(path, []byte(in.SessionID+"\n"), 0o600)
+	writeWhole(cfg.Released(in.SessionID), in.SessionID+"\n")
+}
+
+// renameFile is os.Rename; a test cuts it off.
+var renameFile = os.Rename
+
+// writeWhole writes a file that appears whole or not at all: a temporary
+// dot-file beside it (which the bridge never reads as a marker), then a
+// rename into place.
+func writeWhole(path, text string) {
+	dir := filepath.Dir(path)
+	if os.MkdirAll(dir, 0o700) != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return
+	}
+	_, werr := tmp.WriteString(text)
+	if cerr := tmp.Close(); werr != nil || cerr != nil || renameFile(tmp.Name(), path) != nil {
+		os.Remove(tmp.Name())
 	}
 }

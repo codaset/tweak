@@ -65,7 +65,10 @@ access is granted, the worker can't read tab URLs (that would need the `tabs` pe
 install warning), so it shows one grey `!` on the toolbar icon in every tab, meaning "action
 needed", and the side panel shows **Allow access**. If
 access is removed in `chrome://extensions`, `permissions.onRemoved` returns the extension to that
-state. Registrations stay in place but don't inject until access is granted again.
+state. Registrations stay in place but don't inject until access is granted again. So that Claude
+can say why ⌥-click does nothing, the worker tells the bridge whether access is granted (in `hello`,
+and in an `access` message on each change), and `tweak claim` warns `site access not granted: open
+the Codaset Tweak side panel and click Allow access, or ⌥-click won't work`.
 
 **What runs where**:
 
@@ -461,9 +464,10 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   `x-tweak-warning` lines (`no watcher running`, `claim lost: …`), which the CLI prints on stderr
   once each; the watcher's inbox and the hooks get none. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
-- **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version, reloadedFor?}` (the
+- **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version, reloadedFor?, granted?}` (the
   extension's version, and the version it last reloaded itself for or `""`, recorded by the bridge
-  for `tweak claim`'s reload warning), `create`, `reply`, `again`, `undo`,
+  for `tweak claim`'s reload warning; `granted`, whether it has site access, for its access warning),
+  `access {granted}` (site access granted or removed since the hello), `create`, `reply`, `again`, `undo`,
   `withdraw`, `resolve`; from the bridge a snapshot or events, and refusals. A request carries the worker's
   `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
   socket stays open. `create` is `{ref, url, request, targets, anchor, screenshot?}`; the bridge refuses it with
@@ -546,7 +550,7 @@ when a tweak passes to another session; see [When the session goes quiet](#when-
 | `sessions` | id (agent session ID), agent, folder, label, last check-in |
 | `claims` | id, session, pattern, created |
 | `lapsed_claims` | id, session, pattern, created, lapsed at, lost to (the folder that claimed an overlapping pattern since), reported |
-| `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path; resends and wait from (the unconfirmed-tweak wait, see [No lost tweaks](#no-lost-tweaks)); `left_*` (by, why, status, status at, capturing: the session that let go of the page, how, and the tweak's state then, so a lapsed claim's tweaks come back as they were); line (the last inbox line it had: `new` or `reply`) |
+| `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path; resends and wait from (the unconfirmed-tweak wait, see [No lost tweaks](#no-lost-tweaks)); `left_*` (by, why, status, status at, capturing: the session that let go of the page, how, and the tweak's state then, so a lapsed claim's tweaks come back as they were); line (the last inbox line it had: `new` or `reply`); delivered at and first edit at (when its first line was acknowledged and its first before copy recorded, see [Open measurements](#open-measurements)) |
 | `entries` | tweak, from, kind, text, at |
 | `changes` | tweak (one change each), state, unrecorded files (JSON), capturing session, folder, git repo and tree, whether the check ran, conflicts (while `undo-requested`) |
 | `change_files` | change, path (once per change), contents before (or absent), contents after, path as shown, outside the project, recordable, git tree of its round |
@@ -1082,8 +1086,9 @@ contains a single quote, pass `-` and give the text on stdin.
 1. Run `tweak claim '<url>'`. It starts the bridge if needed and claims the pages.
    - If it is refused because another session holds an overlapping claim, show the message and stop.
    - Relay any warning in one line: the Chrome extension isn't connected yet (give its install
-     steps), or it was connected before but isn't now (ask whether Chrome is open with Codaset Tweak
-     enabled).
+     steps), it was connected before but isn't now (ask whether Chrome is open with Codaset Tweak
+     enabled), or it has no site access yet (they open the Codaset Tweak side panel and click
+     **Allow access**; until then ⌥-click does nothing).
    - If it reports `allow rule missing`, ask the developer once whether to add `"Bash(tweak *)"` to
      `permissions.allow` in the settings file it names. Without it, later turns may stop for
      permission. Add it only on a yes. Then continue either way.

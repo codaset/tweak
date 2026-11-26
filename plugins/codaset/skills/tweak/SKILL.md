@@ -27,8 +27,9 @@ contains a single quote, pass `-` and give the text on stdin.
 1. Run `tweak claim '<url>'`. It starts the bridge if needed and claims the pages.
    - If it is refused because another session holds an overlapping claim, show the message and stop.
    - Relay any warning in one line: the Chrome extension isn't connected yet (give its install
-     steps), or it was connected before but isn't now (ask whether Chrome is open with Codaset Tweak
-     enabled).
+     steps), it was connected before but isn't now (ask whether Chrome is open with Codaset Tweak
+     enabled), or it has no site access yet (they open the Codaset Tweak side panel and click
+     **Allow access**; until then ⌥-click does nothing).
    - If it reports `allow rule missing`, ask the developer once whether to add `"Bash(tweak *)"` to
      `permissions.allow` in the settings file it names. Without it, later turns may stop for
      permission. Add it only on a yes. Then continue either way.

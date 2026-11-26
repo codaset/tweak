@@ -11,8 +11,9 @@ import (
 	"github.com/codaset/tweak/internal/config"
 )
 
-// The hooks Claude Code runs (docs/design.md, "Capture"): tweak hook
-// pre-edit, the PreToolUse hook on Edit, Write and NotebookEdit. A hook
+// The hooks Claude Code runs (docs/design.md, "Capture" and "Claims"):
+// tweak hook pre-edit, the PreToolUse hook on Edit, Write and NotebookEdit,
+// and tweak hook session-end, the SessionEnd hook (exit and /clear). A hook
 // prints nothing and exits 0 whatever happens, within hookDeadline: exit 2
 // would block the edit, and any output would reach Claude. It never starts
 // a bridge.
@@ -22,7 +23,8 @@ import (
 const hookDeadline = time.Second
 
 var hooks = map[string]func(Env, time.Time){
-	"pre-edit": preEdit,
+	"pre-edit":    preEdit,
+	"session-end": sessionEnd,
 }
 
 // runHook runs tweak hook <name> and always returns 0. An unknown hook
@@ -93,4 +95,32 @@ func preEdit(env Env, deadline time.Time) {
 	}
 	cl := &client{port: f.Port, session: in.SessionID, http: &http.Client{Timeout: time.Until(deadline)}}
 	cl.call("POST", "/edits/before", map[string]string{"path": path}, nil)
+}
+
+// sessionEnd releases the session's claims and ends its capture as it
+// exits or is cleared. With no bridge to tell (or none answering in time),
+// it leaves released/<session> for the next bridge to start to act on. It
+// never starts a bridge.
+func sessionEnd(env Env, deadline time.Time) {
+	cfg, err := config.Resolve(env.Getenv, env.Home)
+	if err != nil || env.Stdin == nil {
+		return
+	}
+	var in struct {
+		SessionID string `json:"session_id"`
+	}
+	if json.NewDecoder(env.Stdin).Decode(&in) != nil || in.SessionID == "" {
+		return
+	}
+	if f, err := bridge.ReadBridgeFile(cfg.StateDir); err == nil {
+		// Leave time to write the marker if the bridge doesn't answer.
+		cl := &client{port: f.Port, session: in.SessionID, http: &http.Client{Timeout: time.Until(deadline) * 2 / 3}}
+		if cl.call("POST", "/sessions/end", nil, nil) == nil {
+			return
+		}
+	}
+	path := cfg.Released(in.SessionID)
+	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
+		os.WriteFile(path, []byte(in.SessionID+"\n"), 0o600)
+	}
 }

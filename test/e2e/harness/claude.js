@@ -14,17 +14,25 @@ export const BIN = process.env.TWEAK_E2E_BIN ?? resolve(import.meta.dirname, "..
 // What a development bridge's CLI runs with: TWEAK_BIN, its own port and
 // state folder, and HOME and CLAUDE_CONFIG_DIR inside that folder. None of it
 // is inherited, so a test never reaches the live bridge or its sessions, or
-// reads the real Claude Code settings. With againAfter (a Go duration, such as
-// "1s"), the bridge sends an unconfirmed tweak again after that instead of 3
-// minutes: the test-only TWEAK_TEST_AGAIN_AFTER, which only a development
-// build reads.
-export async function devBridge({ againAfter } = {}) {
+// reads the real Claude Code settings. The timing options are Go durations,
+// such as "1s", each a test-only knob that only a development build reads:
+// - againAfter: the bridge sends an unconfirmed tweak again after that
+//   instead of 3 minutes (TWEAK_TEST_AGAIN_AFTER);
+// - lapseAfter: a session's claims lapse after that without a check-in
+//   instead of 10 minutes (TWEAK_TEST_LAPSE_AFTER);
+// - unwatchedAfter: a session's commands warn "no watcher running" after
+//   that without a watcher instead of 60 seconds (TWEAK_TEST_UNWATCHED_AFTER).
+const knobs = { againAfter: "TWEAK_TEST_AGAIN_AFTER", lapseAfter: "TWEAK_TEST_LAPSE_AFTER", unwatchedAfter: "TWEAK_TEST_UNWATCHED_AFTER" };
+
+export async function devBridge(options = {}) {
   if (!existsSync(BIN)) throw new Error(`no tweak binary at ${BIN}: run npm run e2e, which builds it`);
   const port = await freePort();
   const state = mkdtempSync(join(tmpdir(), "tweak-e2e-state-"));
   const env = { ...process.env, TWEAK_BIN: BIN, TWEAK_PORT: String(port), TWEAK_STATE_DIR: state, HOME: state, CLAUDE_CONFIG_DIR: join(state, "claude") };
-  delete env.TWEAK_TEST_AGAIN_AFTER;
-  if (againAfter) env.TWEAK_TEST_AGAIN_AFTER = againAfter;
+  for (const [option, name] of Object.entries(knobs)) {
+    delete env[name];
+    if (options[option]) env[name] = options[option];
+  }
   delete env.CLAUDE_CODE_SESSION_ID;
   return {
     port,
@@ -45,13 +53,14 @@ export async function devBridge({ againAfter } = {}) {
   };
 }
 
-// Runs a command and resolves with its stdout; with `input`, that's its
-// stdin. A non-zero exit rejects, with stderr in the message.
-function run(args, { env, cwd, input }) {
+// Runs a command and resolves with its stdout (or, with `both`, its
+// {stdout, stderr}); with `input`, that's its stdin. A non-zero exit
+// rejects, with stderr in the message.
+function run(args, { env, cwd, input, both }) {
   return new Promise((done, fail) => {
     const child = execFile(BIN, args, { env, cwd }, (err, stdout, stderr) => {
       if (err) fail(new Error(`tweak ${args.join(" ")} failed (${err.code}): ${stderr.trim() || err.message}`));
-      else done(stdout);
+      else done(both ? { stdout, stderr } : stdout);
     });
     child.stdin.end(input ?? "");
   });
@@ -69,6 +78,8 @@ export function standIn(bridge, { folder, session = `claude-stand-in-${process.p
     // The same, with stdin: a `-` message, or a hook's JSON for
     // `tweak hook pre-edit` in the round trips.
     tweakWith: (input, ...args) => run(args, { env, cwd: folder, input }),
+    // The same, resolving with {stdout, stderr}, for a command's warnings.
+    tweakBoth: (...args) => run(args, { env, cwd: folder, both: true }),
     // A case's edit as Claude's Edit tool makes it: first the PreToolUse
     // hook, with the JSON Claude Code gives it on stdin, then the edit. The
     // hook says nothing, and is quick.
@@ -91,6 +102,12 @@ export function standIn(bridge, { folder, session = `claude-stand-in-${process.p
       const before = readFileSync(path, "utf8");
       if (!before.includes(find)) throw new Error(`${file} has no ${JSON.stringify(find)} to replace`);
       writeFileSync(path, before.replace(find, replace));
+    },
+    // The SessionEnd hook, as Claude Code runs it on exit or /clear.
+    async end(reason = "prompt_input_exit") {
+      const input = JSON.stringify({ session_id: session, transcript_path: join(folder, ".transcript.jsonl"), cwd: folder, hook_event_name: "SessionEnd", reason });
+      const out = await run(["hook", "session-end"], { env, cwd: folder, input });
+      if (out !== "") throw new Error(`tweak hook session-end printed ${JSON.stringify(out)}`);
     },
     claim: (pattern) => tweak("claim", pattern),
     release: () => tweak("release"),

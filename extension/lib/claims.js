@@ -12,8 +12,10 @@ export function apply(state, msg) {
   const others = state.claims.filter((c) => c.id !== msg.claim.id);
   switch (msg.event) {
     case "claim-made":
+    case "claim-restored": // a lapsed claim back with its session
       return { seq: msg.seq, claims: [...others, keep(msg.claim)] };
     case "claim-released":
+    case "claim-lapsed": // its session stopped responding: the page is unclaimed
       return { seq: msg.seq, claims: others };
     default:
       return { ...state, seq: msg.seq };

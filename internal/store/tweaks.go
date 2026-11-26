@@ -59,6 +59,10 @@ type Tweak struct {
 	Resends  int
 	WaitFrom time.Time
 	Change   *Change // nil until capture starts for it
+	// Line is what the session's last inbox line for it was: LineNew, or
+	// LineReply once the developer has answered its question. An again:
+	// line repeats it.
+	Line string
 }
 
 // Entry is one turn of a tweak's conversation.
@@ -332,6 +336,9 @@ func (s *Store) Reply(number int64, text string) (Tweak, error) {
 	if text == "" {
 		return Tweak{}, ErrBlankReply
 	}
+	if _, err := tx.Exec(`UPDATE tweaks SET line = ? WHERE number = ?`, LineReply, number); err != nil {
+		return Tweak{}, err
+	}
 	if tw, err = tx.change(number, StatusSent, &Entry{From: FromYou, Kind: KindReply, Text: text}, EventTweakReplied); err != nil {
 		return Tweak{}, err
 	}
@@ -345,6 +352,11 @@ func ownTweak(tx *eventTx, sessionID string, number int64) (Tweak, error) {
 		return Tweak{}, err
 	}
 	if tw.Session != sessionID {
+		if lost, err := lostFor(tx, sessionID, tw.URL); err != nil {
+			return Tweak{}, err
+		} else if lost != nil {
+			return Tweak{}, &LostError{Claim: *lost}
+		}
 		e := &NotYoursError{Number: number}
 		if tw.Session != "" {
 			if se, err := sessionIn(tx, tw.Session); err == nil {
@@ -394,13 +406,13 @@ func sessionIn(q queryRower, id string) (Session, error) {
 	return se, err
 }
 
-const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, ''), resends, coalesce(wait_from, 0)`
+const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, ''), resends, coalesce(wait_from, 0), line`
 
 func scanTweak(row interface{ Scan(...any) error }) (Tweak, error) {
 	var tw Tweak
 	var statusAt, created, updated, waitFrom int64
 	var targets, anchor string
-	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor, &tw.Resends, &waitFrom)
+	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor, &tw.Resends, &waitFrom, &tw.Line)
 	if waitFrom != 0 && tw.Status == StatusDelivered {
 		tw.WaitFrom = fromMillis(waitFrom)
 	}

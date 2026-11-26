@@ -181,7 +181,8 @@ func (b *Bridge) startWork(session string, n int64) (store.Tweak, error) {
 	tw, err := b.store.Work(session, n, end, store.CaptureStart{Folder: se.Folder, Repo: tree.Repo, Base: tree.Hash})
 	var refused *store.TransitionError
 	var notYours *store.NotYoursError
-	if err != nil && end != nil && !errors.As(err, &refused) && !errors.As(err, &notYours) && !errors.Is(err, store.ErrNoTweak) {
+	var lost *store.LostError
+	if err != nil && end != nil && !errors.As(err, &refused) && !errors.As(err, &notYours) && !errors.As(err, &lost) && !errors.Is(err, store.ErrNoTweak) {
 		return store.Tweak{}, &captureSwitchError{n: n, from: end.Tweak, err: err}
 	}
 	if err != nil {

@@ -24,6 +24,14 @@ test("claim events after the snapshot add and remove claims", () => {
   assert.deepEqual(state, { seq: 5, claims: [{ id: 3, pattern: "https://b.localhost/*" }] });
 });
 
+test("a lapsed claim leaves the claims, and comes back when restored", () => {
+  let state = { seq: 3, claims: [{ id: 2, pattern: "https://a.localhost/*" }] };
+  state = apply(state, { type: "event", seq: 4, event: "claim-lapsed", claim: claim(2, "https://a.localhost/*") });
+  assert.deepEqual(state, { seq: 4, claims: [] });
+  state = apply(state, { type: "event", seq: 5, event: "claim-restored", claim: claim(4, "https://a.localhost/*") });
+  assert.deepEqual(state, { seq: 5, claims: [{ id: 4, pattern: "https://a.localhost/*" }] });
+});
+
 test("an event already seen is ignored", () => {
   const state = { seq: 5, claims: [] };
   assert.equal(apply(state, { type: "event", seq: 5, event: "claim-made", claim: claim(3, "https://b.localhost/*") }), state);

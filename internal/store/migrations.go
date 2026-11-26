@@ -135,4 +135,32 @@ ALTER TABLE change_files ADD COLUMN base_tree TEXT NOT NULL DEFAULT '';
 	`
 ALTER TABLE changes ADD COLUMN conflicts INTEGER NOT NULL DEFAULT 0;
 `,
+	// 6: claims when sessions end, lapse or come back. A lapsed claim is
+	// kept for 24 hours in lapsed_claims; lost_to is the folder of the
+	// session that claimed an overlapping pattern since (it can't come
+	// back), and reported says its session has been told. A tweak whose
+	// session let go of its page has no session; left_by is that session,
+	// left_why how it let go (lapsed, released or ended), left_status and
+	// left_status_at its status then, and left_capturing whether it was
+	// capturing, so a lapsed claim's tweaks come back as they were. line is
+	// what its session's last inbox line for it was: new, or reply.
+	`
+CREATE TABLE lapsed_claims (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	session   TEXT NOT NULL REFERENCES sessions (id),
+	pattern   TEXT NOT NULL,
+	created   INTEGER NOT NULL,
+	lapsed_at INTEGER NOT NULL,
+	lost_to   TEXT,
+	reported  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX lapsed_claims_session ON lapsed_claims (session);
+ALTER TABLE tweaks ADD COLUMN left_by TEXT REFERENCES sessions (id);
+ALTER TABLE tweaks ADD COLUMN left_why TEXT;
+ALTER TABLE tweaks ADD COLUMN left_status TEXT;
+ALTER TABLE tweaks ADD COLUMN left_status_at INTEGER;
+ALTER TABLE tweaks ADD COLUMN left_capturing INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tweaks ADD COLUMN line TEXT NOT NULL DEFAULT 'new';
+UPDATE tweaks SET line = 'reply' WHERE EXISTS (SELECT 1 FROM entries e WHERE e.tweak = tweaks.number AND e.kind = 'reply');
+`,
 }

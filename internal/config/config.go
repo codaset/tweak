@@ -102,6 +102,15 @@ func (c Config) Marker(session string) string {
 // MarkerDir is the folder of capture markers.
 func (c Config) MarkerDir() string { return filepath.Join(c.StateDir, "capturing") }
 
+// Released is the file tweak hook session-end leaves when no bridge is
+// running: the next bridge to start ends the session it names.
+func (c Config) Released(session string) string {
+	return filepath.Join(c.ReleasedDir(), markerName(session))
+}
+
+// ReleasedDir is the folder of released markers.
+func (c Config) ReleasedDir() string { return filepath.Join(c.StateDir, "released") }
+
 // markerName keeps letters, digits, - and _ (a UUID is unchanged) and
 // writes every other byte as %XX, so no two IDs share a name and none can
 // be . or .. or hold a separator.

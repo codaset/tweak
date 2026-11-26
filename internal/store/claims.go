@@ -24,6 +24,9 @@ type Claim struct {
 	Pattern string // normalised
 	Session Session
 	Created time.Time
+	// LostTo is, for a lapsed claim that can't come back, the folder of the
+	// session that has since claimed an overlapping pattern.
+	LostTo string
 }
 
 // OverlapError refuses a claim that overlaps another session's.
@@ -145,6 +148,14 @@ func (s *Store) Claim(sessionID string, p pattern.Pattern) (Claim, error) {
 	if err := tx.passUndos(sessionID, p); err != nil {
 		return Claim{}, err
 	}
+	// Tweaks follow the page: those waiting on p's pages come here, and a
+	// lapsed claim p overlaps can no longer come back.
+	if err := tx.loseLapsed(sessionID, se.Folder, p); err != nil {
+		return Claim{}, err
+	}
+	if err := tx.passTweaks(sessionID, p); err != nil {
+		return Claim{}, err
+	}
 	if err := tx.commit(); err != nil {
 		return Claim{}, err
 	}
@@ -163,7 +174,8 @@ func (s *Store) ClaimCount() (int, error) {
 
 // Release ends the session's claim on pattern (normalised), or all its claims
 // when pattern is "". It returns the released patterns; releasing a pattern
-// the session doesn't hold is ErrNotClaimed.
+// the session doesn't hold is ErrNotClaimed. Its open tweaks and held undos
+// on those pages go back to waiting for a session.
 func (s *Store) Release(sessionID, pat string) ([]string, error) {
 	tx, err := s.begin()
 	if err != nil {
@@ -190,11 +202,7 @@ func (s *Store) Release(sessionID, pat string) ([]string, error) {
 	if pat != "" && len(released) == 0 {
 		return nil, ErrNotClaimed
 	}
-	left, err := listClaims(tx)
-	if err != nil {
-		return nil, err
-	}
-	if err := tx.dropUndos(sessionID, left); err != nil {
+	if err := tx.letGo(sessionID, WhyReleased); err != nil {
 		return nil, err
 	}
 	return released, tx.commit()

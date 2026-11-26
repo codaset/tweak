@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
+	"strings"
 
 	"github.com/codaset/tweak/internal/allowrule"
 )
@@ -38,7 +40,11 @@ func claim(c *context, args []string) error {
 	fmt.Fprintf(c.Stdout, "claimed %s\n", made.Pattern)
 	warnings := made.Warnings
 	if !allowrule.Present(c.Getenv, c.Home, c.Dir) {
-		warnings = append(warnings, fmt.Sprintf("allow rule missing: add %q to permissions.allow in your Claude Code settings, or tweak commands may stop for permission", allowrule.Rule))
+		file := allowrule.UserFile(c.Getenv, c.Home)
+		if rel, err := filepath.Rel(c.Home, file); err == nil && c.Home != "" && !strings.HasPrefix(rel, "..") {
+			file = "~/" + filepath.ToSlash(rel)
+		}
+		warnings = append(warnings, fmt.Sprintf("allow rule missing: add %q to permissions.allow in %s, or tweak commands may stop for permission", allowrule.Rule, file))
 	}
 	for _, w := range warnings {
 		fmt.Fprintln(c.Stdout, w)

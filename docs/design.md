@@ -822,7 +822,8 @@ Decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak
   files whose allow lists Claude Code merges: the user's (`$CLAUDE_CONFIG_DIR` or `~/.claude`),
   the project's `.claude/settings.json`, and its `.claude/settings.local.json`, which is also read
   at the repo root (the main checkout's for a worktree). `Bash(tweak:*)`, `Bash` and `Bash(*)` count too.
-  Managed settings, deny and ask rules aren't checked.
+  Managed settings, deny and ask rules aren't checked. The warning names the user's file, where
+  the skill adds the rule.
 - If a tweak arrives mid-task, Claude finishes its current step, handles the tweak, then resumes.
   It queues the tweak instead only when its work can't be paused.
 - Changes are never committed automatically.
@@ -920,7 +921,7 @@ contains a single quote, pass `-` and give the text on stdin.
      steps), or it was connected before but isn't now (ask whether Chrome is open with Codaset Tweak
      enabled).
    - If it reports `allow rule missing`, ask the developer once whether to add `"Bash(tweak *)"` to
-     `permissions.allow` in `~/.claude/settings.json`. Without it, later turns may stop for
+     `permissions.allow` in the settings file it names. Without it, later turns may stop for
      permission. Add it only on a yes. Then continue either way.
 2. Start a Monitor: command `tweak watch`, description `tweaks from the browser`,
    `timeout_ms: 1800000`.

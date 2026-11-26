@@ -106,7 +106,17 @@
   // - "No edits recorded": something changed, or there's no repo to check,
   //   but no edit was recorded;
   // - "No files changed": the git check ran and found nothing.
+  // announce is what a screen reader hears when it appears.
   function change(tweak) {
+    const c = described(tweak);
+    if (!c) return null;
+    const count = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
+    const announce = c.files.length
+      ? count(c.files.length, "file") + " changed" + (c.unrecorded.length ? `, ${c.unrecorded.length} not recorded` : "")
+      : c.title;
+    return { ...c, announce };
+  }
+  function described(tweak) {
     const c = tweak?.change;
     if (!c || (tweak.status !== "done" && tweak.status !== "declined")) return null;
     const files = c.files ?? [];

@@ -1085,9 +1085,14 @@ why the hook records and git only checks is in
 - At most one tweak per session is **capturing**. `tweak work <n>` makes it tweak *n*, ending any
   other first. Capture ends at `tweak done`, `ask` or `decline` of the capturing tweak (it is
   `working`, which `queue` can't leave, so `queue`, like declining another tweak while you work,
-  leaves it running), at `release` (of any of the session's claims), when the session
+  leaves it running), at a `release` that covers its page or leaves the session no claim (releasing
+  another page's claim leaves it capturing, since Claude can still edit it), when the session
   ends (exit or `/clear`, through `tweak hook session-end`), and when its claim lapses (the backstop
   for a session that dies without its hook). Capture is kept in SQLite, so it survives a bridge restart.
+  `tweak work` switches capture all or nothing: if the previous capture can't end, the work is
+  refused (`run tweak work <n> again`) and nothing changes, so a tweak's edits never land in
+  another's change. Git (the snapshot and the check) runs before the bridge takes its capture lock,
+  so the hook's post never waits on it.
 - While a tweak is capturing, the bridge keeps a marker file at
   `~/.local/state/codaset-tweak/capturing/<session-id>` (any character other than a letter, digit,
   `-` or `_` written as `%XX`, so an ID can only name a file there).
@@ -1113,6 +1118,12 @@ why the hook records and git only checks is in
   Undo never touches them. Outside a git repo the check is skipped. The check covers the whole repo
   holding the session folder, and each round's `tweak work` takes a new tree, so your own edits
   between a question and its reply aren't counted; the unrecorded files add up across rounds.
+  Each before copy is also checked against the snapshot of the round it was recorded in: a file
+  changed before the hook first saw it (a shell edit, then an Edit) is listed as recorded **and** as
+  unrecorded, since Undo can only take it back to the shell-edited contents.
+- The change on a tweak's events says whether the git check ran when capture last ended
+  (`checked`): with nothing recorded and nothing unrecorded, that's "No files changed"; without
+  it, "No edits recorded".
 - A reply followed by `tweak work` again extends the same change: the first before copies are kept,
   and the after contents are read again at the next end. A tweak has one change, however many rounds
   it takes. A tweak declined after partial edits keeps them as an undoable change.

@@ -152,4 +152,8 @@ test("a finished tweak's card says what it changed", () => {
   assert.equal(change(tweak("working", files)), null);
   assert.equal(change(tweak("question", files)), null);
   assert.equal(change({ status: "done" }), null);
+  // What a screen reader hears when the change appears.
+  assert.equal(change(tweak("done", files)).announce, "2 files changed");
+  assert.equal(change(tweak("done", { files: [file("a.rb")], unrecorded: [file("b.rb")] })).announce, "1 file changed, 1 not recorded");
+  assert.equal(change(tweak("done", { state: "nothing-recorded" })).announce, "No files changed");
 });

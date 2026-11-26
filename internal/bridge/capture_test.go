@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codaset/tweak/internal/capture"
 	"github.com/codaset/tweak/internal/store"
 	"github.com/codaset/tweak/internal/version"
 )
@@ -312,4 +314,135 @@ func TestMarkersFollowTheStoreAtStart(t *testing.T) {
 	if !again.marked("s1") || again.marked("gone") {
 		t.Fatalf("markers: s1 %v, gone %v", again.marked("s1"), again.marked("gone"))
 	}
+	// The capture itself carries on: an edit after the restart is recorded.
+	again.before("s1", filepath.Join(dir, "app.css"))
+	writeFile(t, filepath.Join(dir, "app.css"), "b\n")
+	if code, body := status(again, "1", "done", "made it b"); code != 200 {
+		t.Fatalf("done: %d %s", code, body)
+	}
+	if tw, _ := again.b.store.Tweak(1); tw.Change == nil || len(tw.Change.Files) != 1 || tw.Change.Files[0].Shown != "app.css" {
+		t.Fatalf("change after a restart %+v", tw.Change)
+	}
+}
+
+// Releasing a claim ends capture only when the claim covers the capturing
+// tweak's page, or no claim is left: releasing another page's claim leaves
+// the tweak capturing, so its later edits are still recorded.
+func TestReleaseEndsCaptureOnlyForItsOwnPage(t *testing.T) {
+	dir := project(t, map[string]string{"app.css": "red\n"})
+	h, _ := capturing(t, dir) // tweak 1 on https://ernie.localhost/
+	h.claim("s1", "http://localhost:3000")
+	release := func(pattern string) {
+		t.Helper()
+		resp, body := h.do(as("s1", req{method: "DELETE", path: "/claims?pattern=" + pattern}))
+		if resp.StatusCode != 200 {
+			t.Fatalf("release %s: %d %s", pattern, resp.StatusCode, body)
+		}
+	}
+	release("http://localhost:3000/*")
+	if !h.marked("s1") {
+		t.Fatal("releasing another page's claim ended the capture")
+	}
+	h.before("s1", filepath.Join(dir, "app.css"))
+	writeFile(t, filepath.Join(dir, "app.css"), "green\n")
+	release("https://ernie.localhost/*")
+	if h.marked("s1") {
+		t.Fatal("releasing the tweak's own claim didn't end the capture")
+	}
+	if tw, _ := h.b.store.Tweak(1); tw.Change == nil || tw.Change.Capturing || len(tw.Change.Files) != 1 {
+		t.Fatalf("change %+v", tw.Change)
+	}
+}
+
+// A work that can't end the previous capture is refused, saying what to
+// do, and changes nothing: the old capture and its marker stay, and the new
+// tweak isn't started, so its edits can't land in the old tweak's change.
+func TestAWorkThatCantEndThePreviousCaptureIsRefused(t *testing.T) {
+	dir := project(t, map[string]string{"app.css": "red\n"})
+	h, s := capturing(t, dir)
+	h.before("s1", filepath.Join(dir, "app.css"))
+	s.send(createMsg("r2", "https://ernie.localhost/other", "and this"))
+	s.readUntil("result")
+
+	// The end's write fails, as a full disk would make it.
+	db, err := sql.Open("sqlite", h.cfg.Database())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER fail BEFORE UPDATE OF capturing ON changes BEGIN SELECT RAISE(ABORT, 'disk full'); END`); err != nil {
+		t.Fatal(err)
+	}
+	resp, body := h.do(as("s1", req{method: "POST", path: "/tweaks/2/work"}))
+	refused(t, resp, body, 500, "internal")
+	if want := "tweak 2 wasn't started: undo capture of tweak 1 couldn't end"; !strings.Contains(string(body), want) || !strings.Contains(string(body), "run tweak work 2 again") {
+		t.Fatalf("refusal %s", body)
+	}
+	if tw, _ := h.b.store.Tweak(2); tw.Status == "working" || tw.Change != nil {
+		t.Fatalf("tweak 2 started: %+v", tw)
+	}
+	if c, err := h.b.store.Capturing("s1"); err != nil || c.Tweak != 1 || !h.marked("s1") {
+		t.Fatalf("capture %+v %v, marked %v", c, err, h.marked("s1"))
+	}
+}
+
+// A file shell-edited before the hook first saw it: its before copy holds
+// the shell edit, so Undo can't fully reverse it. It's listed as recorded,
+// and also as changed without being recorded.
+func TestAShellEditBeforeTheHookIsListedBothWays(t *testing.T) {
+	dir := project(t, map[string]string{"app.css": "red\n", "b.css": "b\n"})
+	h, _ := capturing(t, dir)
+	writeFile(t, filepath.Join(dir, "app.css"), "sed red\n")
+	h.before("s1", filepath.Join(dir, "app.css"))
+	writeFile(t, filepath.Join(dir, "app.css"), "green\n")
+	h.before("s1", filepath.Join(dir, "b.css")) // a clean edit, for contrast
+	writeFile(t, filepath.Join(dir, "b.css"), "c\n")
+	status(h, "1", "done", "made it green")
+	tw, _ := h.b.store.Tweak(1)
+	var files, unrecorded []string
+	for _, f := range tw.Change.Files {
+		files = append(files, f.Shown)
+	}
+	for _, f := range tw.Change.Unrecorded {
+		unrecorded = append(unrecorded, f.Shown)
+	}
+	if strings.Join(files, " ") != "app.css b.css" || strings.Join(unrecorded, " ") != "app.css" {
+		t.Fatalf("files %v, unrecorded %v", files, unrecorded)
+	}
+}
+
+// The hook's post never waits on git: not on the snapshot of a work in
+// progress, nor on the git check of an end in progress.
+func TestTheHookNeverWaitsOnGit(t *testing.T) {
+	dir := project(t, map[string]string{"app.css": "red\n", "b.css": "b\n"})
+	h, s := capturing(t, dir)
+	s.send(createMsg("r2", "https://ernie.localhost/other", "and this"))
+	s.readUntil("result")
+
+	inGit, release := make(chan struct{}, 1), make(chan struct{})
+	slow := func() { inGit <- struct{}{}; <-release }
+	snapshot, changed := h.b.gitSnapshot, h.b.gitChanged
+	h.b.gitSnapshot = func(folder, scratch string) (capture.Tree, error) { slow(); return snapshot(folder, scratch) }
+	h.b.gitChanged = func(t capture.Tree, scratch string) ([]string, error) { slow(); return changed(t, scratch) }
+
+	quick := func(what string) {
+		t.Helper()
+		began := time.Now()
+		h.before("s1", filepath.Join(dir, "app.css"))
+		if took := time.Since(began); took > 300*time.Millisecond {
+			t.Fatalf("the hook's post waited %s on %s", took, what)
+		}
+	}
+	worked := make(chan struct{})
+	go func() {
+		h.do(as("s1", req{method: "POST", path: "/tweaks/2/work"}))
+		close(worked)
+	}()
+	<-inGit // tweak 1's git check, as its capture ends
+	quick("the end's git check")
+	release <- struct{}{}
+	<-inGit // tweak 2's snapshot
+	quick("the snapshot")
+	release <- struct{}{}
+	<-worked
 }

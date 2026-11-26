@@ -208,8 +208,9 @@ func (b *Bridge) release(w http.ResponseWriter, r *http.Request) {
 		want = p.String()
 	}
 	released, err := b.store.Release(id, want)
-	if err == nil {
-		// Releasing ends undo capture (docs/design.md, "Capture").
+	// Releasing the capturing tweak's page, or every claim, ends its undo
+	// capture (docs/design.md, "Capture").
+	if err == nil && b.releaseEndsCapture(id, released) {
 		if cerr := b.endCapture(id); cerr != nil {
 			b.log.Printf("release: ending capture for %s: %v", id, cerr)
 		}

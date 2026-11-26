@@ -31,11 +31,11 @@ func TestUpgradingStartsEachInboxAtTheEnd(t *testing.T) {
 	}
 }
 
-// A v2 database (the tracer's) upgrades to undo capture: its rows keep
+// A v3 database (before undo capture) upgrades to it: its rows keep
 // their data, none is capturing, and a tweak can then be worked and captured.
 func TestUpgradingAddsUndoCapture(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tweak.db")
-	old, err := openWith(path, "0.1.0", migrations[:2])
+	old, err := openWith(path, "0.1.0", migrations[:3])
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -241,6 +241,7 @@
 
     // The conversation is redrawn only when it changes (every change brings
     // a new tweak object), and scrolled to its newest entry.
+    const toSay = []; // what the live region reads out this time
     const entries = tweak === parts.tweak ? null : ns.describe.thread(tweak);
     const said = entries && JSON.stringify(entries);
     parts.tweak = tweak;
@@ -255,11 +256,14 @@
       );
       thread.hidden = entries.length === 0;
       thread.scrollTop = thread.scrollHeight;
-      announce(entries.slice(parts.heardUpTo));
+      toSay.push(...entries.slice(parts.heardUpTo));
       parts.heardUpTo = entries.length;
     }
 
-    drawChange(ns.describe.change(tweak));
+    // New entries and a change that arrives are read out together.
+    const change = drawChange(ns.describe.change(tweak));
+    if (change) toSay.push(change);
+    announce(toSay);
 
     const asking = tweak?.status === "question";
     if (answer.hidden === asking) {
@@ -319,13 +323,20 @@
   // drawChange lists what the tweak changed, redrawn only when it changes:
   // the recorded files, then the files that changed without being recorded;
   // files outside the session's project are labelled so.
+  // It returns the change to read out when one arrives while the card is
+  // open (not one already there when it opened), or null.
   function drawChange(c) {
     const { changed } = parts;
     const listed = JSON.stringify(c);
-    if (listed === parts.listed) return;
+    if (listed === parts.listed) return null;
+    const arrived = parts.listed !== "" && c;
     parts.listed = listed;
     changed.hidden = !c;
-    if (!c) return changed.replaceChildren();
+    if (!c) {
+      changed.replaceChildren();
+      changed.removeAttribute("tabindex");
+      return null;
+    }
     const { OUTSIDE, UNRECORDED } = ns.describe;
     const file = (f) => {
       const item = el("li", f.outside ? "file outside" : "file");
@@ -335,18 +346,25 @@
     };
     changed.className = "change change-" + c.kind;
     changed.replaceChildren(el("div", "entry-label", c.title));
-    if (c.files.length) {
-      const list = el("ul", "files");
-      list.append(...c.files.map(file));
-      changed.append(list);
-    }
+    // list-style: none drops list semantics in Safari and VoiceOver: keep them.
+    const list = (files) => {
+      const ul = el("ul", "files");
+      ul.setAttribute("role", "list");
+      ul.append(...files.map(file));
+      return ul;
+    };
+    if (c.files.length) changed.append(list(c.files));
     if (c.unrecorded.length) {
       const also = el("div", "unrecorded");
-      const list = el("ul", "files");
-      list.append(...c.unrecorded.map(file));
-      also.append(el("p", "note", UNRECORDED), list);
+      also.append(el("p", "note", UNRECORDED), list(c.unrecorded));
       changed.append(also);
     }
+    // A tab stop only when the list overflows and needs scrolling.
+    requestAnimationFrame(() => {
+      if (changed.scrollHeight > changed.clientHeight) changed.tabIndex = 0;
+      else changed.removeAttribute("tabindex");
+    });
+    return arrived ? c : null;
   }
 
   // announce reads new entries out through the live region. The text is set

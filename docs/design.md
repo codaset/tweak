@@ -102,8 +102,13 @@ everywhere. The card opens, and a question pops up, only in the tab the tweak wa
 tab is gone, the question shows as a toast in the others. On client-side navigation, the content
 script hears the Navigation API (`navigatesuccess` and `currententrychange`, expected to fire for
 the page's own `pushState` too; asserted on the `static` fixture, see [Testing](#testing)) and loads the pins for the
-new URL. On a URL outside every claim it goes dormant: no
-picker, no pins.
+new URL. A query-only change doesn't change the page, but a claim's pattern can match the query, so
+the worker is asked again. A page no claim covers is **dormant**: no picker, no pins, and the card
+hides. The card comes back when a claim covers the page again. It stays open through client-side
+navigation (it closes only on **esc** or **×**, and a composer closes, because it belongs to the page
+it was opened on), and it keeps receiving its tweak's changes even when the tab has moved to
+another page. The bridge enforces the same rule: `create` for an unclaimed page is refused with
+`no-claim`.
 
 **Where state lives**:
 
@@ -111,7 +116,7 @@ picker, no pins.
 |---|---|
 | Bridge | tweaks, conversations, claims, changes: the source of truth |
 | `chrome.storage.local` | last-known claims, the bridge port, per-site settings (pins hidden, auto-reload off), dismissed improvement suggestions |
-| `chrome.storage.session` | per tab: the open card, and composer and reply drafts, saved as you type, restored on load, cleared on Send or esc |
+| `chrome.storage.session` | the open tweaks (the worker's copy of the last snapshot and events, so pins and cards survive a worker restart while the bridge is down); per tab: the open card, and composer and reply drafts, saved as you type, restored on load, cleared on Send or esc |
 | The page's own storage | nothing; the page can read and clear it |
 
 "Per site" means per origin. `chrome.storage.session` is closed to content scripts by default, so
@@ -132,7 +137,21 @@ top layer (its own popovers), the host is shown again so it stays on top. Assert
 Content scripts can't be modules when registered at runtime, so they are a few classic files listed
 in order in one registration, sharing one namespace object in the isolated world. No
 `web_accessible_resources`, so pages can't detect the extension or load its files. Messages between
-the extension's own parts are not in `schema/`, which is the bridge contract only.
+the extension's own parts are not in `schema/`, which is the bridge contract only. They are:
+
+| Port | Message | Carries |
+|---|---|---|
+| Tab to worker | `page` | `url`: the tab's full URL, sent when the port opens and again after each client-side navigation, a query-only one included |
+| | `card` | `number`: the tab's open card, or `null` when it closes |
+| | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own) |
+| | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
+| Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
+| | `tweak` | `tweak`: one changed tweak (a page's, or the open card's) |
+| | `created` | `ref`, and the `number` created or an `error` and `message` |
+| | `claimed` | `claimed`, sent to every tab whenever the claims change |
+| | `state` | `connection`: connecting, connected, refused or disconnected |
+| Port, local | `open`, `closed` | made by the content script's own port when it connects and when it's lost; `open` is what sends `page`, and `closed` ends a send in flight |
+| Worker to side panel | `state` | the whole view: connection and message, bridge port, whether access is granted, the claims, any pending update |
 
 ### The `tweak` binary (Go)
 
@@ -352,10 +371,11 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   database.
 - **CLI ↔ bridge**: plain HTTP. Every request carries `x-tweak: 1`, `x-tweak-protocol: <n>` and the
   session ID. Endpoints: `POST /sessions` (register and check in), `GET/POST/DELETE /claims`,
-  `GET /inbox?after=<seq>` (long-poll; one line of at most 500 characters per event) and
-  `POST /inbox/ack`, `POST /tweaks/:n/work` (returns the brief as text, sets `working` and starts
-  undo capture for the session; a POST because fetching changes state), `POST /tweaks/:n/status`,
-  `POST /tweaks/:n/entries` (a plan), and `POST /edits/before` (the edit hook sends a file's path
+  `GET /inbox?after=<seq>` (long-poll; one line of at most 500 characters per event; it also
+  acknowledges, see below), `POST /tweaks/:n/work` (returns the brief as text, sets `working` and
+  starts undo capture for the session; a POST because fetching changes state),
+  `POST /tweaks/:n/status` (`{status, message}`; only `done`, with its summary, so far; it answers
+  `{number, status}`), `POST /tweaks/:n/entries` (a plan), and `POST /edits/before` (the edit hook sends a file's path
   before an agent edits it; the bridge reads the file and decides which tweak it belongs to; see
   [Undo](#undo)). Every CLI request counts as the
   session checking in. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
@@ -364,7 +384,12 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `resolve`,
   `undo`; from the bridge a snapshot or events, and refusals. A request carries the worker's
   `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
-  socket stays open. Snapshots and tweak events carry whole tweaks, entries included.
+  socket stays open. `create` is `{ref, url, request, targets, anchor}`; the bridge refuses it with
+  `bad-request` for a malformed one, and `no-claim` for a page no claim covers (so every stored
+  tweak has a session). A snapshot holds only the open (unresolved) tweaks, and `tweak-created` and
+  `tweak-status` events carry whole tweaks, entries included. Their shapes, with the `GET /inbox`
+  reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
+  `tweak watch` exits on), are in `schema/`.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
   sequence. Clients remember the last sequence seen and get everything newer on reconnect, or a
   fresh snapshot if too far behind. Inbox acknowledgement and redelivery use the same log:
@@ -395,6 +420,12 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
 | `declined` | Claude, with its reason | Declined |
 | `withdrawn` | you, from the card, before Claude finished; also resolves the tweak | Withdrawn |
 
+Which changes Claude may make is one table in the bridge's store, so the other tickets extend it
+rather than add checks: `sent` or `delivered` to `working`, and `working` to `working` or `done`.
+Anything else is refused with `wrong-status` (409) and a line saying what to do: `work` on a done
+tweak, a second `done`, and `done` before `work`. A session can only change tweaks sent to it
+(`not-yours`, 409), and an unknown number is `no-tweak` (404).
+
 **Resolved** is separate from status: you've finished with the tweak, and its pin leaves the page.
 A change has its own state: `recorded`, `nothing-recorded`, `undo-requested` or `undone` (see
 [Undo](#undo)).
@@ -409,15 +440,25 @@ when a tweak passes to another session; see [When the session goes quiet](#when-
 |---|---|
 | `sessions` | id (agent session ID), agent, folder, label, last check-in |
 | `claims` | id, session, pattern, created |
-| `tweaks` | number, session, page URL, status, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
+| `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
 | `entries` | tweak, from, kind, text, at |
 | `changes` | tweak, state, unrecorded files (JSON) |
 | `change_files` | change, path, contents before (or absent), contents after |
 | `events` | sequence, type, tweak or claim, payload (JSON), at |
 | `deliveries` | session, last acknowledged sequence |
 
+`page` is the origin and path the tweak belongs to; `page URL` is the
+full URL it was sent from. `status at` is when the status last changed, which gives the card's time
+spent working. Numbers count up from 1 and are never reused, even after the 7-day cleanup deletes
+rows (migration 2 rebuilt `tweaks` with `AUTOINCREMENT` for this).
+
+The **click anchor** is `{x, y}`, the click point as a fraction (0 to 1) of element 1's box, so the
+pin follows the element when the layout moves.
+
 Targets (elements, selected text, area, with their locations, search clues and context) are JSON,
-shaped as in [Finding the source](#finding-the-source).
+shaped as in [Finding the source](#finding-the-source). So far they are a subset:
+`{elements: [{label, text?, selector}]}`. Later tickets add the rest, and extend `schema/create.json`
+with them.
 
 ### No lost tweaks
 

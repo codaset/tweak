@@ -112,6 +112,12 @@ func TestALapseEndsCaptureAndTheSessionGetsItsTweakBack(t *testing.T) {
 	if !h.marked("s1") {
 		t.Fatal("capture didn't start again")
 	}
+	// The clock jumped an hour: until a sweep marks the connected extension
+	// seen, the snapshot's hello below would count as it coming back.
+	eventually(t, "the sweep marking the extension seen", func() bool {
+		seen, _ := h.b.store.ExtensionSeen()
+		return seen.Equal(c.now())
+	})
 	if tw := h.tweakStatus(1); tw["status"] != "working" {
 		t.Fatalf("restored as %v", tw["status"])
 	}

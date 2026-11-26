@@ -248,3 +248,19 @@ func TestDowntimeDoesntCountTowardALapse(t *testing.T) {
 	c.advance(time.Second)
 	eventually(t, "the claim lapsing at 10:00 of up time", func() bool { return !held() })
 }
+
+// Before Allow access, ⌥-click does nothing: the extension says so in its
+// hello and again when access changes, and tweak claim relays it. An older
+// extension that doesn't say gets no warning.
+func TestAClaimWithoutSiteAccessSaysHowToAllowIt(t *testing.T) {
+	h, _ := downBridge(t)
+	s := h.extensionConnects(map[string]any{"version": embeddedVersion(t), "granted": false})
+	want := "site access not granted: open the Codaset Tweak side panel and click Allow access, or ⌥-click won't work"
+	if w := claimWarnings(t, h); len(w) != 1 || w[0] != want {
+		t.Fatalf("warnings = %q, want %q", w, want)
+	}
+	s.send(map[string]any{"type": "access", "granted": true})
+	eventually(t, "the grant to be heard", func() bool { return len(claimWarnings(t, h)) == 0 })
+	s.send(map[string]any{"type": "access", "granted": false})
+	eventually(t, "the removal to be heard", func() bool { return len(claimWarnings(t, h)) == 1 })
+}

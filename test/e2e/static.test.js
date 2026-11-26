@@ -234,6 +234,13 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
     await until(() => env.browser.targets().find((t) => t.url().endsWith("/panel/panel.html")), { what: "a side panel target" });
   });
 
+  // The copy has http://localhost/* but not <all_urls>, as before Allow access.
+  test("without site access, tweak claim says to click Allow access", async () => {
+    await open(env);
+    const out = await env.claude.claim(`${env.app.url("")}/*`);
+    assert.match(out, /^site access not granted: open the Codaset Tweak side panel and click Allow access, or ⌥-click won't work$/m);
+  });
+
   test("after a navigation the content script handle reaches the new page, never the old one", async () => {
     await open(env);
     await env.tab.evaluate(`(globalThis.e2eMarker = "old page", true)`);
@@ -733,6 +740,11 @@ async function expectedCrop(env, selector) {
 describe("static, with access to every site", { skip: skipReason(fixture) ?? false }, () => {
   const env = setup(fixture, { allUrls: true, deviceScaleFactor: 2 });
   const held = () => inWorker(env.browser, "e2eHeldCaptures()");
+
+  test("with site access, tweak claim has no access warning", async () => {
+    await open(env);
+    assert.doesNotMatch(await env.claude.claim(`${env.app.url("")}/*`), /site access/);
+  });
 
   test("a tweak's screenshot is the element plus a margin, in device pixels, and the brief names it", async () => {
     await open(env);

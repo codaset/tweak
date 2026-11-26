@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"net/url"
+
+	"github.com/codaset/tweak/internal/allowrule"
 )
 
 type claimOut struct {
@@ -34,7 +36,11 @@ func claim(c *context, args []string) error {
 		return err
 	}
 	fmt.Fprintf(c.Stdout, "claimed %s\n", made.Pattern)
-	for _, w := range made.Warnings {
+	warnings := made.Warnings
+	if !allowrule.Present(c.Getenv, c.Home, c.Dir) {
+		warnings = append(warnings, fmt.Sprintf("allow rule missing: add %q to permissions.allow in your Claude Code settings, or tweak commands may stop for permission", allowrule.Rule))
+	}
+	for _, w := range warnings {
 		fmt.Fprintln(c.Stdout, w)
 	}
 	fmt.Fprintln(c.Stdout, "now run tweak watch")

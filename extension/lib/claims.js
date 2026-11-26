@@ -8,7 +8,7 @@ const keep = ({ id, pattern }) => ({ id, pattern });
 // state when the message changes nothing.
 export function apply(state, msg) {
   if (msg.type === "snapshot") return { seq: msg.seq, claims: msg.claims.map(keep) };
-  if (msg.type !== "event" || msg.seq <= state.seq) return state;
+  if (msg.type !== "event" || !msg.claim || msg.seq <= state.seq) return state;
   const others = state.claims.filter((c) => c.id !== msg.claim.id);
   switch (msg.event) {
     case "claim-made":

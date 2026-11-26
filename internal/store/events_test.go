@@ -10,7 +10,7 @@ func TestClaimChangesAreLoggedAfterTheSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seq, claims, err := s.Snapshot()
+	seq, claims, _, err := s.Snapshot()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestClaimChangesAreLoggedAfterTheSnapshot(t *testing.T) {
 			t.Errorf("event %d seq %d isn't after %d", i, e.Seq, seq)
 		}
 	}
-	if latest, _, _ := s.Snapshot(); latest != events[1].Seq {
+	if latest, _, _, _ := s.Snapshot(); latest != events[1].Seq {
 		t.Errorf("snapshot seq %d, want the last event's %d", latest, events[1].Seq)
 	}
 }
@@ -61,7 +61,7 @@ func TestReleasingEveryClaimLogsEach(t *testing.T) {
 	register(t, s, "s1", "/dev/a")
 	s.Claim("s1", mustParse(t, "https://a.localhost/*"))
 	s.Claim("s1", mustParse(t, "https://b.localhost/*"))
-	seq, _, _ := s.Snapshot()
+	seq, _, _, _ := s.Snapshot()
 	if _, err := s.Release("s1", ""); err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/inbox.json",
+  "title": "inbox",
+  "description": "GET /inbox?after=<seq>: the session's event lines after seq, for tweak watch to print. Asking after a seq acknowledges every line up to it; with no after, the inbox starts where the last watcher left off.",
+  "type": "object",
+  "properties": {
+    "seq": {
+      "description": "Ask after this next.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "claims": {
+      "description": "The session's claims now; tweak watch exits when none are left.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "description": "One event line, at most 500 characters.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^[^\\n]*$"
+          }
+        },
+        "required": [
+          "seq",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "seq",
+    "claims",
+    "lines"
+  ],
+  "additionalProperties": false
+}

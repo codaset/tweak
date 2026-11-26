@@ -1,0 +1,19 @@
+{
+  "type": "create",
+  "ref": "tab-3-1",
+  "url": "file:///etc/passwd",
+  "request": "make this button green",
+  "targets": {
+    "elements": [
+      {
+        "label": "button.btn-primary",
+        "text": "Save",
+        "selector": "#user-form > button"
+      }
+    ]
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.4
+  }
+}

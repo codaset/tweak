@@ -67,4 +67,33 @@ CREATE TABLE deliveries (
 	last_ack INTEGER NOT NULL DEFAULT 0
 );
 `,
+	// 2: tweaks for the tracer. The table is rebuilt (it has never held a
+	// row) so numbers use AUTOINCREMENT and are never reused; page is the
+	// origin and path a tweak belongs to, page_url the full URL it was sent
+	// from, status_at when the status last changed. Each session's inbox
+	// cursor starts at the end of the log.
+	`
+CREATE TABLE tweaks_v2 (
+	number          INTEGER PRIMARY KEY AUTOINCREMENT,
+	session         TEXT REFERENCES sessions (id),
+	page            TEXT NOT NULL,
+	page_url        TEXT NOT NULL,
+	status          TEXT NOT NULL,
+	status_at       INTEGER NOT NULL,
+	resolved_at     INTEGER,
+	created         INTEGER NOT NULL,
+	updated         INTEGER NOT NULL,
+	targets         TEXT NOT NULL,
+	click_anchor    TEXT,
+	screenshot_path TEXT
+);
+INSERT INTO tweaks_v2 (number, session, page, page_url, status, status_at, resolved_at, created, updated, targets, click_anchor, screenshot_path)
+	SELECT number, session, page_url, page_url, status, updated, resolved_at, created, updated, targets, click_anchor, screenshot_path FROM tweaks;
+DROP TABLE tweaks;
+ALTER TABLE tweaks_v2 RENAME TO tweaks;
+CREATE INDEX tweaks_page ON tweaks (page);
+CREATE INDEX tweaks_session ON tweaks (session);
+INSERT OR IGNORE INTO deliveries (session, last_ack)
+	SELECT id, (SELECT coalesce(max(seq), 0) FROM events) FROM sessions;
+`,
 }

@@ -57,9 +57,34 @@ func (cl *client) ping(port int) bool {
 	return resp.Header.Get(bridge.HeaderVersion) != ""
 }
 
+// refusal is the bridge saying no: its one-line message, as-is. Any other
+// error from a call means the bridge didn't answer.
+type refusal struct{ message string }
+
+func (r *refusal) Error() string { return r.message }
+
 // call sends one request and decodes the reply into out. A refusal becomes an
 // error carrying the bridge's one-line message.
 func (cl *client) call(method, path string, body, out any) error {
+	return cl.callWithin(0, method, path, body, out)
+}
+
+// callWithin is call with its own timeout (0: the client's), for long-polls.
+func (cl *client) callWithin(timeout time.Duration, method, path string, body, out any) error {
+	raw, err := cl.send(timeout, method, path, body)
+	if err != nil || out == nil {
+		return err
+	}
+	return json.Unmarshal(raw, out)
+}
+
+// text sends a request whose reply is text, such as the brief.
+func (cl *client) text(method, path string) (string, error) {
+	raw, err := cl.send(0, method, path, nil)
+	return string(raw), err
+}
+
+func (cl *client) send(timeout time.Duration, method, path string, body any) ([]byte, error) {
 	var rd io.Reader
 	if body != nil {
 		raw, _ := json.Marshal(body)
@@ -67,7 +92,7 @@ func (cl *client) call(method, path string, body, out any) error {
 	}
 	r, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", cl.port, path), rd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	r.Header.Set(bridge.HeaderTweak, "1")
 	r.Header.Set(bridge.HeaderProtocol, strconv.Itoa(version.Protocol))
@@ -77,23 +102,27 @@ func (cl *client) call(method, path string, body, out any) error {
 	if body != nil {
 		r.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := cl.http.Do(r)
+	hc := cl.http
+	if timeout > 0 {
+		hc = &http.Client{Timeout: timeout}
+	}
+	resp, err := hc.Do(r)
 	if err != nil {
-		return fmt.Errorf("the bridge didn't answer: %v", err)
+		return nil, fmt.Errorf("the bridge didn't answer: %v", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("the bridge didn't answer: %v", err)
+	}
 	if resp.StatusCode >= 300 {
 		var e struct{ Message string }
 		if json.Unmarshal(raw, &e) == nil && e.Message != "" {
-			return errors.New(e.Message)
+			return nil, &refusal{e.Message}
 		}
-		return fmt.Errorf("the bridge answered %s", resp.Status)
+		return nil, &refusal{fmt.Sprintf("the bridge answered %s", resp.Status)}
 	}
-	if out != nil {
-		return json.Unmarshal(raw, out)
-	}
-	return nil
+	return raw, nil
 }
 
 // Lines a bridge started by the CLI writes as the first line on stdout.

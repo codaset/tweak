@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/result.json",
+  "title": "result",
+  "description": "From the bridge on the WebSocket: the answer to a request carrying a ref (create, for now). Either the tweak's number or an error. Unlike a refusal, the socket stays open.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "result"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "number": {
+      "description": "The tweak created.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "error": {
+      "enum": [
+        "bad-request",
+        "no-claim",
+        "internal"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "type",
+    "ref"
+  ],
+  "oneOf": [
+    {
+      "required": [
+        "number"
+      ],
+      "properties": {
+        "number": true,
+        "error": false,
+        "message": false
+      }
+    },
+    {
+      "required": [
+        "error",
+        "message"
+      ],
+      "properties": {
+        "error": true,
+        "message": true,
+        "number": false
+      }
+    }
+  ],
+  "additionalProperties": false
+}

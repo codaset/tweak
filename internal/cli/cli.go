@@ -18,6 +18,7 @@ type Env struct {
 	Getenv func(string) string
 	Home   string
 	Dir    string // working folder: the session's project
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 }
@@ -26,7 +27,7 @@ type Env struct {
 func OSEnv() Env {
 	home, _ := os.UserHomeDir()
 	dir, _ := os.Getwd()
-	return Env{Getenv: os.Getenv, Home: home, Dir: dir, Stdout: os.Stdout, Stderr: os.Stderr}
+	return Env{Getenv: os.Getenv, Home: home, Dir: dir, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 }
 
 // Run runs one command and returns the exit code: 0, 1 when the command
@@ -50,6 +51,9 @@ func Run(args []string, env Env) int {
 		"claim":   claim,
 		"claims":  listClaims,
 		"release": release,
+		"watch":   watch,
+		"work":    work,
+		"done":    done,
 	}
 	f, ok := commands[cmd]
 	if !ok {
@@ -110,8 +114,12 @@ commands:
   claim <url>        claim the pages matching a URL pattern for this session
   claims             list every claim and its session
   release [pattern]  release one claim, or all of this session's
+  watch              print one line per new tweak or released claim (the Monitor command)
+  work <n>           print tweak n's brief and mark it as being worked on
+  done <n> <msg>     mark tweak n done, with one sentence on what changed
   version            print the binary and protocol versions
 
-The session ID comes from CLAUDE_CODE_SESSION_ID, or --session.
+The session ID comes from CLAUDE_CODE_SESSION_ID, or --session. A message
+argument of - reads the message from stdin.
 `)
 }

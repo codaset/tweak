@@ -28,6 +28,7 @@
         ns.teardown(); // the extension is gone
         return;
       }
+      for (const fn of listeners) fn({ type: "open" });
       port.onMessage.addListener((msg) => {
         if (msg.type === "state") ns.worker.connection = msg.connection;
         for (const fn of listeners) fn(msg);

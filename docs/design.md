@@ -116,7 +116,9 @@ picker, no pins.
 
 "Per site" means per origin. `chrome.storage.session` is closed to content scripts by default, so
 the worker opens it with `setAccessLevel({accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS"})` at
-start. Pages still can't reach it.
+start. Pages still can't reach it. The open card is the exception: a content script doesn't know
+its tab's ID, so it tells the worker, which keeps it under `card-<tab id>` and hands it back when
+the tab's port reconnects after a reload.
 
 **Overlay layering**: the overlay host is a `popover="manual"` element in the top layer, so no
 `z-index` fights. A modal `<dialog>` makes everything outside it inert, top layer included. So when
@@ -360,10 +362,15 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
 - **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version}` (the extension's
   version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `resolve`,
-  `undo`; from the bridge a snapshot or events, and refusals.
+  `undo`; from the bridge a snapshot or events, and refusals. A request carries the worker's
+  `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
+  socket stays open. Snapshots and tweak events carry whole tweaks, entries included.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
   sequence. Clients remember the last sequence seen and get everything newer on reconnect, or a
-  fresh snapshot if too far behind. Inbox acknowledgement and redelivery use the same log.
+  fresh snapshot if too far behind. Inbox acknowledgement and redelivery use the same log:
+  `GET /inbox?after=<seq>` acknowledges the session's lines up to `seq` (each session's cursor is
+  in `deliveries`), and without `after` it starts where the last watcher left off, so a line handed
+  out but never acknowledged is handed out again.
 - **Versioning**: one integer protocol version, in the WebSocket `hello` and every CLI request. The
   bridge accepts only its own and refuses anything else with a clear message ("This extension
   speaks protocol 2; the bridge speaks 3. Reload the extension."). No negotiation: binary, extension

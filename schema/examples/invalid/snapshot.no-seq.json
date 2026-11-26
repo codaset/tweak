@@ -1,1 +1,6 @@
-{"type":"snapshot","version":"1.4.0","claims":[]}
+{
+  "type": "snapshot",
+  "version": "1.4.0",
+  "claims": [],
+  "tweaks": []
+}

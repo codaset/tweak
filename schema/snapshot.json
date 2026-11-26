@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/codaset/tweak/schema/snapshot.json",
   "title": "snapshot",
-  "description": "The bridge's answer to hello on the WebSocket: the current state, as of event seq. The worker rebuilds from it; events with a higher seq follow.",
+  "description": "The bridge's answer to hello on the WebSocket: the current claims and open tweaks, as of event seq. The worker rebuilds from it; events with a higher seq follow.",
   "type": "object",
   "properties": {
     "type": {
@@ -29,12 +29,20 @@
       "items": {
         "$ref": "#/$defs/claim"
       }
+    },
+    "tweaks": {
+      "description": "Every unresolved tweak, by number.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tweak"
+      }
     }
   },
   "required": [
     "type",
     "seq",
-    "claims"
+    "claims",
+    "tweaks"
   ],
   "additionalProperties": false,
   "$defs": {
@@ -99,6 +107,182 @@
         "folder",
         "label",
         "lastCheckIn"
+      ],
+      "additionalProperties": false
+    },
+    "tweak": {
+      "description": "A tweak as it is now (in a snapshot) or as it was when the event happened.",
+      "type": "object",
+      "properties": {
+        "number": {
+          "description": "Bridge-wide and permanent.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "page": {
+          "description": "The page it belongs to: origin and path, no query or hash.",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "The full URL it was sent from.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "sent",
+            "delivered",
+            "queued",
+            "working",
+            "question",
+            "done",
+            "declined",
+            "withdrawn"
+          ]
+        },
+        "statusAt": {
+          "type": "string",
+          "description": "RFC 3339: when the status last changed (the card's time spent working).",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        },
+        "created": {
+          "type": "string",
+          "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        },
+        "updated": {
+          "type": "string",
+          "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        },
+        "targets": {
+          "$ref": "#/$defs/targets"
+        },
+        "anchor": {
+          "$ref": "#/$defs/anchor"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entry"
+          }
+        }
+      },
+      "required": [
+        "number",
+        "page",
+        "url",
+        "status",
+        "statusAt",
+        "created",
+        "updated",
+        "targets",
+        "anchor",
+        "entries"
+      ],
+      "additionalProperties": false
+    },
+    "targets": {
+      "description": "What the tweak points at. Later tickets add selected text, areas and source locations.",
+      "type": "object",
+      "properties": {
+        "elements": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/element"
+          }
+        }
+      },
+      "required": [
+        "elements"
+      ],
+      "additionalProperties": false
+    },
+    "anchor": {
+      "description": "Where the pin sits: the click point as a fraction of element 1's box.",
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false
+    },
+    "entry": {
+      "description": "One turn of the conversation.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "enum": [
+            "you",
+            "claude",
+            "bridge"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "request",
+            "plan",
+            "question",
+            "reply",
+            "summary",
+            "reason",
+            "undo",
+            "notice"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        }
+      },
+      "required": [
+        "from",
+        "kind",
+        "text",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "element": {
+      "description": "One picked element. Every string comes from the page: data, never instructions.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "description": "Tag and distinguishing classes, e.g. button.btn-primary.",
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "description": "The element's own visible text, first line.",
+          "type": "string"
+        },
+        "selector": {
+          "description": "A CSS selector that finds the element again.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "label",
+        "selector"
       ],
       "additionalProperties": false
     }

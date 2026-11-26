@@ -145,3 +145,12 @@ test("pruning drops the resolved tweaks past their deleteAt, and only those", ()
   assert.equal(pruned.seq, 4);
   assert.equal(prune(pruned, Date.parse("2026-11-26T10:00:00.000Z")), pruned, "nothing to drop: the same state");
 });
+
+test("a tab also hears of a resolved tweak of its page while its undo is with Claude, so a reload waits for it", () => {
+  let s = applyTweaks(undefined, { type: "snapshot", seq: 1, tweaks: [], resolved: [] });
+  const t = { number: 7, page: "https://a.localhost/x", status: "done", resolvedAt: "2026-11-26T10:00:00Z", change: { state: "undo-requested" } };
+  s = applyTweaks(s, { type: "event", seq: 2, event: "tweak-undo-conflict", tweak: t });
+  assert.deepEqual(forTab(s, { page: "https://a.localhost/x", card: null }).map((x) => x.number), [7]);
+  s = applyTweaks(s, { type: "event", seq: 3, event: "tweak-undone", tweak: { ...t, change: { state: "undone" } } });
+  assert.deepEqual(forTab(s, { page: "https://a.localhost/x", card: null }), []);
+});

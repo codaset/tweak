@@ -335,11 +335,25 @@
       for (const n of lost) notUndone(n);
     },
     // relisted is a list after the first (the port or the bridge came
-    // back): an undo with Claude of a tweak no longer in it (resolved, or
-    // withdrawn) may have ended meanwhile unheard, so it's decided as ended.
-    relisted(tweaks) {
-      const listed = new Set(tweaks.map((t) => t.number));
-      for (const [n, m] of [...machines]) if (m.undo === "claude" && !listed.has(n)) ended(n);
+    // back, or the tab moved to another page); had is the numbers the tab
+    // had before it, whose changes heard() has seen. A resolved tweak is in
+    // it only while its undo is with Claude: once that's over, or the tweak
+    // is gone, the undo has ended (undone, or declined), and so does its
+    // hold. A tweak new to the tab and already under way is watched.
+    relisted(tweaks, had) {
+      const listed = new Map(tweaks.map((t) => [t.number, t]));
+      for (const [n, m] of [...machines]) {
+        if (m.undo !== "claude" || had.has(n)) continue;
+        const state = listed.get(n)?.change?.state;
+        if (state === "undo-requested") continue;
+        if (state === "recorded") notUndone(n);
+        else ended(n);
+      }
+      for (const t of tweaks) {
+        if (had.has(t.number) || machines.has(t.number) || !ns.page.here?.(t)) continue;
+        if (t.status === "working") working(t.number);
+        else if (t.change?.state === "undo-requested") undoing(t.number);
+      }
     },
     // left drops everything the old page was waiting for: the tab has moved
     // to another page, or gone dormant (a reload there would show no change).

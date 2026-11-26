@@ -111,11 +111,13 @@
         // A list after the first replaces one the tab had: a tweak that was
         // done (or undone) meanwhile, while the port was away, counts too.
         const before = new Map(tweaks);
+        // A resolved tweak in it is there only for the reload (its undo is
+        // with Claude): it gets no pin.
         tweaks.clear();
-        for (const t of msg.tweaks) tweaks.set(t.number, t);
+        for (const t of msg.tweaks) if (!t.resolvedAt) tweaks.set(t.number, t);
         if (listed && claimed) {
           for (const t of msg.tweaks) if (t.page === shownPage && before.has(t.number)) ns.reload.heard(before.get(t.number), t);
-          ns.reload.relisted(msg.tweaks);
+          ns.reload.relisted(msg.tweaks, new Set(before.keys()));
         }
         if (had && !tweaks.has(card)) ns.panel.close();
         if (typeof msg.claimed === "boolean") setClaimed(msg.claimed, msg.lapsed); // absent: unchanged

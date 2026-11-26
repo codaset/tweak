@@ -1,0 +1,62 @@
+{
+  "viewport": {"width": 1440, "height": 900, "dpr": 2},
+  "elements": [
+    {
+      "label": "button.btn-primary",
+      "text": "Save",
+      "selector": "#user-form > div:nth-of-type(3) > button",
+      "locations": [
+        {"file": "{{root}}/app/javascript/components/UserForm.tsx", "line": 84, "column": 7, "role": "element", "via": "react"},
+        {"file": "{{root}}/app/javascript/components/UserForm.tsx", "line": 12, "role": "component", "via": "react", "name": "UserForm"},
+        {"file": "{{root}}/app/javascript/pages/EditUserPage.tsx", "line": 30, "role": "component", "via": "react", "name": "EditUserPage"},
+        {"file": "app/views/admin/users/edit.html.erb", "role": "component", "via": "rails"}
+      ],
+      "clues": [
+        {"kind": "data-testid", "value": "save-user"},
+        {"kind": "text", "value": "Save"},
+        {"kind": "class", "value": "user-form__submit"}
+      ],
+      "role": "button",
+      "name": "Save",
+      "size": {"width": 96.4, "height": 36},
+      "styles": {
+        "border-radius": "6px",
+        "display": "inline-flex",
+        "font-size": "14px",
+        "font-weight": "600",
+        "color": "rgb(255, 255, 255)",
+        "background-color": "rgb(37, 99, 235)",
+        "padding": "8px 16px"
+      },
+      "rules": [
+        {"selector": ".btn-primary", "file": "{{root}}/app/assets/stylesheets/buttons.css", "line": 42},
+        {"selector": ".user-form__submit", "file": "https://ernie.localhost/app/assets/stylesheets/users.css?body=1"}
+      ],
+      "nearby": ["Cancel", "Delete user"],
+      "html": "<button type=\"submit\" class=\"btn-primary user-form__submit\" data-testid=\"save-user\">Save</button>"
+    },
+    {
+      "label": "button.btn-primary",
+      "text": "Save and close",
+      "selector": "#user-form > div:nth-of-type(3) > button:nth-of-type(2)",
+      "locations": [
+        {"file": "{{root}}/app/javascript/components/UserForm.tsx", "line": 91, "column": 7, "role": "element", "via": "react"},
+        {"file": "{{root}}/app/javascript/components/UserForm.tsx", "line": 12, "role": "component", "via": "react", "name": "UserForm"},
+        {"file": "app/views/admin/users/edit.html.erb", "role": "component", "via": "rails"}
+      ],
+      "clues": [
+        {"kind": "data-testid", "value": "save-and-close"},
+        {"kind": "text", "value": "Save and close"}
+      ],
+      "role": "button",
+      "name": "Save and close",
+      "size": {"width": 132, "height": 36},
+      "styles": {"display": "inline-flex", "color": "rgb(255, 255, 255)", "background-color": "rgb(37, 99, 235)"},
+      "rules": [
+        {"selector": ".btn-primary", "file": "{{root}}/app/assets/stylesheets/buttons.css", "line": 42}
+      ],
+      "nearby": ["Save", "Cancel"],
+      "html": "<button type=\"submit\" class=\"btn-primary\" data-testid=\"save-and-close\">Save and close</button>"
+    }
+  ]
+}

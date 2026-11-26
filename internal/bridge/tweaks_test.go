@@ -2,6 +2,8 @@ package bridge
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -169,6 +171,60 @@ func TestTheRoundTrip(t *testing.T) {
 	entries := done["entries"].([]any)
 	if done["status"] != "done" || len(entries) != 2 || entries[1].(map[string]any)["text"] != "made it green" {
 		t.Fatalf("event %v", done)
+	}
+}
+
+// The brief places the page's paths in the folder of the session working
+// on the tweak, and names the screenshot once there is one.
+func TestTheBriefUsesTheSessionsFolderAndTheScreenshot(t *testing.T) {
+	h := start(t)
+	folder := t.TempDir()
+	os.MkdirAll(filepath.Join(folder, "src"), 0o755)
+	os.WriteFile(filepath.Join(folder, "src", "App.tsx"), nil, 0o644)
+	h.register("s1", folder)
+	h.claim("s1", "http://localhost:5173/*")
+	s := h.connect()
+	s.hello(version.Protocol)
+	s.next("snapshot")
+
+	m := createMsg("r1", "http://localhost:5173/", "make it green")
+	m["targets"] = map[string]any{"elements": []any{map[string]any{"label": "p", "selector": "p",
+		"locations": []any{map[string]any{"file": "http://localhost:5173/src/App.tsx?t=1", "line": 3, "role": "element", "via": "react"}}}}}
+	s.send(m)
+	s.readUntil("result")
+
+	_, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	if !strings.Contains(string(body), "- `src/App.tsx:3`: element 1 (React, exact)\n") || !strings.Contains(string(body), "Screenshot: none (capture failed)\n") {
+		t.Fatalf("brief:\n%s", body)
+	}
+
+	shot := filepath.Join(h.cfg.StateDir, "screenshots", "1.png")
+	os.MkdirAll(filepath.Dir(shot), 0o700)
+	os.WriteFile(shot, []byte("png"), 0o600)
+	if _, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"})); !strings.Contains(string(body), "Screenshot: "+shot+". View it") {
+		t.Fatalf("brief:\n%s", body)
+	}
+}
+
+// Targets grow with styles, HTML and locations: a create bigger than the
+// WebSocket library's 32 KiB default still arrives.
+func TestALargeCreateArrives(t *testing.T) {
+	_, s := tracer(t)
+	m := createMsg("r1", "https://ernie.localhost/", "make it green")
+	var els []any
+	for range 5 {
+		els = append(els, map[string]any{"label": "div", "selector": "div", "html": strings.Repeat("<i>x</i>", 200), "nearby": []string{strings.Repeat("y", 80)}})
+	}
+	for range 40 {
+		els = append(els, map[string]any{"label": "div", "selector": "div", "html": strings.Repeat("<b>z</b>", 199)})
+	}
+	m["targets"] = map[string]any{"elements": els}
+	if raw, _ := json.Marshal(m); len(raw) < 64<<10 {
+		t.Fatalf("only %d bytes", len(raw))
+	}
+	s.send(m)
+	if r := s.readUntil("result"); r["number"] != 1.0 {
+		t.Fatalf("result %v", r)
 	}
 }
 

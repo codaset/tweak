@@ -96,6 +96,11 @@ func (b *Bridge) notify() {
 	b.change = make(chan struct{})
 }
 
+// readLimit is the largest message the extension may send. A create's
+// targets carry each element's context (HTML up to 1600 characters, styles,
+// rules, locations), so it is well above the library's 32 KiB default.
+const readLimit = 4 << 20
+
 func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 	// guard has already checked the Origin is exactly the extension's; the
 	// library checks it again against the same ID.
@@ -106,6 +111,7 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 	b.sockets.Add(1)
 	defer b.sockets.Done()
 	defer c.CloseNow()
+	c.SetReadLimit(readLimit)
 
 	// ctx is this socket's life. It isn't derived from b.closing, because a
 	// cancelled read drops the connection without a close frame; shutdown is

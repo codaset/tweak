@@ -15,6 +15,9 @@
   // The page is origin and path: the query and hash don't change it.
   const pageKey = () => `${location.origin}${location.pathname}`;
   let shownPage = pageKey();
+  // Claims match the query too, so the worker hears of every new path or query.
+  const urlKey = () => `${location.origin}${location.pathname}${location.search}`;
+  let shownURL = urlKey();
 
   // list is the tweaks that get a pin: this page's, while it's claimed.
   const list = () =>
@@ -59,6 +62,7 @@
     switch (msg.type) {
       case "open": // the port (re)connected: say which page this is
         shownPage = pageKey();
+        shownURL = urlKey();
         ns.worker.post({ type: "page", url: location.href });
         break;
       case "state":
@@ -89,9 +93,15 @@
   // is a new page, so its tweaks replace this one's, and the worker says
   // whether a claim covers it. The card stays open (it closes on esc or ×
   // only) and keeps its tweak; a composer belongs to the page it was opened
-  // on, so it closes.
+  // on, so it closes. A new query is the same page, but a claim may match
+  // the query, so the worker hears of it too.
   const onNavigate = () => {
-    if (pageKey() === shownPage) return;
+    if (urlKey() === shownURL) return;
+    shownURL = urlKey();
+    if (pageKey() === shownPage) {
+      ns.worker.post({ type: "page", url: location.href });
+      return;
+    }
     shownPage = pageKey();
     const card = ns.panel.showing();
     if (ns.panel.open() && card === null) ns.panel.close();

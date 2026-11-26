@@ -73,6 +73,26 @@ test("the thread is the conversation after the request, each entry labelled", ()
   assert.equal(thread(undefined).length, 0);
 });
 
+test("each entry carries its classes, and whether to announce it", () => {
+  const { thread } = ns.describe;
+  const t = {
+    entries: [
+      { from: "you", kind: "request", text: "make it green" },
+      { from: "claude", kind: "question", text: "Solid or outline?" },
+      { from: "you", kind: "reply", text: "outline" },
+      { from: "bridge", kind: "notice", text: "passed to another session" },
+    ],
+  };
+  assert.deepEqual(
+    thread(t).map((e) => [e.className, e.announce]),
+    [
+      ["entry kind-question from-claude", "Claude asks: Solid or outline?"],
+      ["entry kind-reply from-you", ""], // the developer's own words aren't read back
+      ["entry kind-notice from-bridge", "Tweak: passed to another session"],
+    ],
+  );
+});
+
 test("a card whose tweak hasn't arrived yet reads Sending", () => {
   assert.deepEqual({ ...status(undefined) }, { text: "Sending…", tone: "sent" });
 });

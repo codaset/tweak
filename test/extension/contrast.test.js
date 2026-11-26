@@ -19,6 +19,24 @@ const contrast = (a, b) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
+// Text in the card's conversation, on what it sits on: the question's
+// label and text in its tinted box, the reason's label, and muted text.
+const TEXT = [
+  ["question-text", "question-surface"],
+  ["text", "question-surface"],
+  ["tone-ended", "bg"],
+  ["muted", "bg"],
+];
+for (const [theme, t] of Object.entries(themes)) {
+  for (const [fg, bg] of TEXT) {
+    test(`${theme}: --${fg} text on --${bg} has 4.5:1 contrast`, () => {
+      assert.ok(t[fg] && t[bg], `--${fg} and --${bg} must be defined`);
+      const ratio = contrast(t[bg], t[fg]);
+      assert.ok(ratio >= 4.5, `${t[fg]} on ${t[bg]} is ${ratio.toFixed(2)}:1`);
+    });
+  }
+}
+
 for (const [theme, t] of Object.entries(themes)) {
   for (const tone of ["sent", "working", "question", "done", "ended"]) {
     test(`${theme}: a ${tone} pin's number has 4.5:1 contrast`, () => {

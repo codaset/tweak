@@ -135,8 +135,17 @@
     const statusText = el("span");
     status.append(dot, statusText);
     const request = el("p", "request");
+    // The conversation scrolls on its own, so it's a labelled region the
+    // keyboard can reach and scroll.
     const thread = el("div", "thread");
     thread.hidden = true;
+    thread.tabIndex = 0;
+    thread.setAttribute("role", "region");
+    thread.setAttribute("aria-label", "Conversation");
+    // New entries from Claude (or Tweak) are read out here, so a question
+    // that opens the card without taking the focus is still heard.
+    const heard = el("div", "sr-only");
+    heard.setAttribute("aria-live", "polite");
 
     // The reply box, shown while Claude has a question. It's built once and
     // shown or hidden, so what you type survives every redraw.
@@ -150,7 +159,9 @@
     error.setAttribute("role", "alert");
     const foot = el("div", "foot");
     const hint = el("span", "hint");
+    hint.id = "reply-hint";
     hint.append(el("kbd", "", "↵"), " reply  ", el("kbd", "", "⇧↵"), " new line");
+    box.setAttribute("aria-describedby", hint.id);
     const send = el("button", "send", "Reply");
     send.type = "button";
     foot.append(hint, send);
@@ -169,9 +180,13 @@
     });
     send.addEventListener("click", submitReply);
 
-    panel.append(status, request, thread, answer);
+    panel.append(status, request, thread, answer, heard);
     status.setAttribute("aria-live", "polite");
-    parts = { chip: panel.querySelector(".chip"), status, statusText, request, thread, said: "", answer, box, send, error };
+    // heardUpTo is how many entries have been read out or were there when the
+    // card opened; a card opened by Claude's question reads that one out.
+    const entries = ns.describe.thread(tweak);
+    const heardUpTo = mode.announce ? Math.max(0, entries.length - 1) : entries.length;
+    parts = { chip: panel.querySelector(".chip"), status, statusText, request, thread, said: "", heard, heardUpTo, answer, box, send, error };
     updateCard(tweak);
   }
 
@@ -196,13 +211,15 @@
       parts.said = said;
       thread.replaceChildren(
         ...entries.map((e) => {
-          const item = el("div", `entry kind-${e.kind}`);
-          item.append(el("div", "entry-label", e.label), el("p", e.kind === "summary" ? "entry-text summary" : "entry-text", e.text));
+          const item = el("div", e.className);
+          item.append(el("div", "entry-label", e.label), el("p", "entry-text", e.text));
           return item;
         }),
       );
       thread.hidden = entries.length === 0;
       thread.scrollTop = thread.scrollHeight;
+      announce(entries.slice(parts.heardUpTo));
+      parts.heardUpTo = entries.length;
     }
 
     const asking = tweak?.status === "question";
@@ -217,6 +234,16 @@
       }
     }
     refreshReply();
+  }
+
+  // announce reads new entries out through the live region. The text is set
+  // a moment after the region exists, or a screen reader may miss it.
+  function announce(entries) {
+    const words = entries.map((e) => e.announce).filter(Boolean).join(". ");
+    if (!words) return;
+    const { heard } = parts;
+    heard.textContent = "";
+    setTimeout(() => (heard.textContent = words), 150);
   }
 
   function refreshReply() {
@@ -306,10 +333,10 @@
     // show opens the card of tweak number. With focus, it takes the focus,
     // and gives it back to returnTo when it closes; a card reopened after a
     // reload doesn't take it.
-    show(number, { request, label, focus = false, returnTo = null } = {}) {
+    show(number, { request, label, focus = false, returnTo = null, announce = false } = {}) {
       ns.picker.release();
       composing(false);
-      mode = { kind: "card", number, request, label, returnTo };
+      mode = { kind: "card", number, request, label, returnTo, announce };
       drawCard();
       place();
       if (focus) focusIn();
@@ -322,7 +349,7 @@
     asked(number) {
       if (mode?.kind === "compose") return;
       if (mode?.kind === "card" && (mode.number === number || parts.box?.value.trim())) return;
-      this.show(number);
+      this.show(number, { announce: true });
     },
     toggle(number, pin) {
       if (this.showing() === number) this.close();

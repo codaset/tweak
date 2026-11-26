@@ -345,6 +345,8 @@
     answer.hidden = true;
     // A reply half-written before a reload, or before this card was swapped
     // for another, is back.
+    // One kept for a question that's over since is dropped.
+    if (tweak && tweak.status !== "question") ns.drafts.setReply(mode.number, "");
     box.value = ns.drafts.reply(mode.number);
     box.addEventListener("input", () => {
       mode.replyError = "";

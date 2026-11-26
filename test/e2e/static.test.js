@@ -244,16 +244,21 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
           await ns.hover.source(el);
           times.push(performance.now() - t0);
         }
-        return { first, times };
+        const t1 = performance.now();
+        for (let i = 0; i < 10; i++) ns.context.rules(el);
+        return { first, times, walk: (performance.now() - t1) / 10 };
       } finally {
         style.remove();
         comments.remove();
       }
     })()`);
-    t.diagnostic(`hover with 20,000 rules: ${times.times.map((ms) => ms.toFixed(1)).join(", ")} ms`);
+    t.diagnostic(`hover with 20,000 rules: ${times.times.map((ms) => ms.toFixed(1)).join(", ")} ms; the CSSOM walk alone ${times.walk.toFixed(1)} ms`);
     assert.equal(times.first, "big.css:20001", "the inline map gives #save its line");
     const median = [...times.times].sort((a, b) => a - b)[5];
-    assert.ok(median < 30, `a hover takes ${median.toFixed(1)} ms (median), not well under 60`);
+    // What a hover repeats is cached, so it costs about the CSSOM walk the
+    // element needs anyway (about 10 ms here, 30 on a busy CI runner).
+    assert.ok(median < times.walk * 1.5 + 5, `a hover takes ${median.toFixed(1)} ms (median), the walk alone ${times.walk.toFixed(1)} ms`);
+    assert.ok(median < 60, `a hover takes ${median.toFixed(1)} ms (median): over the 60 ms debounce`);
   });
 });
 

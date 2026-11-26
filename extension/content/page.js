@@ -58,12 +58,20 @@
     },
   };
 
+  // improvements are the side panel's suggestions for this page, once its
+  // HTML has loaded: {suggestions}, or nothing before then. A page still
+  // loading says them when it has.
+  const improvements = () => (document.readyState === "loading" ? {} : { suggestions: ns.mappers.suggestions() });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => ns.worker.post({ type: "page", url: location.href, ...improvements() }), { once: true });
+  }
+
   const off = ns.worker.on((msg) => {
     switch (msg.type) {
       case "open": // the port (re)connected: say which page this is
         shownPage = pageKey();
         shownURL = urlKey();
-        ns.worker.post({ type: "page", url: location.href });
+        ns.worker.post({ type: "page", url: location.href, ...improvements() });
         break;
       case "state":
         ns.panel.update();

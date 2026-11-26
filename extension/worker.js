@@ -19,7 +19,7 @@ const ALL_URLS = { origins: ["<all_urls>"] };
 const NOT_CONNECTED = "Not connected to Tweak";
 
 // What the side panel shows (see lib/status.js for connection and message).
-const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], update: null };
+const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], update: null, suggestions: [] };
 // The claims as of event seq, from the bridge or, until it answers, the cache.
 let claimState = { seq: 0, claims: [] };
 let heardFromBridge = false; // once true, the cache is out of date
@@ -45,6 +45,10 @@ chrome.permissions.onAdded.addListener(async () => {
 chrome.permissions.onRemoved.addListener(() => refreshAccess());
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && "port" in changes) bridge.reconnect();
+  if (area === "local" && "dismissed" in changes) {
+    dismissed = changes.dismissed.newValue ?? {};
+    publishSuggestions();
+  }
 });
 // Toggling pick mode on a claimed page (design.md § Toolbar button) is still
 // to come; ⌥-click picks for now.
@@ -54,7 +58,10 @@ chrome.runtime.onConnect.addListener((port) => {
   if (!ports) return;
   ports.add(port);
   port.tabId = port.sender?.tab?.id;
-  port.onDisconnect.addListener(() => ports.delete(port));
+  port.onDisconnect.addListener(() => {
+    ports.delete(port);
+    if (port.suggestions?.length) publishSuggestions();
+  });
   if (port.name === "tab") port.onMessage.addListener((msg) => onTabMessage(port, msg));
   port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
   if (port.name === "tab") selfUpdate.watchTab(port);
@@ -86,6 +93,26 @@ const selfUpdate = createSelfUpdate({ publish });
 // After the self-update's restore: storage.session may be coming back from it.
 const tweaksRestored = restoreTweaks();
 
+// ---- Optional improvements ----
+
+// The side panel suggests what a tab's page could add (design.md, Optional
+// improvements) until it is dismissed for the site: by origin, kept in
+// storage.local as dismissed {origin: [kind]}. The panel shows its own
+// window's active tab's.
+let dismissed = {};
+const dismissedRead = chrome.storage.local.get("dismissed").then(({ dismissed: d = {} }) => (dismissed = d));
+
+async function publishSuggestions() {
+  await dismissedRead;
+  const suggestions = [];
+  for (const port of tabs) {
+    if (port.tabId === undefined || !port.url) continue;
+    const origin = new URL(port.url).origin;
+    for (const kind of port.suggestions ?? []) if (!dismissed[origin]?.includes(kind)) suggestions.push({ tabId: port.tabId, origin, kind });
+  }
+  if (JSON.stringify(suggestions) !== JSON.stringify(view.suggestions)) publish({ suggestions });
+}
+
 // ---- Tweaks in tabs ----
 
 // Each tab port says which page it shows; it gets that page's tweaks and
@@ -99,8 +126,13 @@ async function onTabMessage(port, msg) {
   const tabId = port.sender?.tab?.id;
   switch (msg.type) {
     case "page": {
+      // A page says its suggestions once its HTML has loaded; a new page
+      // has none until it does.
+      if (Array.isArray(msg.suggestions)) port.suggestions = msg.suggestions;
+      else if (pageOf(msg.url) !== port.page) port.suggestions = [];
       port.page = pageOf(msg.url);
       port.url = msg.url;
+      publishSuggestions();
       await tweaksRestored;
       const key = cardKey(tabId);
       const { [key]: card = null } = await chrome.storage.session.get(key);

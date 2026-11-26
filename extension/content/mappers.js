@@ -70,6 +70,17 @@
     for (let node; (node = back ? walker.previousNode() : walker.nextNode()); ) yield node.data;
   }
 
+  // suggestions are the optional improvements this page could use, for the
+  // side panel (design.md, Optional improvements): a Rails page (its CSRF
+  // meta tag names Rails' authenticity_token) with no template annotations.
+  function suggestions() {
+    const isRails = document.querySelector('meta[name="csrf-param"][content="authenticity_token"]');
+    if (!isRails) return [];
+    for (const comment of comments(document.documentElement, false)) if (annotation(comment)) return [];
+    for (const comment of comments(document.documentElement, true)) if (annotation(comment)) return [];
+    return ["rails-annotations"];
+  }
+
   const rails = {
     via: "rails",
     map: async (el) => templates(comments(el, true), comments(el, false)).map((file) => ({ file, role: "component", via: "rails" })),
@@ -228,5 +239,5 @@
     return results.flat();
   }
 
-  ns.mappers = { run, templates, modules, prelude };
+  ns.mappers = { run, templates, modules, prelude, suggestions };
 })();

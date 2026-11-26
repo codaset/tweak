@@ -85,6 +85,18 @@ test("node_modules is linked into the copy, not copied", async () => {
   }
 });
 
+test("installed gems (vendor/) are linked into the copy too", async () => {
+  const fixture = fakeFixture(SERVER);
+  mkdirSync(join(fixture.dir, "vendor/bundle"), { recursive: true });
+  const app = await startFixture(fixture);
+  try {
+    writeFileSync(join(fixture.dir, "vendor/bundle/later.gem"), "");
+    assert.ok(existsSync(join(app.folder, "vendor/bundle/later.gem")));
+  } finally {
+    await app.stop();
+  }
+});
+
 test("a fixture that never gets ready fails with its last 50 lines", async () => {
   const lines = Array.from({ length: 80 }, (_, i) => `line ${i + 1}`);
   const fixture = fakeFixture(`console.log(${JSON.stringify(lines.join("\n"))}); setInterval(() => {}, 1000);`);

@@ -49,6 +49,21 @@
         </div>
       </section>
 
+      <section class="suggestion" id="rails-annotations" hidden aria-labelledby="rails-annotations-title">
+        <h2 id="rails-annotations-title">Point Claude at the exact template</h2>
+        <p>
+          This Rails app doesn't mark which template renders what, so Tweak can only give Claude search clues. To
+          name the template, uncomment this line in <code>config/environments/development.rb</code> and restart the
+          server:
+        </p>
+        <div class="command">
+          <code id="rails-annotations-line">config.action_view.annotate_rendered_view_with_filenames = true</code>
+          <button type="button" class="copy" data-copy="rails-annotations-line" aria-label="Copy the setting">Copy</button>
+        </div>
+        <p class="note">Optional. Tweak never changes your app.</p>
+        <button type="button" class="dismiss" data-dismiss="rails-annotations">Don't suggest this for this site</button>
+      </section>
+
       <section class="claims" id="claims" hidden aria-labelledby="claims-title">
         <h2 id="claims-title">Claimed pages</h2>
         <ul id="claim-list"></ul>

@@ -9,6 +9,7 @@
   --accent-text: #ffffff;
   --ok: #2f9e44;
   --warn: #e8590c;
+  --warn-text: #b33f06;
   --idle: #80868b;
   --radius: 10px;
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -25,6 +26,7 @@
     --accent-text: #10131a;
     --ok: #51cf66;
     --warn: #ff8a3d;
+    --warn-text: #ffa366;
   }
 }
 
@@ -199,11 +201,12 @@ button.copy {
 }
 
 .another-folder {
-  box-shadow: inset 3px 0 0 var(--warn);
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
 }
 
 .another-folder h2 {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .another-folder code {
@@ -211,7 +214,7 @@ button.copy {
 }
 
 #refusal {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .claims ul {

@@ -63,7 +63,18 @@ func inside(folder, file string) (string, bool) {
 			return "", false
 		}
 	}
-	if info, err := stat(filepath.Join(folder, filepath.FromSlash(rel))); err != nil || !info.Mode().IsRegular() {
+	path := filepath.Join(folder, filepath.FromSlash(rel))
+	if info, err := stat(path); err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	// A link in the project counts only if it leads to a file in the
+	// project: one leading outside isn't a project file to edit.
+	realFolder, err1 := filepath.EvalSymlinks(folder)
+	realPath, err2 := filepath.EvalSymlinks(path)
+	if err1 != nil || err2 != nil {
+		return "", false
+	}
+	if _, ok := within(realFolder, realPath); !ok {
 		return "", false
 	}
 	return rel, true

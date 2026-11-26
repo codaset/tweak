@@ -61,6 +61,19 @@ func TestPathsArePlacedInTheProject(t *testing.T) {
 		}
 	}
 
+	// A link in the project counts only if it leads to a file in the
+	// project: one leading outside isn't a project file Claude should edit.
+	if err := os.Symlink(outside, filepath.Join(project, "src", "out.tsx")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	os.Symlink(filepath.Join(project, "src", "App.tsx"), filepath.Join(project, "src", "alias.tsx"))
+	if got, ok := Place(project, "src/out.tsx"); ok {
+		t.Errorf("a link out of the project was placed as %q", got)
+	}
+	if got, ok := Place(project, "src/alias.tsx"); !ok || got != "src/alias.tsx" {
+		t.Errorf("a link within the project: %q, %v", got, ok)
+	}
+
 	if _, ok := Place("", "src/App.tsx"); ok {
 		t.Error("placed a path with no project folder")
 	}

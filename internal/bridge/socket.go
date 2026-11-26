@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	tweak "github.com/codaset/tweak"
@@ -209,6 +210,12 @@ func (b *Bridge) create(in createIn) resultOut {
 	switch {
 	case errors.Is(err, store.ErrBadTweak):
 		out.Error, out.Message = "bad-request", err.Error()
+	case errors.Is(err, store.ErrNoClaim):
+		origin := in.URL
+		if u, err := url.Parse(in.URL); err == nil {
+			origin = u.Scheme + "://" + u.Host
+		}
+		out.Error, out.Message = "no-claim", "No session claims this page. Claim it from Claude Code with /tweak "+origin
 	case err != nil:
 		b.log.Print(err)
 		out.Error, out.Message = "internal", "the bridge failed: "+err.Error()

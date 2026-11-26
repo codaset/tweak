@@ -1,0 +1,6 @@
+{
+  "type": "result",
+  "ref": "w3",
+  "error": "no-claim",
+  "message": "No session claims this page. Claim it from Claude Code with /tweak http://localhost:3000"
+}

@@ -56,7 +56,7 @@ func TestCreateGivesTheTweakABridgeWideNumber(t *testing.T) {
 	if result["ref"] != "r1" || result["number"] != 1.0 {
 		t.Fatalf("result %v", result)
 	}
-	s.send(createMsg("r2", "http://localhost:3000/", "another page, unclaimed"))
+	s.send(createMsg("r2", "https://ernie.localhost/other", "another page"))
 	if r := s.readUntil("result"); r["ref"] != "r2" || r["number"] != 2.0 {
 		t.Fatalf("second result %v", r)
 	}
@@ -68,6 +68,16 @@ func TestCreateGivesTheTweakABridgeWideNumber(t *testing.T) {
 	first := tweaks[0].(map[string]any)
 	if len(tweaks) != 2 || first["page"] != "https://ernie.localhost/admin" || first["status"] != "sent" {
 		t.Fatalf("snapshot tweaks %v", tweaks)
+	}
+}
+
+// A page no claim covers gets no tweak: the composer shows why.
+func TestCreateOnAnUnclaimedPageIsRefused(t *testing.T) {
+	_, s := tracer(t)
+	s.send(createMsg("r1", "http://localhost:3000/", "make it green"))
+	r := s.readUntil("result")
+	if r["error"] != "no-claim" || r["message"] != "No session claims this page. Claim it from Claude Code with /tweak http://localhost:3000" {
+		t.Fatalf("result %v", r)
 	}
 }
 
@@ -179,6 +189,7 @@ func TestStatusRefusals(t *testing.T) {
 		{"no session ID", "", "/tweaks/1/work", nil, 400, "no-session-id", ""},
 		{"a status not yet supported", "s1", "/tweaks/1/status", map[string]string{"status": "queued", "message": "x"}, 400, "bad-request", ""},
 		{"done without a summary", "s1", "/tweaks/1/status", map[string]string{"status": "done", "message": " "}, 400, "bad-request", ""},
+		{"done before work", "s1", "/tweaks/1/status", map[string]string{"status": "done", "message": "x"}, 409, "wrong-status", "run tweak work 1 first"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := req{method: "POST", path: c.path, body: c.body}
@@ -191,6 +202,21 @@ func TestStatusRefusals(t *testing.T) {
 				t.Fatalf("body %s, want message %q", body, c.message)
 			}
 		})
+	}
+}
+
+func TestADoneTweakIsntWorkedOrDoneAgain(t *testing.T) {
+	h, s := tracer(t)
+	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
+	s.readUntil("result")
+	h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	h.do(as("s1", req{method: "POST", path: "/tweaks/1/status", body: map[string]string{"status": "done", "message": "made it green"}}))
+	resp, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	refused(t, resp, body, 409, "wrong-status")
+	resp, body = h.do(as("s1", req{method: "POST", path: "/tweaks/1/status", body: map[string]string{"status": "done", "message": "again"}}))
+	refused(t, resp, body, 409, "wrong-status")
+	if !strings.Contains(string(body), "tweak 1 is already done") {
+		t.Fatalf("body %s", body)
 	}
 }
 

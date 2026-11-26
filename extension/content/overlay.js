@@ -31,11 +31,17 @@
       --accent-text: #ffffff;
       --shadow: 0 1px 2px rgb(16 24 40 / 0.08), 0 8px 24px -4px rgb(16 24 40 / 0.18), 0 24px 48px -12px rgb(16 24 40 / 0.18);
       --outline: #4c5fd5;
-      --tone-sent: #7c5cdb;
+      /* Each status tone, and the colour of text on it (4.5:1 or more). */
+      --tone-sent: #6d4fd0;
+      --on-sent: #ffffff;
       --tone-working: #e08a00;
-      --tone-question: #2f6fe4;
-      --tone-done: #23a058;
-      --tone-ended: #8a919b;
+      --on-working: #1b1f24;
+      --tone-question: #2563d9;
+      --on-question: #ffffff;
+      --tone-done: #1d8049;
+      --on-done: #ffffff;
+      --tone-ended: #6b7280;
+      --on-ended: #ffffff;
       --danger: #d4483b;
       font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       -webkit-font-smoothing: antialiased;
@@ -52,9 +58,15 @@
         --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -6px rgb(0 0 0 / 0.55);
         --outline: #8193ff;
         --tone-sent: #a48bff;
+        --on-sent: #101318;
         --tone-working: #ffad33;
+        --on-working: #101318;
         --tone-question: #6a9bff;
+        --on-question: #101318;
         --tone-done: #4cc983;
+        --on-done: #101318;
+        --tone-ended: #8a919b;
+        --on-ended: #101318;
         --danger: #ff7b6e;
       }
     }
@@ -96,7 +108,7 @@
       border: 2px solid var(--bg);
       border-radius: 50% 50% 50% 4px;
       background: var(--tone, var(--tone-sent));
-      color: #fff;
+      color: var(--on-tone, var(--on-sent));
       font: 650 11px/1 system-ui, -apple-system, sans-serif;
       font-variant-numeric: tabular-nums;
       box-shadow: 0 1px 3px rgb(0 0 0 / 0.3), 0 0 0 1px rgb(0 0 0 / 0.06);
@@ -212,11 +224,11 @@
     .summary { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
     .summary-label { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
 
-    .tone-sent { --tone: var(--tone-sent); }
-    .tone-working { --tone: var(--tone-working); }
-    .tone-question { --tone: var(--tone-question); }
-    .tone-done { --tone: var(--tone-done); }
-    .tone-ended { --tone: var(--tone-ended); }
+    .tone-sent { --tone: var(--tone-sent); --on-tone: var(--on-sent); }
+    .tone-working { --tone: var(--tone-working); --on-tone: var(--on-working); }
+    .tone-question { --tone: var(--tone-question); --on-tone: var(--on-question); }
+    .tone-done { --tone: var(--tone-done); --on-tone: var(--on-done); }
+    .tone-ended { --tone: var(--tone-ended); --on-tone: var(--on-ended); }
 
     @keyframes rise { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
     @keyframes pulse { 50% { opacity: 0.35; } }

@@ -47,6 +47,7 @@
 
   function setPicking(on) {
     ns.pins?.setPicking(on);
+    ns.busy?.set("picking", on); // pick mode holds a pending self-update back
   }
 
   function hover(x, y) {

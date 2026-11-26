@@ -25,6 +25,7 @@ func TestUpgradingStartsEachInboxAtTheEnd(t *testing.T) {
 	if in, err := s.Inbox("s1", -1); err != nil || len(in.Events) != 0 {
 		t.Fatalf("inbox %+v %v", in, err)
 	}
+	s.Claim("s1", mustParse(t, "https://a.localhost/*"))
 	if tw, err := s.CreateTweak(newTweak("https://a.localhost/", "first")); err != nil || tw.Number != 1 {
 		t.Fatalf("first tweak %+v %v", tw, err)
 	}

@@ -169,11 +169,14 @@ func tweakNumber(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
 func (b *Bridge) setStatus(w http.ResponseWriter, session string, n int64, status string, e *store.Entry) (store.Tweak, bool) {
 	tw, err := b.store.SetStatus(session, n, status, e)
 	var notYours *store.NotYoursError
+	var wrong *store.TransitionError
 	switch {
 	case errors.Is(err, store.ErrNoTweak):
 		refuse(w, 404, "no-tweak", fmt.Sprintf("there is no tweak %d", n))
 	case errors.As(err, &notYours):
 		refuse(w, 409, "not-yours", err.Error())
+	case errors.As(err, &wrong):
+		refuse(w, 409, "wrong-status", err.Error())
 	case err != nil:
 		b.internal(w, err)
 	default:

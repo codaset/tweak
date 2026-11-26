@@ -263,6 +263,14 @@ func (s *Store) SetStatusEnding(sessionID string, number int64, status string, e
 	if err != nil {
 		return Tweak{}, err
 	}
+	// Declining an undo asked of a finished tweak refuses the undo, and
+	// keeps the change and the tweak's status.
+	if status == StatusDeclined && tw.Change != nil && tw.Change.State == ChangeUndoRequested {
+		if tw, err = tx.declineUndo(tw, entry); err != nil {
+			return Tweak{}, err
+		}
+		return tw, tx.commit()
+	}
 	if !canMove(tw.Status, status) {
 		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: status}
 	}

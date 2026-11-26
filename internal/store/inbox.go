@@ -18,9 +18,9 @@ type Inbox struct {
 }
 
 // inboxWhere picks the events a session's watcher hears about: its new
-// tweaks, the replies to its questions, the tweaks sent again, and its
-// released claims.
-const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-replied', 'tweak-again', 'claim-released')`
+// tweaks, the replies to its questions, the tweaks sent again, the undos
+// that need it, and its released claims.
+const inboxWhere = `json_extract(payload, '$.session') = ? AND type IN ('tweak-created', 'tweak-replied', 'tweak-again', 'tweak-undo-conflict', 'claim-released')`
 
 // Inbox acknowledges the session's events up to after, then returns those
 // after it. after < 0 means "where the last watcher left off" and

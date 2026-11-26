@@ -1,0 +1,67 @@
+{
+  "type": "event",
+  "seq": 16,
+  "event": "tweak-undone",
+  "tweak": {
+    "number": 12,
+    "page": "https://ernie.localhost/admin/users",
+    "url": "https://ernie.localhost/admin/users?tab=2",
+    "status": "done",
+    "statusAt": "2026-11-26T10:01:00.000Z",
+    "created": "2026-11-26T10:00:00.000Z",
+    "updated": "2026-11-26T10:01:00.000Z",
+    "targets": {
+      "elements": [
+        {
+          "label": "button.btn-primary",
+          "text": "Save",
+          "selector": "#user-form > button"
+        }
+      ]
+    },
+    "anchor": {
+      "x": 0.5,
+      "y": 0.4
+    },
+    "entries": [
+      {
+        "from": "you",
+        "kind": "request",
+        "text": "make this button green",
+        "at": "2026-11-26T10:00:00.000Z"
+      },
+      {
+        "from": "claude",
+        "kind": "summary",
+        "text": "Made the button green.",
+        "at": "2026-11-26T10:03:00.000Z"
+      },
+      {
+        "from": "you",
+        "kind": "undo",
+        "text": "Undid the change to app/views/users/_form.html.erb",
+        "at": "2026-11-26T10:05:00.000Z"
+      }
+    ],
+    "change": {
+      "state": "undone",
+      "checked": true,
+      "files": [
+        {
+          "path": "app/views/users/_form.html.erb",
+          "outside": false
+        },
+        {
+          "path": "/Users/me/dev/shared-ui/buttons.css",
+          "outside": true
+        }
+      ],
+      "unrecorded": [
+        {
+          "path": "app/assets/stylesheets/users.css",
+          "outside": false
+        }
+      ]
+    }
+  }
+}

@@ -71,6 +71,7 @@ type Bridge struct {
 	sockets     sync.WaitGroup
 	loops       sync.WaitGroup // the background loops that use the store
 	captureMu   sync.Mutex     // undo capture: see capture.go
+	undoMu      sync.Mutex     // one undo at a time: see undo.go
 	// gitSnapshot and gitChanged are the git check (capture.Snapshot and
 	// capture.Changed); tests slow them down.
 	gitSnapshot func(folder, scratch string) (capture.Tree, error)

@@ -129,4 +129,10 @@ ALTER TABLE change_files ADD COLUMN outside INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE change_files ADD COLUMN recordable INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE change_files ADD COLUMN base_tree TEXT NOT NULL DEFAULT '';
 `,
+	// 5: reversing a change. conflicts is how many of an undo-requested
+	// change's files couldn't be reversed around later edits: the
+	// undo-conflict line says so.
+	`
+ALTER TABLE changes ADD COLUMN conflicts INTEGER NOT NULL DEFAULT 0;
+`,
 }

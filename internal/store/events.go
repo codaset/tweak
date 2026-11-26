@@ -15,6 +15,11 @@ const (
 	EventTweakStatus   = "tweak-status"  // its status changed, or an entry was added
 	EventTweakReplied  = "tweak-replied" // the developer answered Claude's question
 	EventTweakAgain    = "tweak-again"   // a delivered tweak Claude hasn't confirmed, sent again
+	// An undo that needs Claude: to the session that claims the page now.
+	EventTweakUndoConflict = "tweak-undo-conflict"
+	// A change undone, by the bridge or by Claude by hand: the page reloads
+	// as after a change.
+	EventTweakUndone = "tweak-undone"
 )
 
 // Event is one entry in the append-only event log. Seq is monotonic. It

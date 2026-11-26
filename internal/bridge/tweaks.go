@@ -48,11 +48,15 @@ type tweakOut struct {
 
 // changeOut is a tweak's change as its card lists it: paths and labels
 // only, never contents. It's left out while the tweak is capturing.
+// While undo-requested, conflicts is how many files need resolving, and
+// waiting says no session claims the page to resolve them.
 type changeOut struct {
 	State      string    `json:"state"`
 	Checked    bool      `json:"checked"`
 	Files      []fileOut `json:"files"`
 	Unrecorded []fileOut `json:"unrecorded"`
+	Conflicts  int       `json:"conflicts,omitempty"`
+	Waiting    bool      `json:"waiting,omitempty"`
 }
 
 type fileOut struct {
@@ -64,7 +68,7 @@ func changeJSON(c *store.Change) *changeOut {
 	if c == nil || c.Capturing {
 		return nil
 	}
-	out := &changeOut{State: c.State, Checked: c.Checked, Files: []fileOut{}, Unrecorded: []fileOut{}}
+	out := &changeOut{State: c.State, Checked: c.Checked, Files: []fileOut{}, Unrecorded: []fileOut{}, Conflicts: c.Conflicts, Waiting: c.Waiting}
 	for _, f := range c.Files {
 		out.Files = append(out.Files, fileOut{Path: f.Shown, Outside: f.Outside})
 	}
@@ -153,6 +157,8 @@ func line(e store.Event) string {
 		}
 	case store.EventTweakAgain:
 		return againLine(*e.Tweak)
+	case store.EventTweakUndoConflict:
+		return undoConflictLine(*e.Tweak)
 	case store.EventClaimReleased:
 		return "claim released: " + e.Claim.Pattern
 	}
@@ -276,6 +282,10 @@ func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string
 		return 400, "bad-request", err.Error()
 	case errors.Is(err, store.ErrPickedUp):
 		return 409, "picked-up", err.Error()
+	case errors.Is(err, store.ErrNotUndoable):
+		return 409, "not-undoable", err.Error()
+	case errors.Is(err, store.ErrNotUndoRequested):
+		return 409, "not-undo-requested", fmt.Sprintf("no undo was asked of tweak %d: there's nothing to undo by hand", n)
 	}
 	b.log.Print(err)
 	return 500, "internal", "the bridge failed: " + err.Error()
@@ -368,11 +378,19 @@ func (b *Bridge) status(w http.ResponseWriter, r *http.Request) {
 		}
 		entry = &store.Entry{From: store.FromClaude, Kind: want.kind, Text: text}
 	}
+	asked := false // a decline of an undo asked of the tweak refuses the undo
+	if was, err := b.store.Tweak(n); err == nil && was.Change != nil {
+		asked = body.Status == store.StatusDeclined && was.Change.State == store.ChangeUndoRequested
+	}
 	tw, ok := b.setStatus(w, session, n, body.Status, entry)
 	if !ok {
 		return
 	}
-	reply(w, 200, statusOut{Number: tw.Number, Status: tw.Status})
+	out := statusOut{Number: tw.Number, Status: tw.Status}
+	if asked {
+		out.Undo = "declined"
+	}
+	reply(w, 200, out)
 }
 
 // entries is POST /tweaks/:n/entries {kind: "plan", text}: Claude's plan,
@@ -399,7 +417,10 @@ func (b *Bridge) entries(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, statusOut{Number: tw.Number, Status: tw.Status})
 }
 
+// statusOut answers a status change. Undo says what became of an undo
+// asked of a finished tweak: declined (the change kept) or undone.
 type statusOut struct {
 	Number int64  `json:"number"`
 	Status string `json:"status"`
+	Undo   string `json:"undo,omitempty"`
 }

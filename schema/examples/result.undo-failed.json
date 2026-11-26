@@ -1,0 +1,6 @@
+{
+  "type": "result",
+  "ref": "r7",
+  "error": "undo-failed",
+  "message": "Undo couldn't write the files (permission denied), so nothing was changed"
+}

@@ -68,8 +68,8 @@ func TestUpgradingAddsUndoCapture(t *testing.T) {
 	if _, err := s.Work("s1", tw2.Number, nil, CaptureStart{Folder: "/dev/ernie"}); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := s.RecordBefore("s1", Before{ChangeFile: ChangeFile{Path: "/dev/ernie/a.css", Shown: "a.css"}, Text: true, Data: []byte("x")}); !ok || err != nil {
-		t.Fatalf("record %v %v", ok, err)
+	if r, err := s.RecordBefore("s1", Before{ChangeFile: ChangeFile{Path: "/dev/ernie/a.css", Shown: "a.css"}, Text: true, Data: []byte("x")}); !r.Saved || err != nil {
+		t.Fatalf("record %+v %v", r, err)
 	}
 }
 

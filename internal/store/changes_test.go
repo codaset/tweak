@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 // working gives s1 a tweak it's working on and capturing.
@@ -29,11 +30,11 @@ func after(path, data string) After { return After{Path: path, Text: true, Data:
 func TestOnlyTheFirstBeforeCopyIsKept(t *testing.T) {
 	s := open(t)
 	working(t, s)
-	if ok, err := s.RecordBefore("s1", text("/dev/ernie/a.css", "red")); !ok || err != nil {
-		t.Fatalf("first: %v %v", ok, err)
+	if r, err := s.RecordBefore("s1", text("/dev/ernie/a.css", "red")); !r.Saved || err != nil {
+		t.Fatalf("first: %+v %v", r, err)
 	}
-	if ok, err := s.RecordBefore("s1", text("/dev/ernie/a.css", "green")); ok || err != nil {
-		t.Fatalf("second: %v %v", ok, err)
+	if r, err := s.RecordBefore("s1", text("/dev/ernie/a.css", "green")); r.Saved || err != nil {
+		t.Fatalf("second: %+v %v", r, err)
 	}
 	c, err := s.Capturing("s1")
 	if err != nil || len(c.Files) != 1 || string(c.Files[0].Data) != "red" {
@@ -41,6 +42,44 @@ func TestOnlyTheFirstBeforeCopyIsKept(t *testing.T) {
 	}
 	if _, err := s.RecordBefore("s2", text("/dev/ernie/b.css", "")); !errors.Is(err, ErrNotCapturing) {
 		t.Fatalf("a session that isn't capturing: %v", err)
+	}
+}
+
+// A tweak's first before copy is its first edit, timed from when the
+// tweak was delivered (docs/design.md, "Open measurements"). Later copies,
+// and a later round of work, aren't first.
+func TestTheFirstEditIsTimedFromDelivery(t *testing.T) {
+	s := open(t)
+	now := time.UnixMilli(1_700_000_000_000)
+	s.SetClock(func() time.Time { return now })
+	register(t, s, "s1", "/dev/ernie")
+	s.Claim("s1", mustParse(t, "https://ernie.localhost/*"))
+	tw, _ := s.CreateTweak(newTweak("https://ernie.localhost/", "make it green"))
+	in, _ := s.Inbox("s1", -1)
+	s.Inbox("s1", in.Seq) // acknowledges the new line: delivered
+	now = now.Add(5 * time.Second)
+	if _, err := s.Work("s1", tw.Number, nil, CaptureStart{Folder: "/dev/ernie"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(29 * time.Second)
+	r, err := s.RecordBefore("s1", text("/dev/ernie/a.css", "red"))
+	if err != nil || r.First == nil || *r.First != (FirstEdit{Tweak: tw.Number, Delivered: true, After: 34 * time.Second}) {
+		t.Fatalf("first: %+v %+v %v", r, r.First, err)
+	}
+	now = now.Add(time.Second)
+	if r, _ := s.RecordBefore("s1", text("/dev/ernie/b.css", "blue")); !r.Saved || r.First != nil {
+		t.Fatalf("second file: %+v", r)
+	}
+}
+
+// A tweak worked on before its line was acknowledged has no delivery time:
+// its first edit is still reported, without one.
+func TestAFirstEditWithoutADeliveryTime(t *testing.T) {
+	s := open(t)
+	tw := working(t, s)
+	r, err := s.RecordBefore("s1", text("/dev/ernie/a.css", "red"))
+	if err != nil || r.First == nil || *r.First != (FirstEdit{Tweak: tw.Number}) {
+		t.Fatalf("%+v %v", r, err)
 	}
 }
 

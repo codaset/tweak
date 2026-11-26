@@ -1525,8 +1525,10 @@ The other fixtures test mapping only.
 
 ### Open measurements
 
-During v1 testing, time each tweak from delivery to Claude's first edit. If finding the source turns
-out to be the slow part, add a project search to the bridge (Go, `.gitignore`-aware, capped at about
+During v1 testing, time each tweak from delivery to Claude's first edit. The bridge records both
+(`tweaks.delivered_at`, when its first line is acknowledged, and `first_edit_at`, its first before
+copy) and logs one line per tweak to `bridge.log`: `tweak 12: first edit 34s after delivery`. If
+finding the source turns out to be the slow part, add a project search to the bridge (Go, `.gitignore`-aware, capped at about
 200 ms) that puts candidate files in the brief.
 
 ## Repo, build and release

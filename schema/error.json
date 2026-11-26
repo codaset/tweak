@@ -16,6 +16,8 @@
         "overlap",
         "not-claimed",
         "not-found",
+        "no-tweak",
+        "not-yours",
         "internal"
       ]
     },

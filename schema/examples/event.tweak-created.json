@@ -1,0 +1,35 @@
+{
+  "type": "event",
+  "seq": 10,
+  "event": "tweak-created",
+  "tweak": {
+    "number": 12,
+    "page": "https://ernie.localhost/admin/users",
+    "url": "https://ernie.localhost/admin/users?tab=2",
+    "status": "sent",
+    "statusAt": "2026-11-26T10:00:00.000Z",
+    "created": "2026-11-26T10:00:00.000Z",
+    "updated": "2026-11-26T10:00:00.000Z",
+    "targets": {
+      "elements": [
+        {
+          "label": "button.btn-primary",
+          "text": "Save",
+          "selector": "#user-form > button"
+        }
+      ]
+    },
+    "anchor": {
+      "x": 0.5,
+      "y": 0.4
+    },
+    "entries": [
+      {
+        "from": "you",
+        "kind": "request",
+        "text": "make this button green",
+        "at": "2026-11-26T10:00:00.000Z"
+      }
+    ]
+  }
+}

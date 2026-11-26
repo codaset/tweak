@@ -1,0 +1,284 @@
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/codaset/tweak/internal/pattern"
+)
+
+// Statuses (docs/design.md, "Statuses"). The tracer sets sent, delivered,
+// working and done; the others come with the conversation.
+const (
+	StatusSent      = "sent"
+	StatusDelivered = "delivered"
+	StatusWorking   = "working"
+	StatusDone      = "done"
+)
+
+// Tweak is a request left on a page, with its conversation and status.
+type Tweak struct {
+	Number   int64
+	Session  string // the session it's for; "" while no claim covers its page
+	Page     string // origin and path: what the tweak belongs to
+	URL      string // the full URL it was sent from
+	Status   string
+	StatusAt time.Time // when Status last changed
+	Created  time.Time
+	Updated  time.Time
+	Targets  json.RawMessage // what it points at, as the extension sent it
+	Anchor   json.RawMessage // where its pin sits
+	Entries  []Entry
+}
+
+// Entry is one turn of a tweak's conversation.
+type Entry struct {
+	From string // you, claude or bridge
+	Kind string // request, summary, ...
+	Text string
+	At   time.Time
+}
+
+// Request is the developer's own words: the first request entry.
+func (t Tweak) Request() string {
+	for _, e := range t.Entries {
+		if e.Kind == "request" {
+			return e.Text
+		}
+	}
+	return ""
+}
+
+// NewTweak is what the extension sends to create a tweak.
+type NewTweak struct {
+	URL     string
+	Request string
+	Targets json.RawMessage
+	Anchor  json.RawMessage
+}
+
+// Errors about tweaks.
+var (
+	ErrBadTweak = errors.New("a tweak needs a request and an http or https page")
+	ErrNoTweak  = errors.New("no such tweak")
+)
+
+// NotYoursError refuses a status change from a session the tweak isn't for.
+type NotYoursError struct {
+	Number int64
+	Folder string // the folder of the session it is for; "" if none
+}
+
+func (e *NotYoursError) Error() string {
+	if e.Folder == "" {
+		return fmt.Sprintf("tweak %d isn't for this session: no session claims its page", e.Number)
+	}
+	return fmt.Sprintf("tweak %d is for the session in %s", e.Number, e.Folder)
+}
+
+// PageOf is the page a URL belongs to: its origin and path, without the
+// query or hash (/admin?tab=2 is /admin).
+func PageOf(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", ErrBadTweak
+	}
+	path := u.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + path, nil
+}
+
+// CreateTweak gives a new tweak the next bridge-wide number, for the session
+// whose claim covers its page (if any), with status sent.
+func (s *Store) CreateTweak(n NewTweak) (Tweak, error) {
+	page, err := PageOf(n.URL)
+	request := strings.TrimSpace(n.Request)
+	if err != nil || request == "" {
+		return Tweak{}, ErrBadTweak
+	}
+	tx, err := s.begin()
+	if err != nil {
+		return Tweak{}, err
+	}
+	defer tx.Rollback()
+
+	claims, err := listClaims(tx)
+	if err != nil {
+		return Tweak{}, err
+	}
+	var session sql.NullString
+	for _, c := range claims {
+		if p, err := pattern.Parse(c.Pattern); err == nil && p.Match(n.URL) {
+			session = sql.NullString{String: c.Session.ID, Valid: true}
+			break
+		}
+	}
+	at := now()
+	r, err := tx.Exec(`INSERT INTO tweaks (session, page, page_url, status, status_at, created, updated, targets, click_anchor)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		session, page, n.URL, StatusSent, at, at, at, string(orEmpty(n.Targets)), string(orEmpty(n.Anchor)))
+	if err != nil {
+		return Tweak{}, err
+	}
+	number, _ := r.LastInsertId()
+	if _, err := tx.Exec(`INSERT INTO entries (tweak, "from", kind, text, at) VALUES (?, 'you', 'request', ?, ?)`, number, request, at); err != nil {
+		return Tweak{}, err
+	}
+	tw, err := getTweak(tx, number)
+	if err != nil {
+		return Tweak{}, err
+	}
+	if err := tx.logTweak(EventTweakCreated, tw); err != nil {
+		return Tweak{}, err
+	}
+	return tw, tx.commit()
+}
+
+// Tweak returns one tweak, or ErrNoTweak.
+func (s *Store) Tweak(number int64) (Tweak, error) { return getTweak(s.db, number) }
+
+// SetStatus moves a tweak to status for the session it is for, adding entry
+// to its conversation when given. A tweak already at status with no entry
+// is returned unchanged and nothing is logged.
+func (s *Store) SetStatus(sessionID string, number int64, status string, entry *Entry) (Tweak, error) {
+	tx, err := s.begin()
+	if err != nil {
+		return Tweak{}, err
+	}
+	defer tx.Rollback()
+	tw, err := getTweak(tx, number)
+	if err != nil {
+		return Tweak{}, err
+	}
+	if tw.Session != sessionID {
+		e := &NotYoursError{Number: number}
+		if tw.Session != "" {
+			if se, err := sessionIn(tx, tw.Session); err == nil {
+				e.Folder = se.Folder
+			}
+		}
+		return Tweak{}, e
+	}
+	if tw.Status == status && entry == nil {
+		return tw, nil
+	}
+	at := now()
+	if _, err := tx.Exec(`UPDATE tweaks SET status = ?, status_at = CASE WHEN status = ? THEN status_at ELSE ? END, updated = ? WHERE number = ?`,
+		status, status, at, at, number); err != nil {
+		return Tweak{}, err
+	}
+	if entry != nil {
+		if _, err := tx.Exec(`INSERT INTO entries (tweak, "from", kind, text, at) VALUES (?, ?, ?, ?, ?)`,
+			number, entry.From, entry.Kind, entry.Text, at); err != nil {
+			return Tweak{}, err
+		}
+	}
+	if tw, err = getTweak(tx, number); err != nil {
+		return Tweak{}, err
+	}
+	if err := tx.logTweak(EventTweakStatus, tw); err != nil {
+		return Tweak{}, err
+	}
+	return tw, tx.commit()
+}
+
+type queryRower interface {
+	querier
+	QueryRow(string, ...any) *sql.Row
+}
+
+func sessionIn(q queryRower, id string) (Session, error) {
+	var se Session
+	var at int64
+	err := q.QueryRow(`SELECT id, agent, folder, label, last_check_in FROM sessions WHERE id = ?`, id).
+		Scan(&se.ID, &se.Agent, &se.Folder, &se.Label, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return se, ErrNoSession
+	}
+	se.LastCheckIn = fromMillis(at)
+	return se, err
+}
+
+const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, '')`
+
+func scanTweak(row interface{ Scan(...any) error }) (Tweak, error) {
+	var tw Tweak
+	var statusAt, created, updated int64
+	var targets, anchor string
+	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor)
+	tw.StatusAt, tw.Created, tw.Updated = fromMillis(statusAt), fromMillis(created), fromMillis(updated)
+	tw.Targets, tw.Anchor = json.RawMessage(targets), orEmpty(json.RawMessage(anchor))
+	return tw, err
+}
+
+func getTweak(q queryRower, number int64) (Tweak, error) {
+	tw, err := scanTweak(q.QueryRow(`SELECT `+tweakColumns+` FROM tweaks WHERE number = ?`, number))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Tweak{}, ErrNoTweak
+	}
+	if err != nil {
+		return Tweak{}, err
+	}
+	tw.Entries, err = entriesOf(q, number)
+	return tw, err
+}
+
+// openTweaks lists the unresolved tweaks, oldest first, with their entries.
+func openTweaks(q queryRower) ([]Tweak, error) {
+	rows, err := q.Query(`SELECT ` + tweakColumns + ` FROM tweaks WHERE resolved_at IS NULL ORDER BY number`)
+	if err != nil {
+		return nil, err
+	}
+	var out []Tweak
+	for rows.Next() {
+		tw, err := scanTweak(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, tw)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if out[i].Entries, err = entriesOf(q, out[i].Number); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func entriesOf(q querier, number int64) ([]Entry, error) {
+	rows, err := q.Query(`SELECT "from", kind, text, at FROM entries WHERE tweak = ? ORDER BY id`, number)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var e Entry
+		var at int64
+		if err := rows.Scan(&e.From, &e.Kind, &e.Text, &at); err != nil {
+			return nil, err
+		}
+		e.At = fromMillis(at)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func orEmpty(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return raw
+}

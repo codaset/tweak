@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codaset/tweak/schema/status.json",
+  "title": "status",
+  "description": "The bridge's answer to POST /tweaks/:n/status: the tweak's status now. The CLI prints tweak <n>: <status>.",
+  "type": "object",
+  "properties": {
+    "number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": ["sent", "delivered", "queued", "working", "question", "done", "declined", "withdrawn"]
+    }
+  },
+  "required": ["number", "status"],
+  "additionalProperties": false
+}

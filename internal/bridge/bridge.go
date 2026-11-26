@@ -36,7 +36,10 @@ type Options struct {
 	// Development is a TWEAK_BIN build: its hello reply carries no version,
 	// so the extension never updates itself from it.
 	Development bool
-	Log         io.Writer
+	// InboxWait is how long GET /inbox holds a long-poll with nothing to
+	// send (25 seconds when zero, inside the CLI's request timeout).
+	InboxWait time.Duration
+	Log       io.Writer
 }
 
 // ErrAlreadyRunning means another bridge holds the port: the caller should
@@ -84,6 +87,9 @@ func Start(o Options) (*Bridge, error) {
 	}
 	if o.SocketIdle == 0 {
 		o.SocketIdle = time.Minute
+	}
+	if o.InboxWait == 0 {
+		o.InboxWait = 25 * time.Second
 	}
 	if o.Log == nil {
 		o.Log = os.Stderr

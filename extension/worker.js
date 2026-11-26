@@ -9,6 +9,7 @@ import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
+import { applyTweaks, forPage, pageOf } from "./lib/tweaks.js";
 
 const KEEPALIVE_MS = 20_000; // WebSocket traffic keeps the worker awake (Chrome 116+)
 const ALARM = "reconnect";
@@ -19,6 +20,10 @@ const view = { connection: "connecting", message: "", port: DEFAULT_PORT, grante
 // The claims as of event seq, from the bridge or, until it answers, the cache.
 let claimState = { seq: 0, claims: [] };
 let heardFromBridge = false; // once true, the cache is out of date
+// The open tweaks as of event seq. Kept in storage.session too, so pins and
+// cards survive a worker restart while the bridge is down.
+let tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks: [] });
+const tweaksRestored = restoreTweaks();
 
 // ---- Listeners ----
 
@@ -45,9 +50,11 @@ chrome.runtime.onConnect.addListener((port) => {
   if (!ports) return;
   ports.add(port);
   port.onDisconnect.addListener(() => ports.delete(port));
+  if (port.name === "tab") port.onMessage.addListener((msg) => onTabMessage(port, msg));
   port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
   if (port.name === "tab") selfUpdate.watchTab(port);
 });
+chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(cardKey(tabId)));
 
 // ---- The side panel and tabs ----
 
@@ -65,6 +72,49 @@ function publish(changes) {
 const setStatus = (event, changes = {}) => publish({ ...nextStatus(view, event), ...changes });
 
 const selfUpdate = createSelfUpdate({ publish });
+
+// ---- Tweaks in tabs ----
+
+// Each tab port says which page it shows; it gets that page's tweaks and
+// the card that was open in the tab (kept per tab in storage.session, so it
+// reopens in place after a reload), then every change to one of them.
+const cardKey = (tabId) => `card-${tabId}`;
+
+async function onTabMessage(port, msg) {
+  const tabId = port.sender?.tab?.id;
+  switch (msg.type) {
+    case "page": {
+      port.page = pageOf(msg.url);
+      await tweaksRestored;
+      const key = cardKey(tabId);
+      const { [key]: card = null } = await chrome.storage.session.get(key);
+      port.postMessage({ type: "tweaks", tweaks: forPage(tweakState, port.page), card });
+      break;
+    }
+    case "card":
+      if (msg.number) await chrome.storage.session.set({ [cardKey(tabId)]: msg.number });
+      else await chrome.storage.session.remove(cardKey(tabId));
+      break;
+    case "create":
+      bridge.request(msg, (answer) => port.postMessage({ type: "created", ref: msg.ref, ...answer }));
+      break;
+  }
+}
+
+async function restoreTweaks() {
+  const { tweaks = [] } = await chrome.storage.session.get("tweaks").catch(() => ({}));
+  if (tweakState.seq === 0) tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks });
+}
+
+function adoptTweaks(next, msg) {
+  tweakState = next;
+  chrome.storage.session.set({ tweaks: [...next.tweaks.values()] });
+  for (const port of tabs) {
+    if (!port.page) continue;
+    if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forPage(next, port.page) });
+    else if (msg.tweak.page === port.page) port.postMessage({ type: "tweak", tweak: msg.tweak });
+  }
+}
 
 // ---- Site access and the badge ----
 
@@ -134,12 +184,18 @@ function onBridgeMessage(msg, port) {
     setStatus({ type: "refused", message: msg.message }, { port });
     return "refused";
   }
+  if (msg.type === "result") {
+    bridge.answer(msg);
+    return;
+  }
   if (msg.type === "snapshot") {
     setStatus({ type: "connected" }, { port });
     selfUpdate.bridgeVersion(msg.version, msg.folder);
   }
   const next = apply(claimState, msg);
   if (next !== claimState) adoptClaims(next);
+  const tweaks = applyTweaks(tweakState, msg);
+  if (tweaks !== tweakState) adoptTweaks(tweaks, msg);
 }
 
 // ---- The bridge socket ----
@@ -150,6 +206,31 @@ const bridge = {
   ws: null,
   attempt: 0,
   retryTimer: 0,
+  refs: 0,
+  pending: new Map(), // ref -> the function waiting for its result
+
+  // request sends a message that the bridge answers with a result, or
+  // answers at once when there's no connection: the action is refused, not held.
+  request(msg, reply) {
+    const ws = this.ws?.socket;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this.ws.ready) {
+      reply({ error: "Not connected to Tweak" });
+      return;
+    }
+    const ref = `w${++this.refs}`;
+    this.pending.set(ref, reply);
+    ws.send(JSON.stringify({ ...msg, ref }));
+  },
+  answer(msg) {
+    const reply = this.pending.get(msg.ref);
+    this.pending.delete(msg.ref);
+    reply?.(msg.number ? { number: msg.number } : { error: msg.message });
+  },
+  // dropAnswers ends every request still waiting when the socket closes.
+  dropAnswers() {
+    for (const reply of this.pending.values()) reply({ error: "Not connected to Tweak" });
+    this.pending.clear();
+  },
 
   async connect() {
     if (this.ws) return;
@@ -174,11 +255,15 @@ const bridge = {
       } catch {
         return;
       }
-      if (msg.type === "snapshot") this.attempt = 0;
+      if (msg.type === "snapshot") {
+        this.attempt = 0;
+        conn.ready = true;
+      }
       if (onBridgeMessage(msg, port) === "refused") conn.refused = true;
     };
     ws.onclose = () => {
       clearInterval(conn.keepalive);
+      this.dropAnswers();
       if (this.ws !== conn) return; // closed on purpose
       this.ws = null;
       // The claims and registrations stay as they were: pages keep working

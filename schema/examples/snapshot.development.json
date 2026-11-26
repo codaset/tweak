@@ -1,1 +1,6 @@
-{"type":"snapshot","seq":0,"claims":[]}
+{
+  "type": "snapshot",
+  "seq": 0,
+  "claims": [],
+  "tweaks": []
+}

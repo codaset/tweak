@@ -38,13 +38,24 @@ func (e *OverlapError) Error() string {
 }
 
 // RegisterSession records a session, or updates its agent and folder, and
-// checks it in.
+// checks it in. A new session's inbox starts at the end of the event log.
 func (s *Store) RegisterSession(se Session) error {
-	_, err := s.db.Exec(`INSERT INTO sessions (id, agent, folder, label, last_check_in) VALUES (?, ?, ?, ?, ?)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO sessions (id, agent, folder, label, last_check_in) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET agent = excluded.agent, folder = excluded.folder,
 			label = excluded.label, last_check_in = excluded.last_check_in`,
-		se.ID, se.Agent, se.Folder, se.Label, now())
-	return err
+		se.ID, se.Agent, se.Folder, se.Label, now()); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO deliveries (session, last_ack)
+		VALUES (?, (SELECT coalesce(max(seq), 0) FROM events))`, se.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Session returns a registered session, or ErrNoSession.

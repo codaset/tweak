@@ -81,7 +81,8 @@ func (s *socket) hello(protocol int) {
 	s.send(map[string]any{"type": "hello", "protocol": protocol, "lastSeq": 0, "version": "1.2.3"})
 }
 
-// next reads one message, checks it against its schema, and decodes it.
+// next reads one message, checks it against its schema ("" takes the
+// message's own type as the schema), and decodes it.
 func (s *socket) next(schema string) map[string]any {
 	s.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -90,9 +91,12 @@ func (s *socket) next(schema string) map[string]any {
 	if err != nil {
 		s.t.Fatalf("read: %v", err)
 	}
-	conforms(s.t, schema, raw)
 	var m map[string]any
 	json.Unmarshal(raw, &m)
+	if schema == "" {
+		schema, _ = m["type"].(string)
+	}
+	conforms(s.t, schema, raw)
 	return m
 }
 

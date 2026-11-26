@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyTweaks, askedIn, askedSince, forPage, forTab, pageOf, reachesTab } from "../../extension/lib/tweaks.js";
+import { applyTweaks, askedIn, askedSince, forPage, forTab, pageOf, reachesTab, resolvedList } from "../../extension/lib/tweaks.js";
 import { apply } from "../../extension/lib/claims.js";
 
 const tweak = (number, page, status = "sent") => ({ number, page, url: page, status });
@@ -98,4 +98,30 @@ test("only a change into question asks", () => {
   const none = { open: [], toast: [] };
   assert.deepEqual(askedIn(tweak(7, "p", "question"), tweak(7, "p", "question"), tabs, 1), none);
   assert.deepEqual(askedIn(tweak(7, "p", "working"), tweak(7, "p", "done"), tabs, 1), none);
+});
+
+// Resolved and withdrawn tweaks leave the page's pins for the side panel's
+// list, which later events (an undo) keep up to date; one goes from the list
+// at its deleteAt.
+test("a resolved tweak moves from the open tweaks to the resolved ones", () => {
+  const resolved = (t, at = "2026-11-26T10:00:00.000Z", gone = "2026-12-03T10:00:00.000Z") => ({ ...t, resolvedAt: at, deleteAt: gone });
+  let s = applyTweaks(undefined, {
+    type: "snapshot",
+    seq: 4,
+    tweaks: [tweak(1, "https://a.localhost/", "done")],
+    resolved: [resolved(tweak(2, "https://a.localhost/", "withdrawn"))],
+  });
+  assert.deepEqual([...s.tweaks.keys()], [1]);
+  assert.deepEqual(resolvedList(s).map((t) => t.number), [2]);
+  const later = resolved(tweak(1, "https://a.localhost/", "done"), "2026-11-26T11:00:00.000Z", "2026-12-03T11:00:00.000Z");
+  s = applyTweaks(s, { type: "event", seq: 5, event: "tweak-resolved", tweak: later });
+  assert.deepEqual([...s.tweaks.keys()], []);
+  assert.deepEqual(forTab(s, { page: "https://a.localhost/", card: 1 }), [], "a tab gets no resolved tweak");
+  assert.deepEqual(resolvedList(s).map((t) => t.number), [1, 2], "newest resolved first");
+  const undone = { ...resolved(tweak(2, "https://a.localhost/", "withdrawn")), change: { state: "undone" } };
+  s = applyTweaks(s, { type: "event", seq: 6, event: "tweak-undone", tweak: undone });
+  assert.equal(resolvedList(s).find((t) => t.number === 2).change.state, "undone");
+  assert.deepEqual(resolvedList(s, Date.parse("2026-12-03T10:00:00.000Z")).map((t) => t.number), [1], "gone at its deleteAt");
+  // A snapshot without the list (an older bridge) has none.
+  assert.deepEqual(resolvedList(applyTweaks(s, { type: "snapshot", seq: 7, tweaks: [] })), []);
 });

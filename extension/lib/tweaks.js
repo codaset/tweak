@@ -14,17 +14,33 @@ export function pageOf(url) {
   }
 }
 
-const empty = { seq: 0, tweaks: new Map() };
+// tweaks are the open ones, which pins and cards show; resolved are those
+// the developer resolved or withdrew, kept until their deleteAt for the side
+// panel's list (with Undo).
+const empty = { seq: 0, tweaks: new Map(), resolved: new Map() };
+const byNumber = (list = []) => new Map(list.map((t) => [t.number, t]));
 
 // applyTweaks returns the state after one message from the bridge, or the
 // same state when the message changes no tweak.
 export function applyTweaks(state = empty, msg) {
-  if (msg.type === "snapshot") return { seq: msg.seq, tweaks: new Map(msg.tweaks.map((t) => [t.number, t])) };
+  if (msg.type === "snapshot") return { seq: msg.seq, tweaks: byNumber(msg.tweaks), resolved: byNumber(msg.resolved) };
   if (msg.type !== "event" || !msg.tweak || msg.seq <= state.seq) return state;
   const tweaks = new Map(state.tweaks);
-  tweaks.set(msg.tweak.number, msg.tweak);
-  return { seq: msg.seq, tweaks };
+  const resolved = new Map(state.resolved ?? []);
+  const t = msg.tweak;
+  if (t.resolvedAt) {
+    tweaks.delete(t.number);
+    resolved.set(t.number, t);
+  } else tweaks.set(t.number, t);
+  return { seq: msg.seq, tweaks, resolved };
 }
+
+// resolvedList is the side panel's list: the resolved tweaks not yet
+// deleted at now, newest resolved first.
+export const resolvedList = (state, now = Date.now()) =>
+  [...(state.resolved ?? new Map()).values()]
+    .filter((t) => !t.deleteAt || Date.parse(t.deleteAt) > now)
+    .sort((a, b) => Date.parse(b.resolvedAt) - Date.parse(a.resolvedAt) || b.number - a.number);
 
 // forPage lists a page's tweaks, by number.
 export const forPage = (state, page) =>

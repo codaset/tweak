@@ -157,6 +157,7 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `card` | `number`: the tab's open card, or `null` when it closes |
 | | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own), and `shot: {id, rects}` when the pick has a capture: the worker keeps that, and uploads the PNG once the number comes back |
 | | `reply` | a `reply` for the bridge, with the tab's `ref`, likewise |
+| | `withdraw`, `resolve` | the card's **Withdraw** or **Resolve**, for the bridge, with the tab's `ref`, likewise; answered by `withdrew` or `resolved` (`ref`, and the `number` or an `error` and `message`) |
 | | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
 | | `draft` | `draft`: the tab's drafts as you type, `{compose, replies}` (the composer's page, pick kind, selectors, anchor, selection (with its whole text, uncapped) or area, and text; each card's reply by number, with which of its questions it answers), or `null` once none is left. A tab sends it again after its port reconnects |
 | | `capture` | `id`, and `viewport` (`innerWidth`, `innerHeight`): capture the tab now, its overlay hidden, and hold it under `id` |
@@ -170,7 +171,8 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `state` | `connection`: connecting, connected, refused or disconnected |
 | Tab to worker, `runtime.sendMessage` | `side-panel` | open the side panel for the tab: an ⌥-click while the bridge is down. Sent from the input event, so it carries the user gesture `sidePanel.open` needs |
 | Port, local | `open`, `closed` | made by the content script's own port when it connects and when it's lost; `open` is what sends `page`, and `closed` ends a send in flight |
-| Worker to side panel | `state` | the whole view: connection and message, bridge port, whether access is granted, the claims, any pending update |
+| Worker to side panel | `state` | the whole view: connection and message, bridge port, whether access is granted, the claims, any pending update, and the resolved tweaks still kept (number, page, URL, status, request, change, `resolvedAt`, `deleteAt`), newest first |
+| Side panel to worker | `undo` | `{ref, number}`: Undo on a resolved tweak in its list, answered by `undid` (`ref`, and the `number` or an `error` and `message`) |
 
 ### The `tweak` binary (Go)
 
@@ -364,7 +366,11 @@ the old one won't start either, the command fails with both errors.
 ### Storage
 
 SQLite at `~/.local/state/codaset-tweak/tweak.db`, with screenshots beside it. Resolved tweaks, their
-changes and screenshots are deleted 7 days after resolution.
+changes and screenshots are deleted 7 days after resolution: the bridge looks hourly, and at start. A
+tweak withdrawn while its change is still capturing waits for the capture to end. Its conversation and
+its events go too; the event log's end is kept in `sqlite_sequence`, so no client's cursor runs past
+it. Tests shorten the 7 days with `TWEAK_TEST_KEEP_RESOLVED` (a Go duration), which only a
+development build reads.
 
 ### Security
 
@@ -418,8 +424,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   once each; the watcher's inbox and the hooks get none. Command names and event lines are in [The tweak CLI](#the-tweak-cli),
   decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak/issues/10).
 - **WebSocket messages**: to the bridge `hello {protocol, lastSeq, version}` (the extension's
-  version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `again`, `resolve`,
-  `undo`; from the bridge a snapshot or events, and refusals. A request carries the worker's
+  version, recorded by the bridge for `tweak claim`'s reload warning), `create`, `reply`, `again`, `undo`,
+  `withdraw`, `resolve`; from the bridge a snapshot or events, and refusals. A request carries the worker's
   `ref`, which the bridge echoes in a `result` (`create`: the tweak's number, or why not); the
   socket stays open. `create` is `{ref, url, request, targets, anchor, screenshot?}`; the bridge refuses it with
   `bad-request` for a malformed one, and `no-claim` for a page no claim covers (so every stored
@@ -427,13 +433,19 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   when Claude isn't waiting on a question, `no-tweak` or `bad-request`. `again` is `{ref, number}`, the card's
   **Send again**, answered with the number, or `picked-up` once Claude has confirmed the tweak. `undo` is `{ref, number}`, the card's
   **Undo** or **Ask Claude to undo**, answered with the number, `not-undoable` (with why, as the card shows it) or `undo-failed`
-  (a write failed and nothing changed); a `tweak-undone` or `tweak-undo-conflict` event follows (see [Undo](#undo)). A snapshot holds only the open (unresolved) tweaks, plus `lapsed`, the lapsed
+  (a write failed and nothing changed); a `tweak-undone` or `tweak-undo-conflict` event follows (see [Undo](#undo)). 
+  `withdraw` is `{ref, number}`, the card's **Withdraw**, answered with the number or `not-open` (Claude
+  has finished it, or it's resolved already); a `tweak-withdrawn` event follows (the session's
+  `withdrawn` line), or `tweak-resolved` for a tweak still `sent` that never reached a session. `resolve`
+  is `{ref, number}`, the card's **Resolve** of a `done` or `declined` tweak, answered with the number or
+  `not-finished` (withdraw it instead); a `tweak-resolved` event follows. A snapshot holds the open
+  (unresolved) tweaks in `tweaks`, the resolved ones still kept in `resolved` (the side panel's list), plus `lapsed`, the lapsed
   claims that can still come back (each with `lapsedAt`); `claim-lapsed` and
   `claim-restored` events carry the claim like `claim-released` and `claim-made` (a restored claim
   has a new id). A held claim says whether its session is `listening` (no watcher for about 60 s
   is not), and `claim-listening` says when that changes. A tweak no session has carries `left`, the
   folder and how (`lapsed`, `released`, `ended`) of the session that let go of its page. And `tweak-created`, `tweak-handed` (passed to the session claiming its page now),
-  `tweak-status`, `tweak-replied`, `tweak-again`, `tweak-undo-conflict` and `tweak-undone` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`
+  `tweak-status`, `tweak-replied`, `tweak-again`, `tweak-undo-conflict`, `tweak-undone`, `tweak-withdrawn` and `tweak-resolved` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`
   reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
   `tweak watch` exits on), are in `schema/`.
 - **Event log**: the bridge keeps current state plus an append-only event log with a monotonic
@@ -476,6 +488,8 @@ do (`done` before `work`, `work` while a question waits). A session can only cha
 it (`not-yours`, 409), and an unknown number is `no-tweak` (404).
 
 **Resolved** is separate from status: you've finished with the tweak, and its pin leaves the page.
+Only a `done` or `declined` tweak is resolved with **Resolve**; an open one is withdrawn instead, which
+resolves it too. A resolved tweak carries `resolvedAt`, and `deleteAt`, when it and its change go.
 A change has its own state: `recorded`, `nothing-recorded`, `undo-requested` or `undone` (see
 [Undo](#undo)).
 
@@ -580,8 +594,13 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
   capture. Capture isn't ended at the click, which would lose edits Claude has started without
   flagging them. A later `done`, `ask` or `decline` on a withdrawn tweak ends capture, keeps the
   change, exits 0 and prints `tweak 12: withdrawn, change kept for Undo`; `tweak work` on one prints
-  `tweak 12: withdrawn, skip it` and starts no capture. If Claude runs nothing more on it, capture
-  ends at the next `tweak work`, a lapse, or the session ending.
+  `tweak 12: withdrawn, skip it` and starts no capture (ending the capture of that tweak, if it was
+  still capturing). The status stays `withdrawn` throughout: Claude's `decline` doesn't make it
+  `declined`. If Claude runs nothing more on it, capture ends at the next `tweak work`, a lapse, or the
+  session ending. Any `new`, `reply` or `again:` line of a withdrawn tweak still waiting in the inbox
+  isn't handed out. The card closes and says "Tweak 12 withdrawn. It's in the side panel.", as
+  **Resolve** does with "resolved". **Withdraw** and **Resolve** share the card's foot: Withdraw while
+  Claude is on it, Resolve once it's `done` or `declined`.
 - **The Monitor ends unexpectedly** (crash, killed, non-zero exit): the skill starts it again once;
   if it ends again within a minute, it tells the developer with the error and stops.
 
@@ -1134,7 +1153,9 @@ active tab: everything in it is about the tab in front.
 
 - **Allow access**, until site access is granted (see Chrome extension)
 - show or hide pins
-- resolved tweaks, with Undo
+- resolved tweaks, newest first, with what each changed, Undo (or where its undo stands, with the
+  `/tweak <origin>` command to copy while it waits for a session) and how long it's kept; only the
+  front tab's site's when its URL can be read (with site access), else all of them
 - claim status, with the `/tweak` command to copy
 - the per-site reload setting
 - connection status, "updated to X.Y.Z" after a self-update, and the "loaded from another folder"

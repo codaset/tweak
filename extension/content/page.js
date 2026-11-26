@@ -101,8 +101,13 @@
         break;
       case "tweak":
         // msg.event is the bridge's event: tweak-undone means a change was
-        // undone, which reloads the page as after a change (#42).
-        tweaks.set(msg.tweak.number, msg.tweak);
+        // undone, which reloads the page as after a change (#42). A
+        // resolved tweak (resolved or withdrawn) leaves the page: its pin
+        // goes, and its card closes.
+        if (msg.tweak.resolvedAt) {
+          tweaks.delete(msg.tweak.number);
+          ns.panel.gone(msg.tweak);
+        } else tweaks.set(msg.tweak.number, msg.tweak);
         ns.page.redraw();
         break;
       case "claimed":
@@ -132,6 +137,10 @@
         break;
       case "undid":
         ns.panel.undid(msg);
+        break;
+      case "withdrew":
+      case "resolved":
+        ns.panel.finished(msg);
         break;
     }
   });

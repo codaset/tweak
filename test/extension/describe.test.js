@@ -215,3 +215,30 @@ test("a finished change offers Undo, then says where the undo is", () => {
     ["You undid it", "Claude undid it"],
   );
 });
+
+test("a withdrawn tweak's change is listed and undoable, as a finished one's", () => {
+  const { change, undo } = ns.describe;
+  const t = { status: "withdrawn", url: "https://e.localhost/", change: { state: "recorded", checked: true, files: [{ path: "a.css" }], unrecorded: [] } };
+  assert.equal(change(t).title, "Files changed");
+  assert.equal(undo(t).label, "Undo");
+  // Withdrawn before anything changed: nothing to say about files.
+  assert.equal(change({ ...t, change: { ...t.change, files: [] } }), null);
+});
+
+test("an open tweak's card offers Withdraw, a finished one's Resolve, and a resolved one neither", () => {
+  const { finish } = ns.describe;
+  for (const s of ["sent", "delivered", "queued", "working", "question"]) assert.deepEqual({ ...finish({ status: s }) }, { kind: "withdraw", label: "Withdraw" }, s);
+  for (const s of ["done", "declined"]) assert.deepEqual({ ...finish({ status: s }) }, { kind: "resolve", label: "Resolve" }, s);
+  assert.equal(finish({ status: "withdrawn", resolvedAt: "2026-11-26T10:00:00Z" }), null);
+  assert.equal(finish({ status: "done", resolvedAt: "2026-11-26T10:00:00Z" }), null);
+  assert.equal(finish(undefined), null, "a card still sending");
+});
+
+test("a resolved tweak says when it goes, with its Undo", () => {
+  const { kept } = ns.describe;
+  const now = Date.parse("2026-11-26T10:00:00Z");
+  assert.equal(kept({ deleteAt: "2026-12-03T10:00:00Z" }, now), "Kept for 7 days");
+  assert.equal(kept({ deleteAt: "2026-11-27T09:00:00Z" }, now), "Kept for 23 hours");
+  assert.equal(kept({ deleteAt: "2026-11-26T10:00:40Z" }, now), "Kept for 1 minute");
+  assert.equal(kept({ deleteAt: "2026-11-26T10:00:00Z" }, now), "");
+});

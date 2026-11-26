@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Codaset Tweak</title>
     <link rel="stylesheet" href="panel.css" />
+    <!-- How the card describes a tweak, shared with the content script -->
+    <script src="../content/namespace.js"></script>
+    <script src="../content/describe.js"></script>
     <script type="module" src="panel.js"></script>
   </head>
   <body>
@@ -67,6 +70,11 @@
       <section class="claims" id="claims" hidden aria-labelledby="claims-title">
         <h2 id="claims-title">Claimed pages</h2>
         <ul id="claim-list"></ul>
+      </section>
+
+      <section class="resolved" id="resolved" hidden aria-labelledby="resolved-title">
+        <h2 id="resolved-title">Resolved tweaks</h2>
+        <ul id="resolved-list" role="list"></ul>
       </section>
     </main>
 

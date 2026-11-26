@@ -9,7 +9,7 @@ import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
-import { applyTweaks, askedIn, askedSince, forTab, pageOf, reachesTab } from "./lib/tweaks.js";
+import { applyTweaks, askedIn, askedSince, forTab, pageOf, reachesTab, resolvedList } from "./lib/tweaks.js";
 import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
 import { draw, frame, paced } from "./lib/screenshot.js";
@@ -20,7 +20,7 @@ const ALL_URLS = { origins: ["<all_urls>"] };
 const NOT_CONNECTED = "Not connected to Tweak";
 
 // What the side panel shows (see lib/status.js for connection and message).
-const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], update: null, suggestions: [] };
+const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], update: null, suggestions: [], resolved: [] };
 // The claims as of event seq, from the bridge or, until it answers, the cache.
 let claimState = { seq: 0, claims: [] };
 let heardFromBridge = false; // once true, the cache is out of date
@@ -68,6 +68,7 @@ chrome.runtime.onConnect.addListener((port) => {
     if (port.suggestions?.length) publishSuggestions();
   });
   if (port.name === "tab") port.onMessage.addListener((msg) => onTabMessage(port, msg));
+  if (port.name === "panel") port.onMessage.addListener((msg) => onPanelMessage(port, msg));
   port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
   if (port.name === "tab") selfUpdate.watchTab(port);
 });
@@ -179,8 +180,10 @@ async function onTabMessage(port, msg) {
     case "create":
     case "reply":
     case "again":
-    case "undo": {
-      const answered = { create: "created", reply: "replied", again: "resent", undo: "undid" }[msg.type];
+    case "undo":
+    case "withdraw":
+    case "resolve": {
+      const answered = { create: "created", reply: "replied", again: "resent", undo: "undid", withdraw: "withdrew", resolve: "resolved" }[msg.type];
       // The capture stays here: the bridge gets the PNG once it has a number.
       const { shot, ...request } = msg;
       const held = shot && port.shots.get(shot.id);
@@ -281,14 +284,38 @@ async function upload(number, png) {
   }
 }
 
+// The side panel's one request: Undo (or Ask Claude to undo) on a resolved
+// tweak in its list, answered as the card's is.
+function onPanelMessage(port, msg) {
+  if (msg.type !== "undo") return;
+  const ref = bridge.request({ type: "undo", number: msg.number }, (answer) => port.postMessage({ type: "undid", ref: msg.ref, ...answer }));
+  if (ref) port.onDisconnect.addListener(() => bridge.pending.forget(ref));
+}
+
+// listed is the side panel's list of resolved tweaks: what each row shows.
+const listed = (state) =>
+  resolvedList(state).map(({ number, page, url, status, entries, change, resolvedAt, deleteAt }) => ({
+    number,
+    page,
+    url,
+    status,
+    request: entries?.find((e) => e.kind === "request")?.text ?? "",
+    change,
+    resolvedAt,
+    deleteAt,
+  }));
+
 // claimed says whether any claim covers a URL: a tab whose page none does
 // goes dormant (no picker, no pins).
 const claimed = (url) => claimState.claims.some((c) => matches(c.pattern, url));
 
 async function restoreTweaks() {
   await selfUpdate.restored;
-  const { tweaks = [], senders: sent = {} } = await chrome.storage.session.get(["tweaks", "senders"]).catch(() => ({}));
-  if (tweakState.seq === 0) tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks });
+  const { tweaks = [], resolved = [], senders: sent = {} } = await chrome.storage.session.get(["tweaks", "resolved", "senders"]).catch(() => ({}));
+  if (tweakState.seq === 0) {
+    tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks, resolved });
+    publish({ resolved: listed(tweakState) });
+  }
   for (const [n, tabId] of Object.entries(sent)) if (!senders.has(Number(n))) senders.set(Number(n), tabId);
 }
 
@@ -302,7 +329,9 @@ const saveSenders = () => chrome.storage.session.set({ senders: Object.fromEntri
 function adoptTweaks(next, msg) {
   const was = tweakState;
   tweakState = next;
-  chrome.storage.session.set({ tweaks: [...next.tweaks.values()] });
+  chrome.storage.session.set({ tweaks: [...next.tweaks.values()], resolved: [...next.resolved.values()] });
+  const resolved = listed(next);
+  if (JSON.stringify(resolved) !== JSON.stringify(view.resolved)) publish({ resolved });
   const shown = [...tabs].filter((port) => port.page);
   for (const port of shown) {
     if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forTab(next, port), claimed: claimed(port.url) });

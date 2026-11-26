@@ -21,8 +21,15 @@ export const BIN = process.env.TWEAK_E2E_BIN ?? resolve(import.meta.dirname, "..
 // - lapseAfter: a session's claims lapse after that without a check-in
 //   instead of 10 minutes (TWEAK_TEST_LAPSE_AFTER);
 // - unwatchedAfter: a session's commands warn "no watcher running" after
-//   that without a watcher instead of 60 seconds (TWEAK_TEST_UNWATCHED_AFTER).
-const knobs = { againAfter: "TWEAK_TEST_AGAIN_AFTER", lapseAfter: "TWEAK_TEST_LAPSE_AFTER", unwatchedAfter: "TWEAK_TEST_UNWATCHED_AFTER" };
+//   that without a watcher instead of 60 seconds (TWEAK_TEST_UNWATCHED_AFTER);
+// - keepResolved: a resolved tweak is deleted that long after resolution
+//   instead of 7 days (TWEAK_TEST_KEEP_RESOLVED).
+const knobs = {
+  againAfter: "TWEAK_TEST_AGAIN_AFTER",
+  lapseAfter: "TWEAK_TEST_LAPSE_AFTER",
+  unwatchedAfter: "TWEAK_TEST_UNWATCHED_AFTER",
+  keepResolved: "TWEAK_TEST_KEEP_RESOLVED",
+};
 
 export async function devBridge(options = {}) {
   if (!existsSync(BIN)) throw new Error(`no tweak binary at ${BIN}: run npm run e2e, which builds it`);

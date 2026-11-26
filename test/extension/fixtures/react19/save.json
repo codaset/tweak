@@ -1,0 +1,18 @@
+{
+  "__reactFiber$9pelae7j56": {
+    "tag": 5,
+    "type": "button",
+    "_debugStack": {
+      "stack": "Error: react-stack-top-frame\n    at exports.jsxDEV (http://localhost:56820/.vite/deps/react_jsx-dev-runtime.js?v=b6f027ec:192:83)\n    at App (http://localhost:56820/src/App.jsx:22:30)\n    at Object.react_stack_bottom_frame (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:12901:12)\n    at renderWithHooks (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:4232:19)\n    at updateFunctionComponent (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:5604:16)\n    at beginWork (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:6175:20)\n    at runWithFiberInDEV (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:849:66)\n    at performUnitOfWork (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:8464:92)\n    at workLoopSync (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:8360:37)\n    at renderRootSync (http://localhost:56820/.vite/deps/react-dom_client.js?v=3e0e3630:8344:6)"
+    },
+    "_debugOwner": {
+      "tag": 0,
+      "type": {
+        "name": "App"
+      },
+      "_debugStack": {
+        "stack": "Error: react-stack-top-frame\n    at exports.jsxDEV (http://localhost:56820/.vite/deps/react_jsx-dev-runtime.js?v=b6f027ec:192:83)\n    at http://localhost:56820/src/main.jsx:5:68"
+      }
+    }
+  }
+}

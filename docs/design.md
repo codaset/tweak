@@ -621,7 +621,9 @@ mappers (Rails, Proscenium, CSS rules) resolve at once. The framework mappers ar
 ask the page probe: the content script dispatches a bubbling `tweak:probe` `CustomEvent` **on the
 element itself**, with a request ID in `detail`; the probe hears it on `document`, reads
 `event.target`, and answers with `tweak:probe-result` on `document`, carrying the same ID and a JSON
-string. No attributes are written onto the page. Each mapper has a 300 ms timeout; one that fails or
+string. Both details are JSON strings (`{id, what}` and `{id, react: …}`), since objects don't cross
+worlds. The event is composed (the probe reads `composedPath()[0]`, for an element in a shadow root),
+and the probe answers during the dispatch, so no answer means no probe. No attributes are written onto the page. Each mapper has a 300 ms timeout; one that fails or
 times out returns nothing, silently. All mappers always run (no stopping at the first hit).
 
 **A result** is an ordered list of locations, innermost first. A location is
@@ -635,6 +637,10 @@ times out returns nothing, silently. All mappers always run (no stopping at the 
 
 Each element keeps its innermost location plus up to 4 enclosing components or templates, deduped
 by file: the brief's "rendered inside" list.
+
+**React's chain** is the element's `_debugOwner`s: each owner, with its `name`, at the JSX on the way
+to the element in the owner's own file (its first is the element's own place). Children passed through
+another component stay with the component that wrote them.
 
 **Merging**: locations from all mappers are sorted by role (`element`, then `component`, then the
 chain, then `style`), then exact before file only, then mapper priority (React, Vue, Svelte, Rails,
@@ -653,7 +659,9 @@ search clues.
 
 - JavaScript (React 19's frame 1): the content script fetches the module URL (same origin), reads
   its `sourceMappingURL` (an inline data URL, or an external `.map`, fetched too), and decodes the
-  VLQ mappings with a small decoder of our own (no dependency). Decoded maps are cached per URL.
+  VLQ mappings with a small decoder of our own (no dependency). Decoded maps are cached per URL
+  (module URL, `?t=` included, so a hot update is read again). A frame its map can't place gives the
+  module's file only. webpack's `webpack://<name>/./path` sources are passed on as given.
 - CSS: the CSSOM gives no line numbers. A rule's file comes from `<style data-vite-dev-id>` or the
   sheet's `href`. A line is attempted only when the sheet has a source map: the selector text is
   found in the fetched sheet and that line mapped. If the selector appears more than once, the file
@@ -1254,6 +1262,9 @@ Each fixture has:
   annotations on). The ready path is polled on the host the app is opened on: for `localhost`, on
   both `127.0.0.1` and `::1`, as Chrome tries both, so a server bound to either is ready;
 - `expected.json`: the golden cases (below).
+
+A fixture's npm dependencies are installed in it from its lockfile (`npm ci --prefix fixtures/<name>`,
+a CI step), and the runner links them into each copy. Vite's `cacheDir` is the copy's own `.vite`.
 
 Dependabot opens monthly update PRs, grouped per fixture. A red one is the point: it means a framework
 changed the metadata a mapper reads. Chrome for Testing is pinned in `.puppeteerrc.cjs` (new

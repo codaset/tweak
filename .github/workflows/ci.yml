@@ -101,6 +101,10 @@ jobs:
       - name: Install Chrome for Testing (cache miss)
         if: steps.chrome-cache.outputs.cache-hit != 'true'
         run: npx puppeteer browsers install chrome
+      # The Vite fixtures' own dependencies, from their lockfiles, which the
+      # runner links into each copy of the fixture.
+      - run: npm ci --prefix fixtures/vite-react18
+      - run: npm ci --prefix fixtures/vite-react19
       - run: npm run e2e
 
   consistency:

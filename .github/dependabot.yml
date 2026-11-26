@@ -29,3 +29,17 @@ updates:
     groups:
       rails:
         patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /fixtures/vite-react18
+    schedule:
+      interval: monthly
+    groups:
+      vite-react18:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /fixtures/vite-react19
+    schedule:
+      interval: monthly
+    groups:
+      vite-react19:
+        patterns: ["*"]

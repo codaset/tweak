@@ -1,0 +1,44 @@
+{
+  "__reactFiber$jrkenye9pzk": {
+    "tag": 5,
+    "type": "button",
+    "_debugSource": {
+      "fileName": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-react18-5mdOoB/src/Button.jsx",
+      "lineNumber": 3,
+      "columnNumber": 5
+    },
+    "_debugOwner": {
+      "tag": 0,
+      "type": {
+        "name": "Button"
+      },
+      "_debugSource": {
+        "fileName": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-react18-5mdOoB/src/Toolbar.jsx",
+        "lineNumber": 6,
+        "columnNumber": 7
+      },
+      "_debugOwner": {
+        "tag": 0,
+        "type": {
+          "name": "Toolbar"
+        },
+        "_debugSource": {
+          "fileName": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-react18-5mdOoB/src/App.jsx",
+          "lineNumber": 8,
+          "columnNumber": 7
+        },
+        "_debugOwner": {
+          "tag": 0,
+          "type": {
+            "name": "App"
+          },
+          "_debugSource": {
+            "fileName": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-react18-5mdOoB/src/main.jsx",
+            "lineNumber": 4,
+            "columnNumber": 52
+          }
+        }
+      }
+    }
+  }
+}

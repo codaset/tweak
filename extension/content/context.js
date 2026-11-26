@@ -344,12 +344,15 @@
   // locate runs the mappers for each element of targets (gathered from els
   // by targets()), and adds what they find: the locations, and lines on the
   // CSS rules. It resolves when every mapper has answered or timed out.
+  // The rules' lines come from the CSS rules mapper's work, read once.
   const locate = (gathered, els) =>
     Promise.all(
       els.map(async (el, i) => {
         const e = gathered.elements[i];
-        const locations = await ns.mappers.run(el, { rules: e.rules ?? [] });
+        const rules = e.rules ?? [];
+        const [locations, lines] = await Promise.all([ns.mappers.run(el, { rules }), ns.mappers.ruleLines(rules)]);
         if (locations.length) e.locations = locations;
+        lines.forEach((at, j) => at && Object.assign(rules[j], at));
       }),
     );
 

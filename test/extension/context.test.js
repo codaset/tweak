@@ -93,3 +93,50 @@ test("a nested selector list nests each branch", () => {
   // Commas inside parentheses, brackets and strings aren't branches.
   assert.equal(nest(':is(.a, .b) [title="x, y"]', ".c"), ':is(.c) :is(:is(.a, .b) [title="x, y"])');
 });
+
+// The CSSOM Chrome builds for test/extension/fixtures/css/scope.css, as
+// stand-ins, and a page: .card holding a button, a deeper button and a
+// span.x, and a button outside. Each element answers matches, closest and
+// querySelectorAll as Chrome does, where :scope (and a top-level &) is the
+// element itself in matches and the root in its querySelectorAll.
+test("in an @scope, :scope is the scope root: rules gathered from the captured sheet", () => {
+  class CSSScopeRule {
+    constructor(start, cssRules) {
+      Object.assign(this, { start, end: null, cssRules });
+    }
+  }
+  const style = (selectorText) => ({ selectorText, cssRules: [] });
+  const sheet = {
+    href: "http://localhost:3000/scope.css",
+    cssRules: [new CSSScopeRule(".card", [style(":scope > button"), style(":scope"), style("& > .x")])],
+  };
+  const node = (name, { inCard = true, matches = [] } = {}) => ({
+    name,
+    matches: (s) => matches.includes(s),
+    closest: (s) => (s === ".card" && inCard ? card : null),
+  });
+  const card = node("card", { matches: [":scope"] });
+  const child = node("child");
+  const deeper = node("deeper");
+  const x = node("x");
+  const outside = node("outside", { inCard: false });
+  card.querySelectorAll = (s) => ({ ":scope > button": [child], "& > .x": [x] })[s] ?? [];
+  card.contains = (n) => [child, deeper, x].includes(n);
+
+  const page = { codasetTweak: { ready: false, teardowns: [] } };
+  Object.assign(page, {
+    globalThis: page, CSSScopeRule, CSSSupportsRule: class {}, CSSContainerRule: class {},
+    document: { styleSheets: [sheet], adoptedStyleSheets: [] }, matchMedia: () => ({ matches: true }),
+  });
+  runInNewContext(src, page);
+  const selectors = (el) => page.codasetTweak.context.rules(el).map((r) => r.selector);
+  assert.deepEqual(JSON.parse(JSON.stringify({
+    child: selectors(child), deeper: selectors(deeper), root: selectors(card), amp: selectors(x), outside: selectors(outside),
+  })), {
+    child: ["@scope (.card) { :scope > button }"],
+    deeper: [],
+    root: ["@scope (.card) { :scope }"],
+    amp: ["@scope (.card) { & > .x }"],
+    outside: [],
+  });
+});

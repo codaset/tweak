@@ -658,10 +658,11 @@ search clues.
 **Search clues** are always gathered, whatever the mappers find, at most 8 per element, in this
 order: test IDs (`data-testid`, `data-test`, `data-qa`, `data-cy`), `id`, `aria-label`,
 `placeholder`, `title`, `alt`, the element's own visible text (first line, up to 80 characters),
-unusual class names, and link `href` paths. Within each kind, clues unique on the page come first.
-Text that is only numbers or dates is skipped. A class is common, and left out, when it is on more
-than 10 elements on the page, looks generated (a CSS-module hash, `css-…`, `sc-…`, `svelte-…`), or
-contains `:` or `[` (Tailwind variants). The bridge does no searching in v1 (see Open measurements).
+unusual class names, and link `href` paths. Within each kind (the four test IDs are one), clues
+unique on the page come first. Text that is only numbers or dates (with a digit: a lone "May" is a
+word) is skipped. A class is common, and left out, when it is on more than 10 elements on the page,
+looks generated (a CSS-module hash, `css-…`, `sc-…`, `svelte-…`), or contains `:` or `[` (Tailwind
+variants). The bridge does no searching in v1 (see Open measurements).
 
 **Rails and Proscenium locations**: each balanced `BEGIN`/`END` pair around the element is a
 template (`component`, file only), innermost first. A Proscenium class name
@@ -683,7 +684,9 @@ The hover label uses the same mappers but skips source-map fetches: it shows the
 only if the map is already cached. It is debounced (about 60 ms), and names the first place that
 isn't a style (else the first style; with none, the latest matching rule's stylesheet) by its last
 two path segments. Sheets and their maps are read once per sheet object, so a replaced sheet is read
-again.
+again. A hover gathers the rules once for every mapper, and each sheet's text, map and rule
+preludes are indexed once; the Rails mapper keeps a document's annotation comments indexed until a
+comment changes. On a page with 20,000 rules a hover takes about 10 ms.
 
 - **Optional improvements**: when a page lacks an easy improvement (e.g. a Rails app without
   template annotations), the side panel suggests it once, and it can be dismissed. The app is never

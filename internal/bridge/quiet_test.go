@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/codaset/tweak/internal/capture"
 	"github.com/codaset/tweak/internal/version"
 )
 
@@ -347,5 +349,37 @@ func TestWorkOnALostTweakWhileCapturingIsRefusedAsLost(t *testing.T) {
 	}
 	if !h.marked("s1") {
 		t.Fatal("the refused work ended tweak 2's capture")
+	}
+}
+
+// A session that checks in while its lapse is still ending capture (here,
+// held in the git check) gets its tweak back capturing: the teardown
+// doesn't end the restored capture.
+func TestAReturnDuringTheLapsesTeardownKeepsItsCapture(t *testing.T) {
+	folder := project(t, map[string]string{"app.css": "red"})
+	h, s, c := quietBridge(t, folder)
+	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
+	s.readUntil("result")
+	h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	changed := h.b.gitChanged
+	inGit, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	h.b.gitChanged = func(tree capture.Tree, scratch string) ([]string, error) {
+		once.Do(func() { close(inGit); <-release })
+		return changed(tree, scratch)
+	}
+	c.advance(10 * time.Minute)
+	<-inGit // lapsed, and ending capture
+	h.do(as("s1", req{method: "GET", path: "/claims"}))
+	close(release)
+	time.Sleep(100 * time.Millisecond)
+	if !h.marked("s1") {
+		t.Fatal("the teardown removed the restored session's marker")
+	}
+	if _, err := h.b.store.Capturing("s1"); err != nil {
+		t.Fatalf("the restored session isn't capturing: %v", err)
+	}
+	if tw := h.tweakStatus(1); tw["status"] != "working" {
+		t.Fatalf("tweak 1 is %v", tw["status"])
 	}
 }

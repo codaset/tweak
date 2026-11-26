@@ -90,6 +90,11 @@ func (b *Bridge) unwatched(session string) bool {
 // returning is a session's check-in: it brings back its lapsed claims, and
 // their capture, and returns the claim lost lines it hasn't heard yet.
 func (b *Bridge) returning(session string) []string {
+	// A return can restart a capture, so it's serialised with a lapse's
+	// teardown, which must not end the capture it restored. Git never runs
+	// under the lock, so this is short.
+	b.captureMu.Lock()
+	defer b.captureMu.Unlock()
 	r, err := b.store.Return(session, b.opts.RestoreFor)
 	if err != nil {
 		b.log.Printf("check-in %s: %v", session, err)
@@ -153,7 +158,7 @@ func (b *Bridge) lapse() {
 			b.log.Printf("claim %s lapsed: %s stopped checking in", c.Pattern, session)
 		}
 		// As at done, so a crashed session can't leave its edit hook recording.
-		if err := b.endCapture(session); err != nil {
+		if err := b.endLapsedCapture(session); err != nil {
 			b.log.Printf("lapse %s: ending capture: %v", session, err)
 		}
 	}
@@ -204,4 +209,33 @@ func (b *Bridge) endReleased() {
 		}
 		os.Remove(path)
 	}
+}
+
+// endLapsedCapture ends a lapsed session's capture, unless the session has
+// checked in since and its tweak is back with it: then the capture carries
+// on. The check and the end are one step under captureMu, which a return
+// also takes.
+func (b *Bridge) endLapsedCapture(session string) error {
+	g := b.prepare(session, 0)
+	b.captureMu.Lock()
+	defer b.captureMu.Unlock()
+	c, err := b.store.Capturing(session)
+	if errors.Is(err, store.ErrNotCapturing) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if tw, err := b.store.Tweak(c.Tweak); err != nil || tw.Session == session {
+		return err // restored meanwhile
+	}
+	end, err := b.ending(session, c.Tweak, g)
+	if err != nil || end == nil {
+		return err
+	}
+	if _, err := b.store.EndCapture(session, *end); err != nil {
+		return err
+	}
+	b.unmark(session)
+	return nil
 }

@@ -252,6 +252,20 @@ func (b *Bridge) undoChange(n int64) (store.Tweak, error) {
 	if err != nil {
 		return store.Tweak{}, err
 	}
+	// While a capture has recorded one of the files, writing it would land
+	// the reversal in that tweak's change. captureMu holds hook posts off
+	// from the check until the writes are done, so none can start between.
+	b.captureMu.Lock()
+	defer b.captureMu.Unlock()
+	var paths []string
+	for _, f := range u.Files {
+		paths = append(paths, f.Path)
+	}
+	if busy, shown, err := b.store.CapturedBy(paths); err != nil {
+		return store.Tweak{}, err
+	} else if busy != 0 {
+		return store.Tweak{}, &store.UndoError{Why: fmt.Sprintf("Claude is still working on tweak %d, which changed %s: undo this once tweak %d is finished", busy, shown, busy)}
+	}
 	plans, conflicts := planUndo(u.Files)
 	if len(u.Files) == 0 || conflicts > 0 {
 		tw, err := b.store.RequestUndo(n, conflicts)

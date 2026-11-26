@@ -297,3 +297,30 @@ func (t *eventTx) undosWhere(where string, args ...any) ([]undoRow, error) {
 	}
 	return out, rows.Err()
 }
+
+// CapturedBy is the capturing tweak that has recorded one of paths, and
+// that file as its card shows it; 0 when none has. An undo that wrote the
+// file now would land in that tweak's change.
+func (s *Store) CapturedBy(paths []string) (int64, string, error) {
+	want := map[string]bool{}
+	for _, p := range paths {
+		want[p] = true
+	}
+	rows, err := s.db.Query(`SELECT c.tweak, f.path, f.shown FROM change_files f JOIN changes c ON c.id = f.change
+		WHERE c.capturing IS NOT NULL ORDER BY c.tweak, f.id`)
+	if err != nil {
+		return 0, "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var n int64
+		var path, shown string
+		if err := rows.Scan(&n, &path, &shown); err != nil {
+			return 0, "", err
+		}
+		if want[path] {
+			return n, shown, nil
+		}
+	}
+	return 0, "", rows.Err()
+}

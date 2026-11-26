@@ -302,6 +302,7 @@
     // since working.
     loaded(tweaks, card) {
       for (const t of tweaks) {
+        if (!ns.page.here?.(t)) continue; // an open card's tweak from another page
         const reloaded = t.number === card;
         if (t.status === "working") working(t.number, { reloaded });
         else if (t.change?.state === "undo-requested") undoing(t.number, { reloaded });

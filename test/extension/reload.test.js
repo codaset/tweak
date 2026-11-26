@@ -529,3 +529,11 @@ test("an undo with Claude of a withdrawn tweak holds other reloads back until it
   assert.equal(moment(withdrawn, { ...withdrawn, change: { ...recorded, state: "undo-requested" } }), "undo");
   assert.equal(moment(undefined, { ...withdrawn, change: { ...recorded, state: "undo-requested" } }), "undo", "the page dropped it");
 });
+
+test("a reloaded page watches only its own tweaks, not an open card's from another page", () => {
+  const p = page();
+  const asked = { status: "done", change: { ...recorded, state: "undo-requested" } };
+  p.ns.reload.loaded([{ ...asked, number: 4, page: "http://localhost:3000/other" }, { ...asked, number: 5, page: "http://localhost:3000/" }], 4);
+  assert.equal(p.ns.reload.state(4), null);
+  assert.equal(p.ns.reload.state(5), "watching");
+});

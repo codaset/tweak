@@ -96,4 +96,13 @@ CREATE INDEX tweaks_session ON tweaks (session);
 INSERT OR IGNORE INTO deliveries (session, last_ack)
 	SELECT id, (SELECT coalesce(max(seq), 0) FROM events) FROM sessions;
 `,
+	// 3: "No lost tweaks". resends counts the again: lines sent for a
+	// delivered tweak; wait_from is when its wait for Claude to confirm it
+	// began (its line's ack), and is null while an again: line is waiting
+	// to be printed. Tweaks already delivered wait from when they were.
+	`
+ALTER TABLE tweaks ADD COLUMN resends INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tweaks ADD COLUMN wait_from INTEGER;
+UPDATE tweaks SET wait_from = status_at WHERE status = 'delivered';
+`,
 }

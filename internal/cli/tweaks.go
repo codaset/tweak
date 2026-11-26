@@ -15,8 +15,14 @@ import (
 // inboxTimeout outlasts the bridge's long-poll hold.
 const inboxTimeout = 60 * time.Second
 
-// ackTimeout bounds the acknowledgement watch sends before it exits.
+// ackTimeout bounds an acknowledgement watch sends between lines, and the
+// one before it exits.
 const ackTimeout = 5 * time.Second
+
+// linePace is the least time between two lines watch prints: outside
+// Monitor's 200 ms batching window, which lost and cut lines in a burst
+// (docs/design.md, "No lost tweaks").
+const linePace = 250 * time.Millisecond
 
 // watchBackoff is how long watch waits before asking again after the bridge
 // didn't answer: 1, 2, 5 seconds, then every 10.
@@ -24,9 +30,11 @@ var watchBackoff = []time.Duration{time.Second, 2 * time.Second, 5 * time.Second
 
 var errWatchNoClaims = errors.New("this session has no claims: run tweak claim <url> first, then tweak watch")
 
-// watch long-polls the session's inbox and prints one line per event. It
-// exits at once for a session with no claims, and after "claim released"
-// once none are left. A bridge that stops answering is asked again with
+// watch long-polls the session's inbox and prints one line per event, at
+// most one every linePace, acknowledging each as soon as it is printed
+// (asking for what comes after it), so the bridge hands out again only what
+// wasn't printed. It exits at once for a session with no claims, and after
+// "claim released" once none are left. A bridge that stops answering is asked again with
 // backoff (the next connect starts one if none is running); a bridge that
 // refuses, or can't be started, ends it.
 func watch(c *context, args []string) error {
@@ -38,6 +46,7 @@ func watch(c *context, args []string) error {
 	}
 	after := int64(-1) // where the last watcher left off
 	first, attempt := true, 0
+	var printed time.Time // when the last line went out
 	for {
 		cl, err := c.connect()
 		if err != nil {
@@ -50,7 +59,10 @@ func watch(c *context, args []string) error {
 		var in struct {
 			Seq    int64
 			Claims int
-			Lines  []struct{ Text string }
+			Lines  []struct {
+				Seq  int64
+				Text string
+			}
 		}
 		err = cl.callWithin(inboxTimeout, "GET", path, nil, &in)
 		var refused *refusal
@@ -68,10 +80,18 @@ func watch(c *context, args []string) error {
 			return errWatchNoClaims
 		}
 		first = false
-		for _, l := range in.Lines {
+		for i, l := range in.Lines {
+			time.Sleep(time.Until(printed.Add(linePace)))
 			fmt.Fprintln(c.Stdout, l.Text)
+			printed = time.Now()
+			if i < len(in.Lines)-1 {
+				// Acknowledge this one now: the rest are already here, so the
+				// bridge answers at once. A failed ack only means a repeat; the
+				// next poll acknowledges it with the rest.
+				cl.callWithin(ackTimeout, "GET", "/inbox?after="+strconv.FormatInt(l.Seq, 10), nil, nil)
+			}
 		}
-		// Asking after in.Seq next acknowledges these lines.
+		// Asking after in.Seq next acknowledges the last line.
 		after = in.Seq
 		if in.Claims == 0 {
 			// No next poll: acknowledge now, or the next watcher prints them

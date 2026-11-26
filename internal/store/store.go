@@ -17,7 +17,8 @@ import (
 // Store is an open database.
 type Store struct {
 	db      *sql.DB
-	onEvent func() // see OnEvent
+	onEvent func()           // see OnEvent
+	clock   func() time.Time // see SetClock
 }
 
 // Open opens (creating if needed) the database at path and brings it up to
@@ -132,6 +133,16 @@ var (
 	ErrNotClaimed = errors.New("not claimed by this session")
 )
 
-func now() int64 { return time.Now().UnixMilli() }
+// SetClock sets the clock the store stamps times with (time.Now when unset),
+// so tests can move time on. Set it before the store is shared.
+func (s *Store) SetClock(fn func() time.Time) { s.clock = fn }
+
+// now is the store's time, in Unix milliseconds.
+func (s *Store) now() int64 {
+	if s.clock == nil {
+		return time.Now().UnixMilli()
+	}
+	return s.clock().UnixMilli()
+}
 
 func fromMillis(ms int64) time.Time { return time.UnixMilli(ms) }

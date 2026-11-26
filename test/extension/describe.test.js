@@ -96,3 +96,20 @@ test("each entry carries its classes, and whether to announce it", () => {
 test("a card whose tweak hasn't arrived yet reads Sending", () => {
   assert.deepEqual({ ...status(undefined) }, { text: "Sending…", tone: "sent" });
 });
+
+test("a delivered tweak Claude hasn't picked up after two resends says so, from the wait and the resends", () => {
+  const { unanswered } = ns.describe;
+  const waiting = { status: "delivered", resends: 2, againAt: "2026-11-26T10:09:00.000Z" };
+  const busy = "Claude hasn't picked this up. The session may be busy.";
+  assert.equal(status(waiting, at(waiting.againAt, -1)).text, "Claude has it", "still waiting");
+  assert.equal(unanswered(waiting, at(waiting.againAt, -1)), false);
+  assert.deepEqual({ ...status(waiting, at(waiting.againAt, 0)) }, { text: busy, tone: "sent" });
+  assert.equal(unanswered(waiting, at(waiting.againAt, 0)), true);
+  // One resend still the bridge's to send, an again: line on its way, or picked up: not yet.
+  assert.equal(unanswered({ ...waiting, resends: 1 }, at(waiting.againAt, 1)), false);
+  assert.equal(unanswered({ status: "delivered", resends: 3 }, at(waiting.againAt, 1)), false);
+  assert.equal(unanswered({ ...waiting, status: "working" }, at(waiting.againAt, 1)), false);
+  assert.equal(unanswered({ ...waiting, resends: 3 }, at(waiting.againAt, 1)), true, "a Send again unanswered too");
+  const replied = { ...waiting, entries: [{ kind: "request" }, { kind: "question" }, { kind: "reply" }] };
+  assert.equal(status(replied, at(waiting.againAt, 0)).text, busy);
+});

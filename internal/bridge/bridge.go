@@ -39,7 +39,14 @@ type Options struct {
 	// InboxWait is how long GET /inbox holds a long-poll with nothing to
 	// send (25 seconds when zero, inside the CLI's request timeout).
 	InboxWait time.Duration
-	Log       io.Writer
+	// AgainAfter is how long a delivered tweak waits for Claude to confirm
+	// it before it is sent again (3 minutes when zero; see docs/design.md,
+	// "No lost tweaks"); AgainCheck is how often the bridge looks (every
+	// 5 seconds, or a tenth of AgainAfter when that is shorter).
+	AgainAfter, AgainCheck time.Duration
+	// Clock is the bridge's time, and its store's (time.Now when nil).
+	Clock func() time.Time
+	Log   io.Writer
 }
 
 // ErrAlreadyRunning means another bridge holds the port: the caller should
@@ -61,6 +68,7 @@ type Bridge struct {
 	closing     context.Context
 	stopSockets context.CancelFunc
 	sockets     sync.WaitGroup
+	loops       sync.WaitGroup // the background loops that use the store
 	changeMu    sync.Mutex
 	change      chan struct{} // closed and replaced on each event-log change
 
@@ -91,6 +99,15 @@ func Start(o Options) (*Bridge, error) {
 	if o.InboxWait == 0 {
 		o.InboxWait = 25 * time.Second
 	}
+	if o.AgainAfter == 0 {
+		o.AgainAfter = 3 * time.Minute
+	}
+	if o.AgainCheck == 0 {
+		o.AgainCheck = min(5*time.Second, o.AgainAfter/10)
+	}
+	if o.Clock == nil {
+		o.Clock = time.Now
+	}
 	if o.Log == nil {
 		o.Log = os.Stderr
 	}
@@ -115,6 +132,7 @@ func Start(o Options) (*Bridge, error) {
 	if b.store, err = store.Open(o.Config.Database(), o.Version); err != nil {
 		return fail(err)
 	}
+	b.store.SetClock(o.Clock)
 	// Every commit that writes to the event log wakes the sockets.
 	b.store.OnEvent(b.notify)
 	// Time the bridge was down doesn't count toward a lapse.
@@ -167,6 +185,8 @@ func (b *Bridge) Serve() error {
 	served := make(chan error, 1)
 	go func() { served <- b.server.Serve(b.listener) }()
 	go b.watchIdle()
+	b.loops.Add(1)
+	go b.watchAgain()
 
 	var err error
 	select {
@@ -177,6 +197,7 @@ func (b *Bridge) Serve() error {
 	// ("restarting") and wait for their handlers before the store goes.
 	b.stopSockets()
 	b.sockets.Wait()
+	b.loops.Wait()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	b.server.Shutdown(ctx)
@@ -210,6 +231,30 @@ func (b *Bridge) watchIdle() {
 			b.log.Printf("no claims and no browser for %s: quitting", b.opts.IdleTimeout)
 			b.Shutdown()
 			return
+		}
+	}
+}
+
+// watchAgain sends again, as again: lines, the delivered tweaks Claude
+// hasn't confirmed within AgainAfter (docs/design.md, "No lost tweaks").
+func (b *Bridge) watchAgain() {
+	defer b.loops.Done()
+	t := time.NewTicker(b.opts.AgainCheck)
+	defer t.Stop()
+	for {
+		select {
+		case <-b.stop:
+			return
+		case <-b.closing.Done(): // Serve is ending: it waits for this loop
+			return
+		case <-t.C:
+		}
+		resent, err := b.store.Resend(b.opts.AgainAfter)
+		if err != nil {
+			b.log.Print(err)
+		}
+		for _, tw := range resent {
+			b.log.Printf("tweak %d sent again (%d of %d): not picked up", tw.Number, tw.Resends, store.MaxResends)
 		}
 	}
 }

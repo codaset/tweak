@@ -105,6 +105,9 @@
       case "replied":
         ns.panel.replied(msg);
         break;
+      case "resent":
+        ns.panel.resent(msg);
+        break;
     }
   });
 

@@ -114,8 +114,9 @@ async function onTabMessage(port, msg) {
       else await chrome.storage.session.remove(cardKey(tabId));
       break;
     case "create":
-    case "reply": {
-      const answered = msg.type === "create" ? "created" : "replied";
+    case "reply":
+    case "again": {
+      const answered = { create: "created", reply: "replied", again: "resent" }[msg.type];
       const ref = bridge.request(msg, (answer) => {
         if (msg.type === "create" && answer.number) rememberSender(answer.number, tabId);
         port.postMessage({ type: answered, ref: msg.ref, ...answer });

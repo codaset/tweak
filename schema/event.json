@@ -19,7 +19,8 @@
         "claim-released",
         "tweak-created",
         "tweak-status",
-        "tweak-replied"
+        "tweak-replied",
+        "tweak-again"
       ]
     },
     "claim": {
@@ -27,7 +28,7 @@
       "$ref": "#/$defs/claim"
     },
     "tweak": {
-      "description": "With tweak events: the tweak as it was after the event (tweak-status: its status changed or an entry was added; tweak-replied: the developer answered Claude's question, and the tweak is sent again).",
+      "description": "With tweak events: the tweak as it was after the event (tweak-status: its status changed or an entry was added; tweak-replied: the developer answered Claude's question, and the tweak is sent again; tweak-again: a delivered tweak Claude hasn't confirmed, sent to its session again).",
       "$ref": "#/$defs/tweak"
     }
   },
@@ -159,6 +160,16 @@
           "items": {
             "$ref": "#/$defs/entry"
           }
+        },
+        "resends": {
+          "description": "Delivered tweaks only: the again: lines sent so far while Claude hasn't confirmed it (docs/design.md, No lost tweaks). Absent for none.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "againAt": {
+          "type": "string",
+          "description": "RFC 3339. Delivered tweaks only: when the current wait for Claude to confirm it ends. With 2 or more resends and this time past, the card says Claude hasn't picked it up. Absent while an again: line waits to be printed.",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
         }
       },
       "required": [
@@ -532,7 +543,8 @@
             "enum": [
               "tweak-created",
               "tweak-status",
-              "tweak-replied"
+              "tweak-replied",
+              "tweak-again"
             ]
           }
         }

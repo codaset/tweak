@@ -43,6 +43,9 @@ type sandbox struct {
 	// installed runs the binary as an installed one, without TWEAK_BIN (still
 	// on the sandbox's own port and state folder).
 	installed bool
+	// extra is more environment for every command, and so for the bridge
+	// the first one starts.
+	extra []string
 }
 
 func freePort(t *testing.T) int {
@@ -74,6 +77,7 @@ func (s *sandbox) env(extra ...string) []string {
 	if !s.installed {
 		env = append(env, "TWEAK_BIN="+tweakBin)
 	}
+	env = append(env, s.extra...)
 	return append(env, extra...)
 }
 

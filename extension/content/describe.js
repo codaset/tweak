@@ -45,12 +45,21 @@
     return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 60)} h`;
   }
 
+  // unanswered says whether Claude hasn't picked up a delivered tweak: the
+  // bridge has sent it again twice (or Send again has, since) and the wait
+  // for the last one is over. The bridge sends againAt, when the wait ends,
+  // only while no again: line is on its way (design.md § No lost tweaks).
+  const UNANSWERED = "Claude hasn't picked this up. The session may be busy.";
+  const unanswered = (tweak, now = Date.now()) =>
+    tweak?.status === "delivered" && (tweak.resends ?? 0) >= 2 && Boolean(tweak.againAt) && now >= Date.parse(tweak.againAt);
+
   // status is how a tweak's status reads now: while working, with the time
   // since it started (the bridge's statusAt, so a reload keeps the count).
   // No tweak yet is a card still sending.
   function status(tweak, now = Date.now()) {
     if (!tweak) return SENDING;
     const { text, tone } = STATUS[tweak.status] ?? { text: tweak.status, tone: "sent" };
+    if (unanswered(tweak, now)) return { text: UNANSWERED, tone };
     // A reply sends the tweak again: it waits for the same session, not a new one.
     if (tweak.entries?.at(-1)?.kind === "reply" && REPLIED[tweak.status]) return { text: REPLIED[tweak.status], tone };
     if (tweak.status === "working" && tweak.statusAt) {
@@ -123,5 +132,5 @@
   // element is one element as a tweak's targets carry it (schema/create.json).
   const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
 
-  ns.describe = { status, classes, thread, elapsed, label, text, selector, element };
+  ns.describe = { status, unanswered, classes, thread, elapsed, label, text, selector, element };
 })();

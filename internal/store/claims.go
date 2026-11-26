@@ -48,7 +48,7 @@ func (s *Store) RegisterSession(se Session) error {
 	if _, err := tx.Exec(`INSERT INTO sessions (id, agent, folder, label, last_check_in) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET agent = excluded.agent, folder = excluded.folder,
 			label = excluded.label, last_check_in = excluded.last_check_in`,
-		se.ID, se.Agent, se.Folder, se.Label, now()); err != nil {
+		se.ID, se.Agent, se.Folder, se.Label, s.now()); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT OR IGNORE INTO deliveries (session, last_ack)
@@ -74,7 +74,7 @@ func (s *Store) Session(id string) (Session, error) {
 // CheckIn records that a session was heard from. It reports false for a
 // session that isn't registered.
 func (s *Store) CheckIn(id string) (bool, error) {
-	r, err := s.db.Exec(`UPDATE sessions SET last_check_in = ? WHERE id = ?`, now(), id)
+	r, err := s.db.Exec(`UPDATE sessions SET last_check_in = ? WHERE id = ?`, s.now(), id)
 	if err != nil {
 		return false, err
 	}
@@ -85,7 +85,7 @@ func (s *Store) CheckIn(id string) (bool, error) {
 // CheckInAll sets every session's last check-in to now. The bridge runs it on
 // start, so time it was down doesn't count toward a lapse.
 func (s *Store) CheckInAll() error {
-	_, err := s.db.Exec(`UPDATE sessions SET last_check_in = ?`, now())
+	_, err := s.db.Exec(`UPDATE sessions SET last_check_in = ?`, s.now())
 	return err
 }
 
@@ -132,7 +132,7 @@ func (s *Store) Claim(sessionID string, p pattern.Pattern) (Claim, error) {
 	}
 	se.LastCheckIn = fromMillis(at)
 
-	created := now()
+	created := s.now()
 	r, err := tx.Exec(`INSERT INTO claims (session, pattern, created) VALUES (?, ?, ?)`, sessionID, want, created)
 	if err != nil {
 		return Claim{}, err

@@ -13,12 +13,17 @@ export const BIN = process.env.TWEAK_E2E_BIN ?? resolve(import.meta.dirname, "..
 
 // What a development bridge's CLI runs with: TWEAK_BIN, its own port and
 // state folder, and HOME inside that folder. None of it is inherited, so a
-// test never reaches the live bridge or its sessions.
-export async function devBridge() {
+// test never reaches the live bridge or its sessions. With againAfter (a Go
+// duration, such as "1s"), the bridge sends an unconfirmed tweak again after
+// that instead of 3 minutes: the test-only TWEAK_TEST_AGAIN_AFTER, which only
+// a development build reads.
+export async function devBridge({ againAfter } = {}) {
   if (!existsSync(BIN)) throw new Error(`no tweak binary at ${BIN}: run npm run e2e, which builds it`);
   const port = await freePort();
   const state = mkdtempSync(join(tmpdir(), "tweak-e2e-state-"));
   const env = { ...process.env, TWEAK_BIN: BIN, TWEAK_PORT: String(port), TWEAK_STATE_DIR: state, HOME: state };
+  delete env.TWEAK_TEST_AGAIN_AFTER;
+  if (againAfter) env.TWEAK_TEST_AGAIN_AFTER = againAfter;
   delete env.CLAUDE_CODE_SESSION_ID;
   return {
     port,

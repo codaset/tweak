@@ -94,10 +94,8 @@ func line(e store.Event) string {
 	case store.EventTweakCreated:
 		return newLine(e.Tweak.Number, e.Tweak.Page, e.Tweak.Request(), e.Tweak.Targets)
 	case store.EventTweakReplied:
-		for i := len(e.Tweak.Entries) - 1; i >= 0; i-- {
-			if en := e.Tweak.Entries[i]; en.Kind == "reply" {
-				return replyLine(e.Tweak.Number, en.Text)
-			}
+		if en, ok := e.Tweak.LastEntry(store.KindReply); ok {
+			return replyLine(e.Tweak.Number, en.Text)
 		}
 	case store.EventClaimReleased:
 		return "claim released: " + e.Claim.Pattern
@@ -188,24 +186,37 @@ func (b *Bridge) setStatus(w http.ResponseWriter, session string, n int64, statu
 	return tw, b.refuseChange(w, n, err)
 }
 
-// refuseChange answers a refused change to tweak n, saying what to do. It
-// reports whether there was nothing to refuse.
+// refuseChange answers a refused change to tweak n over HTTP. It reports
+// whether there was nothing to refuse.
 func (b *Bridge) refuseChange(w http.ResponseWriter, n int64, err error) bool {
+	if err == nil {
+		return true
+	}
+	status, code, message := b.refusalOf(n, err)
+	refuse(w, status, code, message)
+	return false
+}
+
+// refusalOf is how the bridge refuses a store error about tweak n, over HTTP
+// or in a WebSocket result: the HTTP status, the error code, and the line
+// saying what to do.
+func (b *Bridge) refusalOf(n int64, err error) (status int, code, message string) {
 	var notYours *store.NotYoursError
 	var wrong *store.TransitionError
 	switch {
 	case errors.Is(err, store.ErrNoTweak):
-		refuse(w, 404, "no-tweak", noTweak(strconv.FormatInt(n, 10)))
+		return 404, "no-tweak", noTweak(strconv.FormatInt(n, 10))
 	case errors.As(err, &notYours):
-		refuse(w, 409, "not-yours", err.Error())
+		return 409, "not-yours", err.Error()
 	case errors.As(err, &wrong):
-		refuse(w, 409, "wrong-status", err.Error())
-	case err != nil:
-		b.internal(w, err)
-	default:
-		return true
+		return 409, "wrong-status", err.Error()
+	case errors.Is(err, store.ErrNotAsked):
+		return 409, "not-asked", err.Error()
+	case errors.Is(err, store.ErrBlankReply):
+		return 400, "bad-request", err.Error()
 	}
-	return false
+	b.log.Print(err)
+	return 500, "internal", "the bridge failed: " + err.Error()
 }
 
 // work is POST /tweaks/:n/work: sets working and returns the brief.
@@ -224,12 +235,13 @@ func (b *Bridge) work(w http.ResponseWriter, r *http.Request) {
 }
 
 // statusEntries are the statuses Claude sets with POST /tweaks/:n/status,
-// each with the conversation entry its message becomes and the refusal for
-// a missing one. Queued takes no message.
+// each with the kind of entry its message becomes and the refusal for a
+// missing one. Queued takes no message, and is refused one
+// (schema/status-request.json).
 var statusEntries = map[string]struct{ kind, missing string }{
-	store.StatusDone:     {"summary", "done needs a summary: one sentence on what you changed"},
-	store.StatusQuestion: {"question", "ask needs a question: what you need the developer to decide"},
-	store.StatusDeclined: {"reason", "decline needs a reason: why it can't or shouldn't be done here"},
+	store.StatusDone:     {store.KindSummary, "done needs a summary: one sentence on what you changed"},
+	store.StatusQuestion: {store.KindQuestion, "ask needs a question: what you need the developer to decide"},
+	store.StatusDeclined: {store.KindReason, "decline needs a reason: why it can't or shouldn't be done here"},
 	store.StatusQueued:   {},
 }
 
@@ -240,21 +252,33 @@ func (b *Bridge) status(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct{ Status, Message string }
-	err := json.NewDecoder(r.Body).Decode(&body)
+	var body struct {
+		Status  string
+		Message *string
+	}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	err := dec.Decode(&body)
 	want, known := statusEntries[body.Status]
 	if err != nil || !known {
 		refuse(w, 400, "bad-request", `POST /tweaks/:n/status needs {"status": "done", "question", "declined" or "queued", "message": …}`)
 		return
 	}
+	if want.kind == "" && body.Message != nil {
+		refuse(w, 400, "bad-request", "queue takes no message: run tweak queue <n>… with the numbers only")
+		return
+	}
 	var entry *store.Entry
 	if want.kind != "" {
-		text := strings.TrimSpace(body.Message)
+		if body.Message == nil {
+			body.Message = new(string)
+		}
+		text := strings.TrimSpace(*body.Message)
 		if text == "" {
 			refuse(w, 400, "bad-request", want.missing)
 			return
 		}
-		entry = &store.Entry{From: "claude", Kind: want.kind, Text: text}
+		entry = &store.Entry{From: store.FromClaude, Kind: want.kind, Text: text}
 	}
 	tw, ok := b.setStatus(w, session, n, body.Status, entry)
 	if !ok {
@@ -271,7 +295,7 @@ func (b *Bridge) entries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct{ Kind, Text string }
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Kind != "plan" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Kind != store.KindPlan {
 		refuse(w, 400, "bad-request", `POST /tweaks/:n/entries needs {"kind": "plan", "text": …}`)
 		return
 	}

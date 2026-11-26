@@ -23,6 +23,22 @@ const (
 	StatusDeclined  = "declined"
 )
 
+// Who wrote an entry, and its kind (docs/design.md, "Conversation entries").
+const (
+	FromYou    = "you"    // the developer
+	FromClaude = "claude" // the session
+	FromBridge = "bridge" // Tweak itself
+
+	KindRequest  = "request"
+	KindPlan     = "plan"
+	KindQuestion = "question"
+	KindReply    = "reply"
+	KindSummary  = "summary"
+	KindReason   = "reason"
+	KindUndo     = "undo"
+	KindNotice   = "notice"
+)
+
 // Tweak is a request left on a page, with its conversation and status.
 type Tweak struct {
 	Number   int64
@@ -40,8 +56,8 @@ type Tweak struct {
 
 // Entry is one turn of a tweak's conversation.
 type Entry struct {
-	From string // you, claude or bridge
-	Kind string // request, summary, ...
+	From string // FromYou, FromClaude or FromBridge
+	Kind string // KindRequest, KindSummary, ...
 	Text string
 	At   time.Time
 }
@@ -49,11 +65,21 @@ type Entry struct {
 // Request is the developer's own words: the first request entry.
 func (t Tweak) Request() string {
 	for _, e := range t.Entries {
-		if e.Kind == "request" {
+		if e.Kind == KindRequest {
 			return e.Text
 		}
 	}
 	return ""
+}
+
+// LastEntry is the newest entry of a kind, if there is one.
+func (t Tweak) LastEntry(kind string) (Entry, bool) {
+	for i := len(t.Entries) - 1; i >= 0; i-- {
+		if t.Entries[i].Kind == kind {
+			return t.Entries[i], true
+		}
+	}
+	return Entry{}, false
 }
 
 // NewTweak is what the extension sends to create a tweak.
@@ -70,8 +96,9 @@ var (
 	ErrNoTweak  = errors.New("no such tweak")
 	ErrNoClaim  = errors.New("no session claims this page")
 	// ErrNotAsked refuses a reply to a tweak Claude asked nothing about.
-	ErrNotAsked   = errors.New("Claude isn't waiting for an answer on this tweak")
-	ErrBlankReply = errors.New("write a reply first")
+	// It and ErrBlankReply are shown on the card as they are.
+	ErrNotAsked   = errors.New("Claude has no question on this tweak, so there's nothing to answer: send a new tweak instead")
+	ErrBlankReply = errors.New("Write your answer first")
 )
 
 // allowed is every status change Claude may make, from each status: the one
@@ -88,7 +115,8 @@ var allowed = map[string][]string{
 }
 
 // TransitionError refuses a status change the tweak's status doesn't allow,
-// saying what to do instead.
+// saying what to do instead. To is the status asked for, or "" for a plan,
+// which changes no status but needs the tweak to be working.
 type TransitionError struct {
 	Number   int64
 	From, To string
@@ -105,18 +133,14 @@ func (e *TransitionError) Error() string {
 	case e.From == StatusDeclined:
 		return fmt.Sprintf("tweak %d was declined: there's nothing more to do", e.Number)
 	case e.From == StatusQuestion:
-		return fmt.Sprintf("tweak %d is waiting for the developer's reply to your question: carry on when its reply event arrives", e.Number)
+		return fmt.Sprintf("tweak %d is waiting for the developer's reply to your question: their answer comes as a reply event; or decline it with tweak decline %d '<why>'", e.Number, e.Number)
 	case e.From == StatusWorking && e.To == StatusQueued:
 		return fmt.Sprintf("tweak %d is being worked on: finish it with tweak done, ask or decline", e.Number)
-	case e.To == StatusDone, e.To == StatusQuestion, e.To == toPlan:
+	case e.To == StatusDone, e.To == StatusQuestion, e.To == "":
 		return fmt.Sprintf("tweak %d isn't being worked on: run tweak work %d first", e.Number, e.Number)
 	}
 	return fmt.Sprintf("tweak %d is %s: it can't become %s", e.Number, e.From, e.To)
 }
-
-// toPlan stands for posting a plan in a TransitionError: a plan isn't a
-// status, but it needs the tweak to be working, as done and ask do.
-const toPlan = "plan"
 
 func canMove(from, to string) bool {
 	for _, s := range allowed[from] {
@@ -191,7 +215,7 @@ func (s *Store) CreateTweak(n NewTweak) (Tweak, error) {
 		return Tweak{}, err
 	}
 	number, _ := r.LastInsertId()
-	if _, err := tx.Exec(`INSERT INTO entries (tweak, "from", kind, text, at) VALUES (?, 'you', 'request', ?, ?)`, number, request, at); err != nil {
+	if _, err := tx.Exec(`INSERT INTO entries (tweak, "from", kind, text, at) VALUES (?, ?, ?, ?, ?)`, number, FromYou, KindRequest, request, at); err != nil {
 		return Tweak{}, err
 	}
 	tw, err := getTweak(tx, number)
@@ -248,9 +272,9 @@ func (s *Store) Plan(sessionID string, number int64, text string) (Tweak, error)
 		return Tweak{}, err
 	}
 	if tw.Status != StatusWorking {
-		return Tweak{}, &TransitionError{Number: number, From: tw.Status, To: toPlan}
+		return Tweak{}, &TransitionError{Number: number, From: tw.Status}
 	}
-	if tw, err = tx.change(number, StatusWorking, &Entry{From: "claude", Kind: "plan", Text: text}, EventTweakStatus); err != nil {
+	if tw, err = tx.change(number, StatusWorking, &Entry{From: FromClaude, Kind: KindPlan, Text: text}, EventTweakStatus); err != nil {
 		return Tweak{}, err
 	}
 	return tw, tx.commit()
@@ -277,7 +301,7 @@ func (s *Store) Reply(number int64, text string) (Tweak, error) {
 	if text == "" {
 		return Tweak{}, ErrBlankReply
 	}
-	if tw, err = tx.change(number, StatusSent, &Entry{From: "you", Kind: "reply", Text: text}, EventTweakReplied); err != nil {
+	if tw, err = tx.change(number, StatusSent, &Entry{From: FromYou, Kind: KindReply, Text: text}, EventTweakReplied); err != nil {
 		return Tweak{}, err
 	}
 	return tw, tx.commit()

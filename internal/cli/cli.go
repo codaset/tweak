@@ -72,8 +72,6 @@ func Run(args []string, env Env) int {
 	err = f(&context{Env: env, cfg: cfg, session: session}, rest)
 	var u usageError
 	switch {
-	case errors.Is(err, errShown):
-		return 1
 	case errors.As(err, &u):
 		fmt.Fprintln(env.Stderr, err)
 		return 2
@@ -93,9 +91,6 @@ type context struct {
 type usageError string
 
 func (u usageError) Error() string { return string(u) }
-
-// errShown fails a command that has already said why on stderr.
-var errShown = errors.New("failed")
 
 var errNoSession = errors.New("no session ID: run tweak inside Claude Code (CLAUDE_CODE_SESSION_ID), or pass --session <id>")
 

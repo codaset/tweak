@@ -28,6 +28,30 @@ func TestAfterAReplyTheBriefSaysSoAndCarriesTheConversation(t *testing.T) {
 	conversationGolden(t, "conversation-reply", c)
 }
 
+// Claude may post a plan after the reply and before it works again: the
+// reply is still the news.
+func TestAPlanAfterTheReplyKeepsTheLatestLine(t *testing.T) {
+	c := ConversationOf(asked(
+		store.Entry{From: store.FromClaude, Kind: store.KindQuestion, Text: "Solid green, or the outline variant?"},
+		store.Entry{From: store.FromYou, Kind: store.KindReply, Text: "the outline one"},
+		store.Entry{From: store.FromClaude, Kind: store.KindPlan, Text: "Editing buttons.css for the outline variant"},
+	))
+	conversationGolden(t, "conversation-reply-then-plan", c)
+}
+
+// A reply answers only the question before it: once Claude asks again,
+// the older reply isn't news.
+func TestANewQuestionEndsTheLatestLine(t *testing.T) {
+	c := ConversationOf(asked(
+		store.Entry{From: store.FromClaude, Kind: store.KindQuestion, Text: "Solid or outline?"},
+		store.Entry{From: store.FromYou, Kind: store.KindReply, Text: "outline"},
+		store.Entry{From: store.FromClaude, Kind: store.KindQuestion, Text: "Keep the icon?"},
+	))
+	if c.Latest != "" {
+		t.Fatalf("latest %q", c.Latest)
+	}
+}
+
 // Working on it again without a reply (after a plan) shows the
 // conversation, but there's no news to lead with.
 func TestAPlanAloneHasNoLatestLine(t *testing.T) {

@@ -2,6 +2,8 @@ package bridge
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -164,6 +166,32 @@ func TestConversationRefusals(t *testing.T) {
 				t.Fatalf("body %s, want message %q", body, c.message)
 			}
 		})
+	}
+}
+
+// The handler and the schema agree: every request the schema refuses, the
+// bridge refuses too, and changes nothing.
+func TestEveryInvalidStatusRequestIsRefused(t *testing.T) {
+	examples, _ := filepath.Glob(filepath.Join("..", "..", "schema", "examples", "invalid", "status-request.*.json"))
+	if len(examples) == 0 {
+		t.Fatal("no invalid status-request examples")
+	}
+	h, s := tracer(t)
+	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
+	s.readUntil("result")
+	h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+	for _, ex := range examples {
+		t.Run(filepath.Base(ex), func(t *testing.T) {
+			raw, err := os.ReadFile(ex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/status", body: json.RawMessage(raw)}))
+			refused(t, resp, body, 400, "bad-request")
+		})
+	}
+	if tw, _ := h.b.store.Tweak(1); tw.Status != "working" || len(tw.Entries) != 1 {
+		t.Fatalf("a refused request changed the tweak: %+v", tw)
 	}
 }
 

@@ -221,19 +221,11 @@ func (b *Bridge) reply(in replyIn) resultOut {
 		return out
 	}
 	tw, err := b.store.Reply(in.Number, in.Text)
-	switch {
-	case errors.Is(err, store.ErrNoTweak):
-		out.Error, out.Message = "no-tweak", fmt.Sprintf("There's no tweak %d any more", in.Number)
-	case errors.Is(err, store.ErrNotAsked):
-		out.Error, out.Message = "not-asked", "Claude isn't waiting for an answer on this tweak"
-	case errors.Is(err, store.ErrBlankReply):
-		out.Error, out.Message = "bad-request", "Write a reply first"
-	case err != nil:
-		b.log.Print(err)
-		out.Error, out.Message = "internal", "the bridge failed: "+err.Error()
-	default:
-		out.Number = tw.Number
+	if err != nil {
+		_, out.Error, out.Message = b.refusalOf(in.Number, err)
+		return out
 	}
+	out.Number = tw.Number
 	return out
 }
 

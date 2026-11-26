@@ -53,12 +53,27 @@ func (b *Bridge) skipWithdrawn(session string, n int64) error {
 	if err != nil || tw.Session != session || tw.Status != store.StatusWithdrawn {
 		return nil
 	}
-	if c, err := b.store.Capturing(session); err == nil && c.Tweak == n {
-		if err := b.endCapture(session); err != nil {
-			b.log.Printf("tweak %d: ending the capture of a withdrawn tweak: %v", n, err)
+	g := b.prepare(session, n) // git first, outside the lock
+	b.captureMu.Lock()
+	defer b.captureMu.Unlock()
+	b.endWithdrawnCapture(session, n, g)
+	return errWithdrawn{n}
+}
+
+// endWithdrawnCapture ends the session's capture if, under captureMu, it's
+// still of withdrawn tweak n, and only then: a capture another work has
+// switched to since is left alone.
+func (b *Bridge) endWithdrawnCapture(session string, n int64, g *gitEnd) {
+	end, err := b.ending(session, n, g)
+	if err == nil && end != nil {
+		_, err = b.store.EndCapture(session, *end)
+		if err == nil {
+			b.unmark(session)
 		}
 	}
-	return errWithdrawn{n}
+	if err != nil {
+		b.log.Printf("tweak %d: ending the capture of a withdrawn tweak: %v", n, err)
+	}
 }
 
 // deleteAt is when a resolved tweak is deleted, as the side panel shows it.

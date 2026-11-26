@@ -187,16 +187,7 @@ func (b *Bridge) startWork(session string, n int64) (store.Tweak, error) {
 	var lost *store.LostError
 	if errors.As(err, &refused) && refused.From == store.StatusWithdrawn {
 		// Withdrawn since skipWithdrawn looked: end its capture as that would.
-		if c, err := b.store.Capturing(session); err == nil && c.Tweak == n {
-			if end, err = b.ending(session, n, g); err == nil && end != nil {
-				_, err = b.store.EndCapture(session, *end)
-			}
-			if err != nil {
-				b.log.Printf("tweak %d: ending the capture of a withdrawn tweak: %v", n, err)
-			} else {
-				b.unmark(session)
-			}
-		}
+		b.endWithdrawnCapture(session, n, g)
 		return store.Tweak{}, errWithdrawn{n}
 	}
 	if err != nil && end != nil && !errors.As(err, &refused) && !errors.As(err, &notYours) && !errors.As(err, &lost) && !errors.Is(err, store.ErrNoTweak) && !errors.Is(err, store.ErrCapturedElsewhere) {

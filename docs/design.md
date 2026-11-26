@@ -1202,7 +1202,8 @@ Files run concurrently (node's default), each with its own Chrome. For each fixt
 Chrome loads a **test copy of the extension**: the manifest with `http://localhost/*` moved into
 `host_permissions` (a pre-grant, since the prompt can't be driven headlessly), and a test-only
 message that calls the shortcut and context-menu handlers. The worker checks for `<all_urls>`, so the
-copy shows the grey `!` and **Allow access** while working on `localhost`. The message is sent from a
+copy shows the grey `!` and **Allow access** while working on `localhost`, and doesn't inject into
+tabs already open when a claim arrives, so a test opens its page after the claim is registered. The message is sent from a
 page click the content script hears: handlers like `sidePanel.open` need a user gesture, and CDP's
 `userGesture` flag doesn't carry one to the worker. The side panel is tested as `panel.html`
 open in a tab. The `activeTab` path serves `static` a second time on `127.0.0.1`, which the copy has

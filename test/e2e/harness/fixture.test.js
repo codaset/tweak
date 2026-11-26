@@ -99,7 +99,9 @@ test("a fixture that exits before it's ready fails at once, with its output", as
 test("every fixture has its config, its cases, its test file and a Dependabot entry", () => {
   const root = join(import.meta.dirname, "../../..");
   const dependabot = readFileSync(join(root, ".github/dependabot.yml"), "utf8");
-  const names = readdirSync(join(root, "fixtures"));
+  const names = readdirSync(join(root, "fixtures"), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
   assert.ok(names.includes("static"));
   for (const name of names) {
     const fixture = loadFixture(name);

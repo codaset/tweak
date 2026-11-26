@@ -32,8 +32,9 @@ export function setup(fixture) {
     await env.claude.claim(`${env.app.url("")}/*`);
     env.watcher = env.claude.watch();
     env.browser = await launch(env.extension);
-    // A page loaded while the worker is still registering the claim's
-    // scripts can miss them, so the first page waits for the registration.
+    // A page loaded before the worker registers the claim's scripts never
+    // gets them: the worker injects into open tabs only with <all_urls>,
+    // which the copy doesn't grant. So the first page waits for them.
     const registered = await until(() => inWorker(env.browser, `chrome.scripting.getRegisteredContentScripts().then((r) => r.length > 0)`));
     assert.ok(registered, "the extension registered the claim's scripts");
     env.page = await env.browser.newPage();

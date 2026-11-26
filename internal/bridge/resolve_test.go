@@ -8,9 +8,45 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codaset/tweak/internal/capture"
 	"github.com/codaset/tweak/internal/store"
 	"github.com/codaset/tweak/internal/version"
 )
+
+// A withdraw that lands while tweak work on the same capturing tweak runs
+// its git check still ends the capture: Claude is told to skip it.
+func TestAWithdrawDuringWorksGitCheckStillEndsTheCapture(t *testing.T) {
+	dir := project(t, map[string]string{"app.css": appCSS})
+	h, s := capturing(t, dir)
+	inGit, release := make(chan struct{}, 1), make(chan struct{})
+	changed := h.b.gitChanged
+	h.b.gitChanged = func(t capture.Tree, scratch string) ([]string, error) {
+		inGit <- struct{}{}
+		<-release
+		return changed(t, scratch)
+	}
+	type answer struct {
+		code int
+		body string
+	}
+	worked := make(chan answer)
+	go func() {
+		resp, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
+		worked <- answer{resp.StatusCode, string(body)}
+	}()
+	<-inGit // work's git check of tweak 1's capture
+	s.withdraw("w1", 1, "tweak-withdrawn")
+	close(release)
+	if got := <-worked; got.code != 200 || got.body != "tweak 1: withdrawn, skip it\n" {
+		t.Fatalf("work: %d %q", got.code, got.body)
+	}
+	if h.marked("s1") {
+		t.Fatal("still capturing a withdrawn tweak after tweak work said skip it")
+	}
+	if tw, _ := h.b.store.Tweak(1); tw.Change == nil || tw.Change.Capturing {
+		t.Fatalf("change %+v: still capturing", tw.Change)
+	}
+}
 
 // Withdraw, Resolve and retention (docs/design.md, "When the session goes
 // quiet", "Storage").

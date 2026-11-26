@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyTweaks, askedIn, askedSince, forPage, forTab, pageOf, reachesTab, resolvedList } from "../../extension/lib/tweaks.js";
+import { applyTweaks, askedIn, askedSince, forPage, forTab, pageOf, prune, reachesTab, resolvedList } from "../../extension/lib/tweaks.js";
 import { apply } from "../../extension/lib/claims.js";
 
 const tweak = (number, page, status = "sent") => ({ number, page, url: page, status });
@@ -105,6 +105,7 @@ test("only a change into question asks", () => {
 // at its deleteAt.
 test("a resolved tweak moves from the open tweaks to the resolved ones", () => {
   const resolved = (t, at = "2026-11-26T10:00:00.000Z", gone = "2026-12-03T10:00:00.000Z") => ({ ...t, resolvedAt: at, deleteAt: gone });
+  const now = Date.parse("2026-11-27T00:00:00.000Z"); // a fixed clock, inside the week
   let s = applyTweaks(undefined, {
     type: "snapshot",
     seq: 4,
@@ -112,16 +113,35 @@ test("a resolved tweak moves from the open tweaks to the resolved ones", () => {
     resolved: [resolved(tweak(2, "https://a.localhost/", "withdrawn"))],
   });
   assert.deepEqual([...s.tweaks.keys()], [1]);
-  assert.deepEqual(resolvedList(s).map((t) => t.number), [2]);
+  assert.deepEqual(resolvedList(s, now).map((t) => t.number), [2]);
   const later = resolved(tweak(1, "https://a.localhost/", "done"), "2026-11-26T11:00:00.000Z", "2026-12-03T11:00:00.000Z");
   s = applyTweaks(s, { type: "event", seq: 5, event: "tweak-resolved", tweak: later });
   assert.deepEqual([...s.tweaks.keys()], []);
   assert.deepEqual(forTab(s, { page: "https://a.localhost/", card: 1 }), [], "a tab gets no resolved tweak");
-  assert.deepEqual(resolvedList(s).map((t) => t.number), [1, 2], "newest resolved first");
+  assert.deepEqual(resolvedList(s, now).map((t) => t.number), [1, 2], "newest resolved first");
   const undone = { ...resolved(tweak(2, "https://a.localhost/", "withdrawn")), change: { state: "undone" } };
   s = applyTweaks(s, { type: "event", seq: 6, event: "tweak-undone", tweak: undone });
-  assert.equal(resolvedList(s).find((t) => t.number === 2).change.state, "undone");
+  assert.equal(resolvedList(s, now).find((t) => t.number === 2).change.state, "undone");
   assert.deepEqual(resolvedList(s, Date.parse("2026-12-03T10:00:00.000Z")).map((t) => t.number), [1], "gone at its deleteAt");
   // A snapshot without the list (an older bridge) has none.
-  assert.deepEqual(resolvedList(applyTweaks(s, { type: "snapshot", seq: 7, tweaks: [] })), []);
+  assert.deepEqual(resolvedList(applyTweaks(s, { type: "snapshot", seq: 7, tweaks: [] }), now), []);
+});
+
+// The bridge deletes a resolved tweak at its deleteAt without an event, so
+// the worker drops its own copy then: its cache never outlives the week.
+test("pruning drops the resolved tweaks past their deleteAt, and only those", () => {
+  const s = applyTweaks(undefined, {
+    type: "snapshot",
+    seq: 4,
+    tweaks: [tweak(1, "p", "working")],
+    resolved: [
+      { ...tweak(2, "p", "done"), resolvedAt: "2026-11-19T10:00:00.000Z", deleteAt: "2026-11-26T10:00:00.000Z" },
+      { ...tweak(3, "p", "done"), resolvedAt: "2026-11-20T10:00:00.000Z", deleteAt: "2026-11-27T10:00:00.000Z" },
+    ],
+  });
+  const pruned = prune(s, Date.parse("2026-11-26T10:00:00.000Z"));
+  assert.deepEqual([...pruned.resolved.keys()], [3]);
+  assert.deepEqual([...pruned.tweaks.keys()], [1]);
+  assert.equal(pruned.seq, 4);
+  assert.equal(prune(pruned, Date.parse("2026-11-26T10:00:00.000Z")), pruned, "nothing to drop: the same state");
 });

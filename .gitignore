@@ -10,3 +10,5 @@ node_modules/
 # The Vite fixtures' dependency cache (cacheDir), in a copy that ran here
 /fixtures/*/.vite/
 /fixtures/sveltekit/.svelte-kit/
+# Claude Code agent worktrees
+/.claude/worktrees/

@@ -1,5 +1,6 @@
 {
-  "start": ["node", "node_modules/vite/bin/vite.js", "--port", "{port}", "--strictPort"],
+  "start": ["node", "node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "{port}", "--strictPort"],
+  "public": "public",
   "ready": "/",
   "hot": true
 }

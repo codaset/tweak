@@ -2,7 +2,8 @@
 // start it on a free port in its own process group, and wait until it's
 // ready.
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, resolve } from "node:path";
@@ -11,19 +12,43 @@ import { alive, sleep } from "./util.js";
 export const FIXTURES = resolve(import.meta.dirname, "../../../fixtures");
 export const LIVE_PORT = 47391; // the developer's own bridge: never used here
 const LINKED = ["node_modules", "vendor"]; // a fixture's installed dependencies
+// The file each start writes into the folder its fixture's server serves at
+// the root (fixture.json's `public`), holding a token only that start knows.
+const MARKER = "tweak-e2e-marker.txt";
 
-// A free port: listen on port 0, read it, close. Never the live bridge's.
+// A free port: one no server holds on either loopback address. Listening on
+// 127.0.0.1 alone isn't enough: a server on localhost can be on ::1, whose
+// port the kernel will hand out again for 127.0.0.1, and a page opened on
+// localhost could then reach either server. Never the live bridge's.
 export async function freePort() {
   for (;;) {
-    const port = await new Promise((done, fail) => {
-      const s = createServer().once("error", fail);
-      s.listen(0, "127.0.0.1", () => {
-        const { port } = s.address();
-        s.close(() => done(port));
-      });
-    });
-    if (port !== LIVE_PORT) return port;
+    const port = await listenAndClose(0, "127.0.0.1");
+    if (port !== LIVE_PORT && (await portFree(port))) return port;
   }
+}
+
+// Whether no server holds the port on 127.0.0.1 or ::1. A machine without
+// IPv6 has no ::1 to hold it on.
+export async function portFree(port) {
+  for (const address of ["127.0.0.1", "::1"]) {
+    try {
+      await listenAndClose(port, address);
+    } catch (error) {
+      if (address === "::1" && ["EADDRNOTAVAIL", "EAFNOSUPPORT"].includes(error.code)) continue;
+      return false;
+    }
+  }
+  return true;
+}
+
+function listenAndClose(port, address) {
+  return new Promise((done, fail) => {
+    const s = createServer().once("error", fail);
+    s.listen(port, address, () => {
+      const { port } = s.address();
+      s.close(() => done(port));
+    });
+  });
 }
 
 // fixture.json, plus the expected cases and where the fixture lives.
@@ -49,10 +74,33 @@ export function skipReason(fixture, { ci = Boolean(process.env.CI), path } = {})
   return `${message}: skipped`;
 }
 
-// Starts the fixture and resolves once its ready path answers 200 on
-// `host`, the host the app is opened on. The returned app has folder, port,
-// host, bootMs, url(path), output() and stop().
-export async function startFixture(fixture, { readyTimeout = 60_000, host = "localhost" } = {}) {
+// Starts the fixture and resolves once it's ready on `host`, the host the
+// app is opened on: its server serves this start's marker and answers 200
+// on the ready path. A server that answers the marker with anything else is
+// another app on the same port, e.g. another fixture that got the same port
+// from freePort in the moment before either server listened. Then this
+// start is stopped and the fixture starts again on a fresh port, `attempts`
+// times in all, after which the start fails, naming the port. The returned
+// app has folder, port, host, bootMs, url(path), output() and stop().
+// `port` is the first attempt's port, for tests.
+export async function startFixture(fixture, { attempts = 3, port, ...options } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await startOnce(fixture, port ?? (await freePort()), options);
+    } catch (error) {
+      if (!(error instanceof PortTaken) || attempt >= attempts) throw error;
+      port = undefined;
+    }
+  }
+}
+
+class PortTaken extends Error {}
+
+// How many polls in a row must find another server before the port counts
+// as taken, so an app that answers oddly for a moment as it boots isn't.
+const FOREIGN_POLLS = 5;
+
+async function startOnce(fixture, port, { readyTimeout = 60_000, host = "localhost" } = {}) {
   const folder = mkdtempSync(join(tmpdir(), `tweak-e2e-${fixture.name}-`));
   // Round trips edit files, so the app runs from a copy. Installed
   // dependencies (node_modules, and vendor/ for gems) are linked, not
@@ -62,8 +110,10 @@ export async function startFixture(fixture, { readyTimeout = 60_000, host = "loc
   for (const name of LINKED) {
     if (existsSync(join(fixture.dir, name))) symlinkSync(join(fixture.dir, name), join(folder, name));
   }
+  const token = randomUUID();
+  mkdirSync(join(folder, fixture.public), { recursive: true });
+  writeFileSync(join(folder, fixture.public, MARKER), token);
 
-  const port = await freePort();
   const [cmd, ...args] = fixture.start.map((a) => a.replaceAll("{port}", String(port)));
   const started = Date.now();
   const proc = spawn(cmd, args, { cwd: folder, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...fixture.env } });
@@ -97,34 +147,53 @@ export async function startFixture(fixture, { readyTimeout = 60_000, host = "loc
       rmSync(folder, { recursive: true, force: true });
     },
   };
+  const fail = async (Kind, message) => {
+    const output = app.output();
+    await app.stop();
+    throw new Kind(`${message}. Its last 50 lines:\n${output}`);
+  };
 
   const deadline = started + readyTimeout;
   let quit;
   exited.then((how) => (quit = how));
-  for (;;) {
-    if (quit !== undefined) {
-      await app.stop();
-      throw new Error(`${fixture.name} exited (${quit}) before it was ready. Its last 50 lines:\n${app.output()}`);
+  for (let foreignPolls = 0; ; ) {
+    const gone = quit !== undefined;
+    const { ready, foreign } = await poll(host, port, fixture.ready, token);
+    foreignPolls = foreign ? foreignPolls + 1 : 0;
+    // A start command that quit because the port was taken counts as taken.
+    if (foreign && (gone || foreignPolls >= FOREIGN_POLLS)) {
+      await fail(PortTaken, `${fixture.name}: another server answers on port ${port} (on ${foreign}), not this start's app`);
     }
-    if (await ready(host, port, fixture.ready)) break;
-    if (Date.now() > deadline) {
-      const output = app.output();
-      await app.stop();
-      throw new Error(`${fixture.name} wasn't ready at ${fixture.ready} within ${readyTimeout / 1000} s. Its last 50 lines:\n${output}`);
-    }
+    if (gone) await fail(Error, `${fixture.name} exited (${quit}) before it was ready`);
+    if (ready && !foreign) break;
+    if (Date.now() > deadline) await fail(Error, `${fixture.name} wasn't ready at ${fixture.ready} within ${readyTimeout / 1000} s`);
     await sleep(100);
   }
   app.bootMs = Date.now() - started;
   return app;
 }
 
-// Polled on the host the app is opened on. localhost counts as ready on
-// either loopback address, as Chrome tries both, so a server bound to only
-// 127.0.0.1 or only ::1 (Vite's localhost can be either) is ready.
-async function ready(host, port, path) {
+// Polled on the host the app is opened on. localhost means both loopback
+// addresses, as Chrome tries both: the app is ready when one of them serves
+// this start's marker and answers 200 on the ready path, so a server bound
+// to only 127.0.0.1 or only ::1 is ready. `foreign` names any address that
+// answers the marker with something else: another server.
+async function poll(host, port, path, token) {
   const addresses = host === "localhost" ? ["127.0.0.1", "[::1]"] : [host];
-  const answers = await Promise.all(
-    addresses.map((a) => fetch(`http://${a}:${port}${path}`, { signal: AbortSignal.timeout(2000) }).then((r) => r.status === 200, () => false)),
+  const get = (p) => fetch(`http://${p}`, { signal: AbortSignal.timeout(2000) });
+  const states = await Promise.all(
+    addresses.map(async (a) => {
+      let ours;
+      try {
+        const r = await get(`${a}:${port}/${MARKER}`);
+        ours = r.status === 200 && (await r.text()) === token;
+      } catch {
+        return "down"; // nothing listening there, or not answering yet
+      }
+      if (!ours) return "foreign";
+      return (await get(`${a}:${port}${path}`).then((r) => r.status === 200, () => false)) ? "ready" : "starting";
+    }),
   );
-  return answers.includes(true);
+  const foreign = addresses.filter((_, i) => states[i] === "foreign");
+  return { ready: states.includes("ready"), foreign: foreign.join(", ") };
 }

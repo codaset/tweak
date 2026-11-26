@@ -4,14 +4,27 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadFixture, skipReason, startFixture } from "./fixture.js";
+import { createServer } from "node:http";
+import { freePort, loadFixture, portFree, skipReason, startFixture } from "./fixture.js";
 import { alive, sleep } from "./util.js";
 
-// A throwaway fixture whose start command is a node script.
+// A throwaway fixture whose start command is a node script. Its script
+// answers with files(req, res, otherwise): a file from public/, as a real
+// fixture's server would serve the harness's marker, or otherwise.
+const FILES = `
+import { readFileSync as readPublic } from "node:fs";
+const files = (req, res, otherwise) => {
+  try {
+    res.end(readPublic("public" + new URL(req.url, "http://x").pathname));
+  } catch {
+    otherwise();
+  }
+};
+`;
 function fakeFixture(script, extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), "tweak-fake-fixture-"));
-  writeFileSync(join(dir, "app.mjs"), script);
-  writeFileSync(join(dir, "fixture.json"), JSON.stringify({ start: [process.execPath, "app.mjs", "{port}"], ready: "/ready", ...extra }));
+  writeFileSync(join(dir, "app.mjs"), FILES + script);
+  writeFileSync(join(dir, "fixture.json"), JSON.stringify({ start: [process.execPath, "app.mjs", "{port}"], ready: "/ready", public: "public", ...extra }));
   writeFileSync(join(dir, "expected.json"), "[]");
   return loadFixture(dir);
 }
@@ -23,7 +36,7 @@ import { spawn } from "node:child_process";
 // A grandchild in the same process group, which must go when the app stops.
 const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 writeFileSync("pids", JSON.stringify([process.pid, child.pid]));
-http.createServer((req, res) => res.end(req.url)).listen(Number(process.argv[2]), "127.0.0.1");
+http.createServer((req, res) => files(req, res, () => res.end(req.url))).listen(Number(process.argv[2]), "127.0.0.1");
 `;
 
 test("a fixture runs from a copy on a free port, and stopping it ends its whole process group", async () => {
@@ -47,7 +60,7 @@ import { writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });
 writeFileSync("pids", JSON.stringify([process.pid, child.pid]));
-http.createServer((req, res) => res.end("ok")).listen(Number(process.argv[2]), "127.0.0.1");
+http.createServer((req, res) => files(req, res, () => res.end("ok"))).listen(Number(process.argv[2]), "127.0.0.1");
 `);
   const app = await startFixture(fixture);
   const pids = JSON.parse(readFileSync(join(app.folder, "pids"), "utf8"));
@@ -60,13 +73,67 @@ for (const [bound, family] of [["127.0.0.1", "IPv4"], ["::1", "IPv6"]]) {
   test(`a server bound to ${family} loopback only is ready on localhost`, async () => {
     const fixture = fakeFixture(`
 import http from "node:http";
-http.createServer((req, res) => res.end("ok")).listen(Number(process.argv[2]), ${JSON.stringify(bound)});
+http.createServer((req, res) => files(req, res, () => res.end("ok"))).listen(Number(process.argv[2]), ${JSON.stringify(bound)});
 `);
     const app = await startFixture(fixture, { readyTimeout: 5000 });
     try {
       assert.equal(app.url("/"), `http://localhost:${app.port}/`);
     } finally {
       await app.stop();
+    }
+  });
+}
+
+// Another app on the port, on either loopback address, as when two
+// fixtures start at once: it answers 200 on every path, as Vite does.
+async function foreign(address, port = 0) {
+  const server = createServer((req, res) => res.end("another app")).listen(port, address);
+  await new Promise((done, fail) => server.once("listening", done).once("error", fail));
+  return server;
+}
+const shut = (server) => {
+  server.close();
+  server.closeAllConnections();
+};
+
+for (const [bound, family] of [["127.0.0.1", "IPv4"], ["::1", "IPv6"]]) {
+  test(`a free port is one held by no server on ${family} loopback`, async () => {
+    const server = await foreign(bound);
+    try {
+      assert.equal(await portFree(server.address().port), false);
+    } finally {
+      shut(server);
+    }
+    const port = await freePort();
+    assert.ok(await portFree(port));
+  });
+
+  test(`another app answering on ${family} loopback isn't taken for the fixture: it starts again on a fresh port`, async () => {
+    const server = await foreign(bound);
+    const taken = server.address().port;
+    try {
+      const app = await startFixture(fakeFixture(SERVER), { port: taken, readyTimeout: 10_000 });
+      try {
+        assert.notEqual(app.port, taken);
+        assert.equal(await (await fetch(`http://127.0.0.1:${app.port}/ready`)).text(), "/ready");
+      } finally {
+        await app.stop();
+      }
+    } finally {
+      shut(server);
+    }
+  });
+
+  test(`with no attempts left, another app answering on ${family} loopback fails the start, naming it`, async () => {
+    const server = await foreign(bound);
+    const taken = server.address().port;
+    try {
+      await assert.rejects(startFixture(fakeFixture(SERVER), { port: taken, attempts: 1, readyTimeout: 10_000 }), (err) => {
+        assert.match(err.message, new RegExp(`another server answers on port ${taken}`));
+        return true;
+      });
+    } finally {
+      shut(server);
     }
   });
 }
@@ -126,6 +193,7 @@ test("every fixture has its config, its cases, its test file and a Dependabot en
     const fixture = loadFixture(name);
     assert.ok(Array.isArray(fixture.start) && fixture.start.some((a) => a.includes("{port}")), `${name}: start has a {port}`);
     assert.ok(fixture.ready.startsWith("/"), `${name}: ready is a path`);
+    assert.equal(typeof fixture.public, "string", `${name}: public names the folder its server serves at the root`);
     for (const c of fixture.cases) assert.ok(c.name && c.pick && Array.isArray(c.locations) && Array.isArray(c.clues), `${name}: case ${c.name} is complete`);
     assert.ok(existsSync(join(root, `test/e2e/${name}.test.js`)), `${name}: test/e2e/${name}.test.js`);
     assert.match(dependabot, new RegExp(`directory: /fixtures/${name}\\n[\\s\\S]*?groups:\\n\\s+${name}:`), `${name}: a grouped Dependabot entry`);

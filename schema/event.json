@@ -21,6 +21,7 @@
         "claim-restored",
         "claim-listening",
         "claim-lost",
+        "claim-forgotten",
         "tweak-created",
         "tweak-handed",
         "tweak-status",
@@ -33,7 +34,7 @@
       ]
     },
     "claim": {
-      "description": "With claim events: the claim as it was when the event happened (claim-lapsed: its session stopped checking in, and it can come back to it; claim-restored: back with its session, under a new id; claim-listening: its session's watcher went, or came back; claim-lost: a lapsed claim that can't come back, as another session claimed an overlapping pattern). On the WebSocket, its session's folder is shown from ~.",
+      "description": "With claim events: the claim as it was when the event happened (claim-lapsed: its session stopped checking in, and it can come back to it; claim-restored: back with its session, under a new id; claim-listening: its session's watcher went, or came back; claim-lost: a lapsed claim that can't come back, as another session claimed an overlapping pattern; claim-forgotten: one that can't come back as its session ended). On the WebSocket, its session's folder is shown from ~.",
       "$ref": "#/$defs/claim"
     },
     "tweak": {
@@ -733,7 +734,8 @@
               "claim-lapsed",
               "claim-restored",
               "claim-listening",
-              "claim-lost"
+              "claim-lost",
+              "claim-forgotten"
             ]
           }
         }

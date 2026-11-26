@@ -734,6 +734,9 @@ describe("static, when the session goes quiet", { skip: skipReason(fixture) ?? f
     // No more check-ins: the claim lapses. The page is unclaimed, but keeps the card.
     await env.tab.until(card, { is: (s) => s === lapsed, what: "the card to say the session stopped responding" });
     assert.equal(await env.tab.evaluate(`ns.pins.any()`), true, "the pin stays");
+    // The lapsed claim's own registration, so a reload gets the scripts.
+    const lapsedScripts = `chrome.scripting.getRegisteredContentScripts().then((r) => r.some((s) => s.id.startsWith("claim-lapsed-")))`;
+    await until(() => inWorker(env.browser, lapsedScripts), { what: "the lapsed claim's registration" });
     await env.page.reload();
     await env.tab.until(card, { is: (s) => s === lapsed, what: "the card to say so after a reload" });
 

@@ -15,6 +15,7 @@ const (
 	EventClaimRestored  = "claim-restored"  // a lapsed claim back with its session
 	EventClaimLost      = "claim-lost"      // a lapsed claim that can't come back: another session claimed an overlapping pattern
 	EventClaimListening = "claim-listening" // its session's watcher went, or came back
+	EventClaimForgotten = "claim-forgotten" // a lapsed claim that can't come back: its session ended
 	EventTweakCreated   = "tweak-created"
 	EventTweakStatus    = "tweak-status"  // its status changed, or an entry was added
 	EventTweakReplied   = "tweak-replied" // the developer answered Claude's question

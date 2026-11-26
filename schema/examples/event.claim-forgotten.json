@@ -1,0 +1,1 @@
+{"type":"event","seq":13,"event":"claim-forgotten","claim":{"id":4,"pattern":"https://ernie.localhost/*","session":{"id":"1f2e3d4c-0000-4000-8000-000000000001","agent":"claude-code","folder":"~/dev/ernie","label":"","lastCheckIn":"2026-11-25T10:00:00.000Z"},"created":"2026-11-25T10:00:00.000Z","lapsedAt":"2026-11-25T10:10:00.000Z"}}

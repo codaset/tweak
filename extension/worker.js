@@ -635,6 +635,17 @@ const bridge = {
     const [port, reloaded] = await Promise.all([bridgePort(), reloadedFor()]);
     if (this.ws !== conn) return; // closed or replaced meanwhile
     setStatus({ type: "connecting" }, { port });
+    // Chrome lists every refused WebSocket on chrome://extensions as an
+    // error, so the socket opens only once something answers on the port.
+    // Until then it's a closed socket, retried the same way.
+    if (!(await listening(port))) {
+      if (this.ws !== conn) return;
+      this.ws = null;
+      setStatus({ type: "closed", refused: false }, { port });
+      this.retryTimer = setTimeout(() => this.connect(), retryDelay(this.attempt++));
+      return;
+    }
+    if (this.ws !== conn) return;
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     conn.socket = ws;
 
@@ -694,6 +705,18 @@ const bridge = {
     this.connect();
   },
 };
+
+// listening reports whether anything answers on port. A no-cors fetch needs
+// no host permission or preflight, resolves on any answer (the bridge
+// refuses it: no x-tweak header), and fails quietly when nothing listens.
+async function listening(port) {
+  try {
+    await fetch(`http://127.0.0.1:${port}/bridge`, { mode: "no-cors", cache: "no-store" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function bridgePort() {
   const { port } = await chrome.storage.local.get("port");

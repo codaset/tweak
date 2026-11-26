@@ -92,8 +92,10 @@ from that copy at once, then corrects itself when the bridge snapshot arrives. T
 
 **Staying connected**: while connected, the WebSocket keepalive keeps the worker awake. When the
 bridge can't be reached, the worker retries with backoff while awake, and a `chrome.alarms` alarm
-(every 30 seconds, the minimum) wakes it to try again. The worker works from the bridge's snapshot:
-on every start it sends `hello` with `lastSeq: 0` and rebuilds from it. It also keeps the last
+(every 30 seconds, the minimum) wakes it to try again. Each try first checks the port with a
+`no-cors` `fetch`, and opens the WebSocket only once something answers: Chrome lists every refused
+WebSocket as an error on `chrome://extensions`, and a refused `fetch` not at all. The worker works
+from the bridge's snapshot: on every start it sends `hello` with `lastSeq: 0` and rebuilds from it. It also keeps the last
 snapshot of open tweaks in `chrome.storage.session`, so pins and cards survive a worker restart
 while the bridge is down (see [When the bridge or extension is down](#when-the-bridge-or-extension-is-down)). Each content
 script holds a `runtime.connect` port, gets its page's tweaks when it connects, and reconnects when

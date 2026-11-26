@@ -1154,6 +1154,25 @@ describe("static, while the bridge is down", { skip: skipReason(fixture) ?? fals
       await up();
     }
   });
+
+  test("tries at a bridge that's down put nothing on chrome://extensions' Errors page", async () => {
+    // The Errors page records only in developer mode, which loading an
+    // unpacked extension needs anyway.
+    const extensions = await env.browser.newPage();
+    try {
+      await extensions.goto("chrome://extensions");
+      await extensions.evaluate(() => chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }));
+      const id = await inWorker(env.browser, `chrome.runtime.id`);
+      await open(env);
+      await down();
+      await sleep(4000); // the worker's first two tries (backoff.js: 1 s, then 2 s)
+      await up();
+      const { runtimeErrors } = await extensions.evaluate((id) => chrome.developerPrivate.getExtensionInfo(id), id);
+      assert.deepEqual(runtimeErrors.map((e) => e.message).filter((m) => /WebSocket|ERR_CONNECTION_REFUSED/.test(m)), []);
+    } finally {
+      await extensions.close();
+    }
+  });
 });
 
 const text = (selector) => `root.querySelector(${JSON.stringify(selector)})?.textContent`;

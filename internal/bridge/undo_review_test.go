@@ -71,3 +71,22 @@ func TestAFileNowASymlinkConflicts(t *testing.T) {
 	}
 	_ = h
 }
+
+// A folder on a recorded path replaced by a symlink since conflicts too:
+// Undo would write, or delete, through the link into another folder.
+func TestAFolderNowASymlinkConflicts(t *testing.T) {
+	_, s, dir := finished(t)
+	other := t.TempDir()
+	writeFile(t, filepath.Join(other, "new.js"), "go()\n") // what Claude's new file holds
+	os.Rename(filepath.Join(dir, "web"), filepath.Join(dir, "web-old"))
+	if err := os.Symlink(other, filepath.Join(dir, "web")); err != nil {
+		t.Skip(err)
+	}
+	r, ev := s.undo("u1", 1, "tweak-undo-conflict")
+	if r["error"] != nil || change(ev)["conflicts"] != float64(1) {
+		t.Fatalf("undo: %v, change %v", r, change(ev))
+	}
+	if got := read(t, filepath.Join(other, "new.js")); got != "go()\n" {
+		t.Fatalf("the other folder's file was touched: %q", got)
+	}
+}

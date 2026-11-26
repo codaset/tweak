@@ -56,8 +56,8 @@ func planFile(f store.UndoFile) filePlan {
 		return now.Absent == absent && (absent || (now.Text && bytes.Equal(now.Data, data)))
 	}
 	switch {
-	case isLink(f.Path):
-		p.state, p.why = conflicting, "it's now a symlink"
+	case redirected(f.Path):
+		p.state, p.why = conflicting, "it, or a folder on its path, is now a symlink"
 	case !now.Absent && !now.Text:
 		p.state, p.why = conflicting, "it's now binary or over 2 MB"
 	case is(f.AfterAbsent, f.After):
@@ -137,7 +137,7 @@ func apply(plans []filePlan) (*undoWrite, error) {
 
 func (u *undoWrite) write(p filePlan) error {
 	path := p.file.Path
-	if now := capture.Read(path); now.Absent != p.now.Absent || now.Text != p.now.Text || !bytes.Equal(now.Data, p.now.Data) || isLink(path) {
+	if now := capture.Read(path); now.Absent != p.now.Absent || now.Text != p.now.Text || !bytes.Equal(now.Data, p.now.Data) || redirected(path) {
 		return fmt.Errorf("%s changed while undoing", p.file.Shown)
 	}
 	mode := fs.FileMode(0o644)
@@ -230,11 +230,15 @@ func writeNew(path string, data []byte, mode fs.FileMode) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// isLink says path is a symlink. Recorded paths are stored resolved, so a
-// link there now was put there since.
-func isLink(path string) bool {
-	info, err := os.Lstat(path)
-	return err == nil && info.Mode()&fs.ModeSymlink != 0
+// redirected says path no longer leads to itself: it, or a folder on the
+// way to it, is now a symlink. Recorded paths are stored resolved, so a
+// link there now was put there since, and writing through it could reach
+// another file.
+func redirected(path string) bool {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+		return true
+	}
+	return capture.Canonical(path) != path
 }
 
 // undoChange is the card's Undo of tweak n. With every file clean it writes

@@ -84,11 +84,18 @@ export function probe({ document, CustomEvent }, el, detail) {
 // A content script (extension/content/<file>) run in a fresh context: by
 // default over a codasetTweak namespace `ns`, the way the page shares one;
 // `extra` adds the globals the script uses. runScripts runs several over one
-// ready-made context.
+// ready-made context. Either way the namespace gets ns.util, the shared
+// helpers namespace.js (the first file) puts there.
 const script = (file) => read(`../../extension/content/${file}`);
+const first = {};
+runInNewContext(script("namespace.js"), { globalThis: first });
+const { util } = first.codasetTweak;
 export function loadScript(file, ns, extra = {}) {
+  ns.util ??= util;
   runInNewContext(script(file), { codasetTweak: ns, globalThis: { codasetTweak: ns }, ...extra });
 }
 export function runScripts(files, context) {
+  const ns = context.globalThis?.codasetTweak ?? context.codasetTweak;
+  if (ns) ns.util ??= util;
   for (const file of files) runInNewContext(script(file), context);
 }

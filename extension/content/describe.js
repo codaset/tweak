@@ -16,6 +16,14 @@
     declined: { text: "Declined", tone: "ended" },
     withdrawn: { text: "Withdrawn", tone: "ended" },
   };
+  // The status sets, the one place each is named:
+  // - OPEN: Claude is still on it, so it can be withdrawn;
+  // - ENDED_BY_CLAUDE: Claude has finished with it, done or declined, so it
+  //   can be resolved;
+  // - FINAL: its change is final, Claude's end or the developer's withdrawal.
+  const OPEN = new Set(["sent", "delivered", "queued", "working", "question"]);
+  const ENDED_BY_CLAUDE = new Set(["done", "declined"]);
+  const FINAL = new Set([...ENDED_BY_CLAUDE, "withdrawn"]);
   // How sent and delivered read once the developer has replied to a question.
   const REPLIED = { sent: "Reply sent", delivered: "Claude has your reply" };
   // The statuses that wait on the session to hear of the tweak: these need
@@ -135,7 +143,7 @@
   }
   function described(tweak) {
     const c = tweak?.change;
-    if (!c || !FINISHED.has(tweak.status)) return null;
+    if (!c || !FINAL.has(tweak.status)) return null;
     const files = c.files ?? [];
     const unrecorded = c.unrecorded ?? [];
     if (files.length) return { kind: "recorded", title: "Files changed", files, unrecorded };
@@ -180,7 +188,7 @@
   function finish(tweak) {
     if (!tweak || tweak.resolvedAt) return null;
     if (OPEN.has(tweak.status)) return { kind: "withdraw", label: "Withdraw" };
-    if (tweak.status === "done" || tweak.status === "declined") return { kind: "resolve", label: "Resolve" };
+    if (ENDED_BY_CLAUDE.has(tweak.status)) return { kind: "resolve", label: "Resolve" };
     return null;
   }
   // kept is how long a resolved tweak, and its Undo, stays: "Kept for 6
@@ -196,9 +204,6 @@
   }
   // origin is a page URL's scheme, host and port: what /tweak claims.
   const origin = (url = "") => url.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+/i)?.[0] ?? url;
-  // The statuses Claude is still on, and those whose change is final.
-  const OPEN = new Set(["sent", "delivered", "queued", "working", "question"]);
-  const FINISHED = new Set(["done", "declined", "withdrawn"]);
   const UNRECORDED = "Also changed while Claude worked, not recorded:";
   const OUTSIDE = "outside this project";
 
@@ -261,5 +266,5 @@
     return els[0]?.label ?? "";
   }
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, origin, UNRECORDED, OUTSIDE, elapsed, label, text, selector, element, pointedAt };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, origin, OPEN, ENDED_BY_CLAUDE, FINAL, UNRECORDED, OUTSIDE, label, text, selector, element, pointedAt };
 })();

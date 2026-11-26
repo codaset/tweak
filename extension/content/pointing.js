@@ -11,6 +11,7 @@
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
+  const { cut, clamp } = ns.util;
 
   // The caps are the brief's too (internal/brief): TestPointingAgreesWithTheBrief.
   const SELECTION_CAP = 2000;
@@ -18,15 +19,10 @@
   const CONTAINS = 5; // elements fully inside an area
   const SKIPPED = new Set(["script", "style", "template", "noscript", "link", "meta", "head"]);
 
-  const clamp = (v) => Math.min(1, Math.max(0, v));
   const squash = (s) => s.replace(/\s+/g, " ");
 
-  // cut is the selection, capped; before and after are the text either side,
-  // cut furthest from the selection, with … where text was left out.
-  function cut(s, n) {
-    const cps = [...s];
-    return cps.length > n ? `${cps.slice(0, n - 1).join("")}…` : s;
-  }
+  // A selection is cut to its cap; before and after are the text either
+  // side, cut furthest from the selection, with … where text was left out.
   function cutStart(s, n) {
     const cps = [...s];
     return cps.length > n ? `…${cps.slice(cps.length - n + 1).join("")}` : s;
@@ -181,5 +177,5 @@
     return out;
   }
 
-  ns.pointing = { selectionAt, textPick, areaPick, rects, around, within, topLevelInside, smallestContaining, CONTAINS };
+  ns.pointing = { selectionAt, textPick, areaPick, rects, around, within, topLevelInside, smallestContaining };
 })();

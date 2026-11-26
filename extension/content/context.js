@@ -10,6 +10,7 @@
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
+  const { cut } = ns.util;
 
   // The styles read and the caps are the brief's too (internal/brief): a Go
   // test, TestContextAgreesWithTheBrief, checks the two sides agree.
@@ -30,12 +31,6 @@
   const NEARBY_LEVELS = 3; // the element's siblings, its parent's, and its grandparent's
   const UNSHOWN = new Set(["script", "style", "template", "noscript", "link", "meta"]);
   const CLONE_LIMIT = 300; // descendants; past this the HTML is the element's own tag
-
-  // cut shortens s to n characters (code points), ending in … when longer.
-  function cut(s, n) {
-    const cps = [...s];
-    return cps.length > n ? `${cps.slice(0, n - 1).join("")}…` : s;
-  }
 
   const oneLine = (s) => s.replace(/\s+/g, " ").trim();
 

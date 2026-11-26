@@ -311,7 +311,7 @@
     const target = under(x, y);
     if (!target) return;
     const r = target.getBoundingClientRect();
-    const clamp = (v) => Math.min(1, Math.max(0, v));
+    const { clamp } = ns.util;
     const anchor = { x: clamp((x - r.left) / (r.width || 1)), y: clamp((y - r.top) / (r.height || 1)) };
     pick({ kind: "elements", elements: [target], anchor });
   }

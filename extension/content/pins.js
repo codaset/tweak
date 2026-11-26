@@ -43,12 +43,7 @@
 
   function find(tweak) {
     const sel = tweak.targets?.elements?.[0]?.selector;
-    if (!sel) return null;
-    try {
-      return document.querySelector(sel);
-    } catch {
-      return null;
-    }
+    return sel ? ns.util.find(sel) : null;
   }
 
   ns.pins = {

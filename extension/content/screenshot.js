@@ -52,11 +52,11 @@
         await painted();
         const ok = await new Promise((done) => {
           waiting.set(id, done);
-          setTimeout(() => answer(id, false), TIMEOUT);
+          setTimeout(() => answer(id, "late"), TIMEOUT);
           ns.worker.post({ type: "capture", id, viewport: { width: innerWidth, height: innerHeight } });
         });
-        if (!ok) this.drop(id); // a late capture isn't kept
-        return ok ? id : null;
+        if (ok === "late") this.drop(id); // still capturing: it isn't kept
+        return ok === true ? id : null;
       } finally {
         conceal(false);
       }

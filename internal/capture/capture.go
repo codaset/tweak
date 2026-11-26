@@ -5,7 +5,6 @@
 package capture
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -15,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -129,58 +127,34 @@ func Changed(base Tree, scratch string) ([]string, error) {
 	return paths, nil
 }
 
-// SnapshotOf gives each path's contents as the snapshot t recorded them,
-// keyed by path: absent when the snapshot has no such file. A path outside
-// the repo (or with a newline in it), or any path with no snapshot, is
-// left out: unknown.
-func SnapshotOf(t Tree, paths []string) (map[string]File, error) {
-	out := map[string]File{}
-	if t.Hash == "" {
-		return out, nil
+// Differs reports whether a before copy differs from what the snapshot t
+// had at path, as git sees it: the copy is hashed through the repo's own
+// filters (eol normalization, clean filters), so a CRLF file stored as LF
+// still matches. A file the snapshot lacks matches only an absent copy.
+// known is false outside the repo, with no snapshot, or if git fails.
+func Differs(t Tree, path string, f File) (differs, known bool) {
+	rel, inside := Within(t.Repo, path)
+	if t.Hash == "" || !inside || strings.ContainsAny(rel, "\n\r") {
+		return false, false
 	}
-	var asked []string
-	var input strings.Builder
-	for _, p := range paths {
-		rel, inside := Within(t.Repo, p)
-		if !inside || strings.ContainsAny(rel, "\n\r") {
-			continue
-		}
-		asked = append(asked, p)
-		fmt.Fprintf(&input, "%s:%s\n", t.Hash, rel)
+	then, err := gitOut(t.Repo, nil, "rev-parse", "--verify", "--quiet", t.Hash+":"+rel)
+	if err != nil {
+		then = "" // not in the snapshot
 	}
-	if len(asked) == 0 {
-		return out, nil
+	if f.Absent || then == "" {
+		return f.Absent != (then == ""), true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "cat-file", "--batch")
+	cmd := exec.CommandContext(ctx, "git", "hash-object", "--stdin", "--path="+rel)
 	cmd.Dir = t.Repo
 	cmd.Env = cleanEnv()
-	cmd.Stdin = strings.NewReader(input.String())
-	raw, err := cmd.Output()
+	cmd.Stdin = bytes.NewReader(f.Data)
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git cat-file: %v", err)
+		return false, false
 	}
-	r := bufio.NewReader(bytes.NewReader(raw))
-	for _, p := range asked {
-		head, err := r.ReadString('\n')
-		if err != nil {
-			return nil, fmt.Errorf("git cat-file: short output")
-		}
-		fields := strings.Fields(head)
-		if len(fields) == 3 && fields[1] == "blob" {
-			size, _ := strconv.Atoi(fields[2])
-			data := make([]byte, size)
-			if _, err := io.ReadFull(r, data); err != nil {
-				return nil, fmt.Errorf("git cat-file: short output")
-			}
-			r.ReadByte() // the newline after the contents
-			out[p] = File{Text: size <= MaxText && isText(data), Data: data}
-		} else {
-			out[p] = File{Absent: true} // missing, or not a file
-		}
-	}
-	return out, nil
+	return strings.TrimSpace(string(out)) != then, true
 }
 
 // writeTree adds the whole working tree to a temporary index, a copy of the

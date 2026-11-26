@@ -180,34 +180,45 @@ func TestTheGitCheckListsWhatChangedSinceTheSnapshot(t *testing.T) {
 	}
 }
 
-// The snapshot's contents of a file, to check a before copy against: a
-// file the snapshot lacks is absent; a file outside the repo is unknown.
-func TestASnapshotGivesBackItsContents(t *testing.T) {
+// Whether a before copy differs from the snapshot, as git sees it: through
+// the repo's own filters, so a CRLF file under eol normalization matches;
+// a file the snapshot lacks matches only an absent copy; outside the repo,
+// unknown.
+func TestABeforeCopyIsComparedAsGitSeesIt(t *testing.T) {
 	dir := repo(t)
+	write(t, filepath.Join(dir, ".gitattributes"), "*.txt text eol=crlf\n")
+	write(t, filepath.Join(dir, "notes.txt"), "before\r\n")
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-qm", "crlf")
 	base, err := Snapshot(dir, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, untracked, missing := filepath.Join(base.Repo, "app.css"), filepath.Join(base.Repo, "untracked.rb"), filepath.Join(base.Repo, "web", "new.js")
-	outside := filepath.Join(t.TempDir(), "x.css")
-	got, err := SnapshotOf(base, []string{app, untracked, missing, outside})
-	if err != nil {
-		t.Fatal(err)
+	at := func(name string) string { return filepath.Join(base.Repo, name) }
+	text := func(s string) File { return File{Text: true, Data: []byte(s)} }
+	cases := []struct {
+		name           string
+		path           string
+		copy           File
+		differs, known bool
+	}{
+		{"unchanged", at("app.css"), text("a\n"), false, true},
+		{"shell-edited", at("app.css"), text("sed\n"), true, true},
+		{"crlf, normalized by git", at("notes.txt"), text("before\r\n"), false, true},
+		{"untracked, in the snapshot too", at("untracked.rb"), text("new\n"), false, true},
+		{"new, and new in the snapshot", at("web/new.js"), File{Absent: true}, false, true},
+		{"created before the hook", at("web/new.js"), text("x\n"), true, true},
+		{"deleted before the hook", at("app.css"), File{Absent: true}, true, true},
+		{"outside the repo", filepath.Join(t.TempDir(), "x.css"), text("x"), false, false},
 	}
-	if f := got[app]; !f.Text || string(f.Data) != "a\n" {
-		t.Errorf("app.css %+v", f)
+	for _, c := range cases {
+		differs, known := Differs(base, c.path, c.copy)
+		if differs != c.differs || known != c.known {
+			t.Errorf("%s: differs %v, known %v", c.name, differs, known)
+		}
 	}
-	if f := got[untracked]; string(f.Data) != "new\n" {
-		t.Errorf("an untracked file is in the snapshot too: %+v", f)
-	}
-	if f, ok := got[missing]; !ok || !f.Absent {
-		t.Errorf("a file the snapshot lacks is absent: %+v %v", f, ok)
-	}
-	if _, ok := got[outside]; ok {
-		t.Errorf("a file outside the repo is unknown")
-	}
-	if got, err := SnapshotOf(Tree{}, []string{app}); err != nil || len(got) != 0 {
-		t.Errorf("no snapshot, nothing known: %v %v", got, err)
+	if _, known := Differs(Tree{}, at("app.css"), text("a\n")); known {
+		t.Error("with no snapshot, nothing is known")
 	}
 }
 

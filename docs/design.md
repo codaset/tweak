@@ -1118,7 +1118,8 @@ why the hook records and git only checks is in
   Undo never touches them. Outside a git repo the check is skipped. The check covers the whole repo
   holding the session folder, and each round's `tweak work` takes a new tree, so your own edits
   between a question and its reply aren't counted; the unrecorded files add up across rounds.
-  Each before copy is also checked against the snapshot of the round it was recorded in: a file
+  Each before copy is also checked against the snapshot of the round it was recorded in, hashed
+  through the repo's own filters (so a CRLF file stored as LF matches): a file
   changed before the hook first saw it (a shell edit, then an Edit) is listed as recorded **and** as
   unrecorded, since Undo can only take it back to the shell-edited contents.
 - The change on a tweak's events says whether the git check ran when capture last ended

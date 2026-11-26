@@ -75,6 +75,12 @@ function run(args, { env, cwd, input, both }) {
       if (err) fail(new Error(`tweak ${args.join(" ")} failed (${err.code}): ${stderr.trim() || err.message}`));
       else done(both ? { stdout, stderr } : stdout);
     });
+    // A command that doesn't read stdin can exit before the write lands: the
+    // EPIPE says nothing (its exit, above, does), so it mustn't escape as an
+    // uncaught error that fails whichever test is running.
+    child.stdin.on("error", (err) => {
+      if (err.code !== "EPIPE") fail(err);
+    });
     child.stdin.end(input ?? "");
   });
 }

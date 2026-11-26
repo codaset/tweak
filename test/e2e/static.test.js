@@ -230,4 +230,35 @@ describe("static, when Claude doesn't pick a tweak up", { skip: skipReason(fixtu
     await env.tab.until(status, { is: (s) => s?.startsWith("Claude is working on it"), what: "work to confirm it" });
     assert.equal(await env.tab.evaluate(offered), false, "no Send again once Claude has it");
   });
+
+  // Send waits for the mappers if they haven't finished. A send given back
+  // meanwhile (the port went) never resumes: only the retry is sent.
+  test("a send given back while it waits for the mappers isn't sent; only its retry is", async () => {
+    await open(env);
+    await env.tab.evaluate(`(() => {
+      const locate = ns.context.locate;
+      ns.context.locate = (...a) => new Promise((done) => (globalThis.e2eMapped = () => locate(...a).then(done)));
+      globalThis.e2eCreates = 0;
+      const post = ns.worker.post;
+      ns.worker.post = (msg) => (msg.type === "create" && e2eCreates++, post(msg));
+      globalThis.e2eRestore = () => ((ns.context.locate = locate), (ns.worker.post = post));
+      return true;
+    })()`);
+    try {
+      await pick(env, { selector: "#name" });
+      await env.tab.until(`root.activeElement === root.querySelector(${JSON.stringify(COMPOSER_INPUT)})`, { what: "the composer to open with the focus" });
+      await env.page.keyboard.type("tweak the name field once");
+      await env.page.keyboard.press("Enter");
+      await env.tab.evaluate(`ns.panel.unsent("Not connected to Tweak")`);
+      await env.page.keyboard.press("Enter"); // the retry, still waiting
+      const from = env.watcher.lines.length;
+      await env.tab.evaluate(`e2eMapped()`);
+      const { number: n } = await env.claude.nextTweak(env.watcher, { from });
+      await env.tab.until(`ns.panel.showing()`, { is: (s) => s === n, what: `the card of tweak ${n}` });
+      assert.equal(await env.tab.evaluate("e2eCreates"), 1, "one create, from the retry");
+    } finally {
+      await env.tab.evaluate("e2eRestore()");
+      await env.page.keyboard.press("Escape");
+    }
+  });
 });

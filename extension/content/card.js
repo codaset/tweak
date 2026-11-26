@@ -114,22 +114,23 @@
   }
 
   // submit sends the tweak. Send waits for the mappers only if they haven't
-  // finished (each has its timeout); a composer closed meanwhile sends
-  // nothing.
+  // finished (each has its timeout); a send ended meanwhile (the composer
+  // closed, or the port went and unsent() gave it back) sends nothing, as a
+  // retry is a send of its own.
   async function submit() {
     if (mode?.kind !== "compose" || parts.send.disabled) return;
     const sending = mode;
     sending.sending = true;
     sending.error = "";
-    sending.ref = `t${++refs}`;
+    const ref = (sending.ref = `t${++refs}`);
     parts.text.readOnly = true;
     parts.refresh();
     const request = parts.text.value.trim();
     await sending.located;
-    if (mode !== sending) return;
+    if (mode !== sending || !sending.sending || sending.ref !== ref) return;
     ns.worker.post({
       type: "create",
-      ref: sending.ref,
+      ref,
       url: location.href,
       request,
       targets: sending.targets,

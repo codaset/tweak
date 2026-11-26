@@ -189,20 +189,22 @@ func TestTheBriefWaitsForAScreenshotThatsOnItsWay(t *testing.T) {
 }
 
 func TestAScreenshotThatNeverComesIsWaitedForOnlyAWhile(t *testing.T) {
-	h, s := tracer(t, func(o *Options) { o.ScreenshotWait = 300 * time.Millisecond })
+	// A wait well above a loaded runner's request time (with -race), so a
+	// second fetch that doesn't wait is told apart from one that does.
+	h, s := tracer(t, func(o *Options) { o.ScreenshotWait = time.Second })
 	m := createMsg("r1", "https://ernie.localhost/", "make it green")
 	m["screenshot"] = true
 	s.send(m)
 	s.readUntil("result")
 	started := time.Now()
 	_, body := h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
-	if took := time.Since(started); took < 200*time.Millisecond || took > 2*time.Second || !strings.Contains(string(body), "Screenshot: none (capture failed)") {
+	if took := time.Since(started); took < 900*time.Millisecond || took > 3*time.Second || !strings.Contains(string(body), "Screenshot: none (capture failed)") {
 		t.Fatalf("after %v:\n%s", took, body)
 	}
 	// Once given up on, it isn't waited for again.
 	started = time.Now()
 	h.do(as("s1", req{method: "POST", path: "/tweaks/1/work"}))
-	if took := time.Since(started); took > 200*time.Millisecond {
+	if took := time.Since(started); took > 700*time.Millisecond {
 		t.Fatalf("waited again: %v", took)
 	}
 
@@ -211,7 +213,7 @@ func TestAScreenshotThatNeverComesIsWaitedForOnlyAWhile(t *testing.T) {
 	s.readUntil("result")
 	started = time.Now()
 	h.do(as("s1", req{method: "POST", path: "/tweaks/2/work"}))
-	if took := time.Since(started); took > 200*time.Millisecond {
+	if took := time.Since(started); took > 700*time.Millisecond {
 		t.Fatalf("waited for nothing: %v", took)
 	}
 }

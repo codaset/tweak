@@ -1,0 +1,71 @@
+{
+  "__svelte_meta": {
+    "loc": {
+      "file": "src/lib/Button.svelte",
+      "line": 5,
+      "column": 0
+    },
+    "parent": {
+      "type": "component",
+      "file": "src/lib/Toolbar.svelte",
+      "line": 6,
+      "column": 2,
+      "componentTag": "Button",
+      "parent": {
+        "type": "component",
+        "file": "src/routes/+page.svelte",
+        "line": 8,
+        "column": 2,
+        "componentTag": "Toolbar",
+        "parent": {
+          "type": "component",
+          "file": "/home/dev/tweak/fixtures/sveltekit/node_modules/@sveltejs/kit/src/runtime/components/root.svelte",
+          "line": 38,
+          "column": 3,
+          "componentTag": "Component",
+          "parent": {
+            "type": "if",
+            "file": "/home/dev/tweak/fixtures/sveltekit/node_modules/@sveltejs/kit/src/runtime/components/root.svelte",
+            "line": 31,
+            "column": 2,
+            "parent": {
+              "type": "render",
+              "file": "/home/dev/tweak/fixtures/sveltekit/node_modules/@sveltejs/kit/src/runtime/components/root.svelte",
+              "line": 34,
+              "column": 4,
+              "snippetName": "node",
+              "parent": {
+                "type": "render",
+                "file": "src/routes/+layout.svelte",
+                "line": 13,
+                "column": 0,
+                "snippetName": "children",
+                "parent": {
+                  "type": "component",
+                  "file": "/home/dev/tweak/fixtures/sveltekit/node_modules/@sveltejs/kit/src/runtime/components/root.svelte",
+                  "line": 33,
+                  "column": 3,
+                  "componentTag": "Component",
+                  "parent": {
+                    "type": "if",
+                    "file": "/home/dev/tweak/fixtures/sveltekit/node_modules/@sveltejs/kit/src/runtime/components/root.svelte",
+                    "line": 31,
+                    "column": 2,
+                    "parent": {
+                      "type": "render",
+                      "file": "/home/dev/tweak/fixtures/sveltekit/node_modules/@sveltejs/kit/src/runtime/components/root.svelte",
+                      "line": 43,
+                      "column": 0,
+                      "snippetName": "node",
+                      "parent": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

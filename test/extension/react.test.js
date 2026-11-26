@@ -8,71 +8,7 @@
 // with the fields the probe reads, owners nested.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
-
-const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const plain = (v) => JSON.parse(JSON.stringify(v));
-
-// A page: one document both worlds share, elements that dispatch events
-// up to it, and no attributes anywhere (setAttribute throws).
-function page() {
-  const listeners = new Map();
-  const on = (type) => listeners.get(type) ?? listeners.set(type, []).get(type);
-  class CustomEvent {
-    constructor(type, init = {}) {
-      Object.assign(this, { type, detail: init.detail ?? null, bubbles: Boolean(init.bubbles), composed: Boolean(init.composed) });
-    }
-    composedPath() {
-      return this.path ?? [this.target];
-    }
-  }
-  const document = {
-    addEventListener: (type, fn) => on(type).push(fn),
-    removeEventListener: (type, fn) => on(type).splice(on(type).indexOf(fn) >>> 0, 1),
-    dispatchEvent(event) {
-      event.target ??= document;
-      for (const fn of [...on(event.type)]) fn(event);
-      return true;
-    },
-  };
-  const element = (dump = {}) => {
-    const el = {
-      ...dump,
-      setAttribute() {
-        throw new Error("no attributes are written onto the page");
-      },
-      dispatchEvent(event) {
-        event.target = el;
-        event.path = [el, document];
-        return event.bubbles ? document.dispatchEvent(event) : true;
-      },
-    };
-    return el;
-  };
-  return { document, element, CustomEvent, listeners };
-}
-
-// load runs the probe in the page's world and the content script's
-// mappers in another, over one page, with fetch serving `files` by URL.
-function load(files = {}) {
-  const { document, element, CustomEvent, listeners } = page();
-  const fetched = [];
-  const fetch = async (url) => {
-    fetched.push(url);
-    return url in files ? { ok: true, text: async () => files[url] } : { ok: false, status: 404 };
-  };
-  runInNewContext(read("../../extension/content/probe.js"), { window: {}, document, CustomEvent, JSON, Object, Symbol });
-  const ns = { ready: false, teardowns: [], context: { rules: () => [] } };
-  const context = {
-    codasetTweak: ns, globalThis: { codasetTweak: ns }, document, CustomEvent, setTimeout, clearTimeout, URL, Promise, atob, TextDecoder, fetch,
-    location: { href: "http://localhost:3000/" },
-  };
-  for (const file of ["sourcemap", "frameworks", "mappers"]) runInNewContext(read(`../../extension/content/${file}.js`), context);
-  return { ns, document, element, CustomEvent, fetched, listeners, react: (el, options) => ns.frameworks.react.map(el, options).then(plain) };
-}
-
-const dump = (dir, name) => JSON.parse(read(`./fixtures/${dir}/${name}.json`));
+import { dump, load, plain, probe, read } from "./probe-world.js";
 
 // The vite-react18 copy the dumps were captured from.
 const R18 = "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-react18-5mdOoB/src/";
@@ -174,17 +110,6 @@ test("React 19 on webpack: a module fetched again at a new URL (a hot update's ?
   files[`${WEBPACK}main.js.map`] = files[`${WEBPACK}main.js.map`].replaceAll("./src/App.jsx", "./src/Home.jsx");
   assert.equal((await react(element(versioned("?t=2"))))[0].file, "webpack://wp/./src/Home.jsx");
 });
-
-// probe sends a tweak:probe on el the way the content script does and gives
-// the tweak:probe-result details heard on document during the dispatch.
-function probe({ document, CustomEvent }, el, detail) {
-  const heard = [];
-  const hear = (e) => heard.push(e.detail);
-  document.addEventListener("tweak:probe-result", hear);
-  el.dispatchEvent(new CustomEvent("tweak:probe", { bubbles: true, composed: true, detail }));
-  document.removeEventListener("tweak:probe-result", hear);
-  return heard;
-}
 
 test("the probe answers at once on document, a JSON string carrying the request's ID; with no fiber, React is null", () => {
   const page = load();

@@ -74,7 +74,53 @@
     return { element, components };
   }
 
-  const READERS = { react };
+  // ---- Vue 3: the component instance on the element ----
+
+  const text = (v) => (typeof v === "string" && v ? v : undefined);
+
+  // vue is the components the element is rendered inside, innermost first,
+  // each {file?, name?}: its type's __file (an absolute path, set by
+  // plugin-vue in dev) and name. The first is the one whose template wrote
+  // the element: the vnode's ctx, which for slot content is the component
+  // that wrote the slot, not the one rendering it (__vueParentComponent).
+  function vue(el) {
+    const first = el.__vnode?.ctx ?? el.__vueParentComponent;
+    if (!first || typeof first !== "object") return null;
+    const components = [];
+    const seen = new Set();
+    for (let c = first; c && typeof c === "object" && !seen.has(c) && components.length < 20; c = c.parent) {
+      seen.add(c);
+      const type = c.type ?? {};
+      components.push({ file: text(type.__file), name: text(type.__name) ?? text(type.name) });
+    }
+    return { components };
+  }
+
+  // ---- Svelte: __svelte_meta on the element ----
+
+  const written = (p) => ({ file: text(p?.file), line: p?.line, column: p?.column });
+
+  // svelte is the element's loc as Svelte gives it ({file, line, column},
+  // plus char in Svelte 4, whose lines are 0-based), and in Svelte 5 its
+  // parents, innermost first: each block or component it's inside, with
+  // where it is written ({type, file, line, column, name}). They're copied:
+  // the page's are circular.
+  function svelte(el) {
+    const meta = el.__svelte_meta;
+    if (!meta?.loc || typeof meta.loc !== "object") return null;
+    const loc = written(meta.loc);
+    if (typeof meta.loc.char === "number") loc.char = meta.loc.char;
+    if (!("parent" in meta)) return { loc };
+    const parents = [];
+    const seen = new Set();
+    for (let p = meta.parent; p && typeof p === "object" && !seen.has(p) && parents.length < 50; p = p.parent) {
+      seen.add(p);
+      parents.push({ type: text(p.type), ...written(p), name: text(p.componentTag) });
+    }
+    return { loc, parents };
+  }
+
+  const READERS = { react, vue, svelte };
 
   document.addEventListener("tweak:probe", (e) => {
     let q;

@@ -11,14 +11,17 @@ import (
 // Place turns a path as the page gave it into a project-relative one, with
 // forward slashes, if it names a file inside folder (docs/design.md,
 // "Finding the source", Paths). The page may give an absolute path, a
-// project-relative one, or a dev-server URL, /@fs/ included. A path that
+// project-relative one, a dev-server URL, /@fs/ included, or a webpack
+// source (webpack://<name>/./path). A path that
 // can't be placed gives ok false, and the brief shows it as given.
 func Place(folder, given string) (rel string, ok bool) {
 	if folder == "" || given == "" {
 		return "", false
 	}
 	p := given
-	if u, err := url.Parse(given); err == nil && (u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "file") {
+	if rest, found := strings.CutPrefix(given, "webpack://"); found {
+		p = webpackPath(rest)
+	} else if u, err := url.Parse(given); err == nil && (u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "file") {
 		p = u.Path // decoded, without the query and hash
 	}
 	if rest, found := strings.CutPrefix(p, "/@fs/"); found {
@@ -40,6 +43,28 @@ func Place(folder, given string) (rel string, ok bool) {
 		}
 	}
 	return "", false
+}
+
+// webpackPath is a webpack://<name>/./path source (after the scheme) as a
+// path relative to the project: the name dropped (empty, `[name]`, or a
+// scoped package's @scope/name), then any loader query and a leading ./.
+// Cut as a string: url.Parse refuses a bracketed `[name]` host.
+func webpackPath(rest string) string {
+	skip := 1
+	if strings.HasPrefix(rest, "@") {
+		skip = 2
+	}
+	for range skip {
+		_, after, ok := strings.Cut(rest, "/")
+		if !ok {
+			return ""
+		}
+		rest = after
+	}
+	if i := strings.IndexAny(rest, "?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	return strings.TrimPrefix(rest, "./")
 }
 
 var windowsDrive = regexp.MustCompile(`^/[A-Za-z]:/`)

@@ -1,0 +1,21 @@
+[
+  {
+    "name": "export button, two components deep",
+    "pick": { "selector": ".export-button" },
+    "locations": [{ "file": "src/lib/Button.svelte", "line": 5, "role": "element", "via": "svelte" }],
+    "clues": ["text Export", "class export-button"],
+    "brief": ["- Rendered inside: `Button` (`src/lib/Toolbar.svelte:6:3`), `Toolbar` (`src/routes/+page.svelte:8:3`)"]
+  },
+  {
+    "name": "save button, written in the page and passed to Panel",
+    "pick": { "selector": "[data-testid=save]" },
+    "locations": [{ "file": "src/routes/+page.svelte", "line": 10, "role": "element", "via": "svelte" }],
+    "clues": ["data-testid=save", "text Save"]
+  },
+  {
+    "name": "panel heading",
+    "pick": { "selector": ".panel-title" },
+    "locations": [{ "file": "src/lib/Panel.svelte", "line": 7, "role": "element", "via": "svelte" }],
+    "clues": ["text Profile", "class panel-title"]
+  }
+]

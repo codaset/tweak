@@ -43,3 +43,17 @@ updates:
     groups:
       vite-react19:
         patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /fixtures/vite-vue
+    schedule:
+      interval: monthly
+    groups:
+      vite-vue:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /fixtures/sveltekit
+    schedule:
+      interval: monthly
+    groups:
+      sveltekit:
+        patterns: ["*"]

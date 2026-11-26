@@ -105,6 +105,8 @@ jobs:
       # runner links into each copy of the fixture.
       - run: npm ci --prefix fixtures/vite-react18
       - run: npm ci --prefix fixtures/vite-react19
+      - run: npm ci --prefix fixtures/vite-vue
+      - run: npm ci --prefix fixtures/sveltekit
       - run: npm run e2e
 
   consistency:

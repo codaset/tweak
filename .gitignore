@@ -8,4 +8,5 @@ node_modules/
 /fixtures/rails/tmp/
 /fixtures/rails/log/
 # The Vite fixtures' dependency cache (cacheDir), in a copy that ran here
-/fixtures/vite-react*/.vite/
+/fixtures/*/.vite/
+/fixtures/sveltekit/.svelte-kit/

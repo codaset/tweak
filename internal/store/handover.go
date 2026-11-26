@@ -512,3 +512,10 @@ func (s *Store) EndSession(session string) error {
 	}
 	return tx.commit()
 }
+
+// HasLapsed says whether the session has lapsed claims kept, lost or not.
+func (s *Store) HasLapsed(session string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM lapsed_claims WHERE session = ?`, session).Scan(&n)
+	return n > 0, err
+}

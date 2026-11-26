@@ -91,8 +91,15 @@ func (b *Bridge) unwatched(session string) bool {
 // their capture, and returns the claim lost lines it hasn't heard yet.
 func (b *Bridge) returning(session string) []string {
 	// A return can restart a capture, so it's serialised with a lapse's
-	// teardown, which must not end the capture it restored. Git never runs
-	// under the lock, so this is short.
+	// teardown, which must not end the capture it restored. Most check-ins
+	// have nothing to restore, and take no lock: the edit hook's post never
+	// waits here. A lapse just after this look waits for the next check-in.
+	if lapsed, err := b.store.HasLapsed(session); err != nil || !lapsed {
+		if _, err := b.store.CheckIn(session); err != nil {
+			b.log.Printf("check-in %s: %v", session, err)
+		}
+		return nil
+	}
 	b.captureMu.Lock()
 	defer b.captureMu.Unlock()
 	r, err := b.store.Return(session, b.opts.RestoreFor)

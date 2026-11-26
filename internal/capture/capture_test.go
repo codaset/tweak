@@ -219,6 +219,20 @@ func TestABeforeCopyIsComparedAsGitSeesIt(t *testing.T) {
 			t.Errorf("%s: differs %v, known %v", c.name, differs, known)
 		}
 	}
+	// A file in a nested repo (a submodule): the outer snapshot holds only
+	// its gitlink, so its contents are unknown.
+	inner := filepath.Join(dir, "vendor", "ui")
+	write(t, filepath.Join(inner, "b.txt"), "b\n")
+	git(t, inner, "init", "-q")
+	git(t, inner, "add", "-A")
+	git(t, inner, "commit", "-qm", "inner")
+	nested, err := Snapshot(dir, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if differs, known := Differs(nested, filepath.Join(nested.Repo, "vendor", "ui", "b.txt"), text("b\n")); differs || known {
+		t.Errorf("a nested repo's file: differs %v, known %v", differs, known)
+	}
 	if _, known := Differs(Tree{}, at("app.css"), text("a\n")); known {
 		t.Error("with no snapshot, nothing is known")
 	}

@@ -157,7 +157,8 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `card` | `number`: the tab's open card, or `null` when it closes |
 | | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own), and `shot: {id, rects}` when the pick has a capture: the worker keeps that, and uploads the PNG once the number comes back |
 | | `reply` | a `reply` for the bridge, with the tab's `ref`, likewise |
-| | `withdraw`, `resolve` | the card's **Withdraw** or **Resolve**, for the bridge, with the tab's `ref`, likewise; answered by `withdrew` or `resolved` (`ref`, and the `number` or an `error` and `message`) |
+| | `again`, `undo` | the card's **Send again** or **Undo** on `number`, for the bridge, with the tab's `ref`, likewise; answered by `resent` or `undid` |
+| | `withdraw`, `resolve` | the card's **Withdraw** or **Resolve**, for the bridge, with the tab's `ref`, likewise; answered by `withdrew` or `resolved` |
 | | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
 | | `draft` | `draft`: the tab's drafts as you type, `{compose, replies}` (the composer's page, pick kind, selectors, anchor, selection (with its whole text, uncapped) or area, and text; each card's reply by number, with which of its questions it answers), or `null` once none is left. A tab sends it again after its port reconnects |
 | | `capture` | `id`, and `viewport` (`innerWidth`, `innerHeight`): capture the tab now, its overlay hidden, and hold it under `id` |
@@ -168,6 +169,7 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `captured` | `id`, `ok`: whether the capture is held |
 | | `created` | `ref`, and the `number` created or an `error` and `message` |
 | | `replied` | `ref`, and the `number` replied to or an `error` and `message` |
+| | `resent`, `undid`, `withdrew`, `resolved` | the answers to `again`, `undo`, `withdraw` and `resolve`: `ref`, and the `number` or an `error` and `message` |
 | | `claimed` | `claimed`, sent to every tab whenever the claims change |
 | | `asked` | `tweak`, which has just become a question: sent to the tab it was sent from, which opens its card, or with `toast: true` to the tabs showing its page when that tab is gone |
 | | `state` | `connection`: connecting, connected, refused or disconnected |
@@ -300,11 +302,11 @@ after a failed one doesn't try again on every poll.
    PID it found, which any other bridge refuses (`not-this-bridge`), so it never stops one another
    handover has started since.
 
-Watchers and the extension reconnect by themselves. `tweak hook pre-edit` waits up to 3 seconds for a
-bridge mid-restart, so an edit made during a handover keeps its before copy. The handing-over CLI
-leaves a `handover` file in the state folder while it runs, which is how the hook tells a restart
-from a bridge that's down; a file older than 30 seconds (its CLI died) doesn't count. `hooks.json`
-gives `pre-edit` 5 seconds for this.
+Watchers and the extension reconnect by themselves. A hook gives up after 1 second, but `tweak hook
+pre-edit` waits up to 3 more for a bridge mid-restart, so an edit made during a handover keeps its
+before copy; `hooks.json` gives it 5 seconds, so a slow start still fits. The handing-over CLI leaves
+a `handover` file in the state folder while it runs, which is how the hook tells a restart from a
+bridge that's down; a file older than 30 seconds (its CLI died) doesn't count.
 
 **Older clients**: a bridge refuses a CLI or extension only when the protocol integer differs, not the
 version, so a session still on the previous plugin version keeps working through most releases. On a
@@ -361,7 +363,7 @@ Browser text calls the bridge "Tweak"; CLI and skill text call it "the bridge".
   now, and moves each lapsed claim's lapse time on by the downtime (the sweep marks the bridge up),
   so the 10-minute lapse and the 24-hour restore window, which runs from the lapse, count only time
   the bridge was up. Lost claims are forgotten by the same clock.
-- **The hooks never start a bridge**. `tweak hook pre-edit` keeps its 2-second budget (the 3-second
+- **The hooks never start a bridge**. `tweak hook pre-edit` keeps its 1-second budget (the longer
   wait is only for a handover in progress), so edits made while the bridge is down go unrecorded.
   `tweak hook session-end`, finding no bridge, writes `~/.local/state/codaset-tweak/released/<session-id>`,
   and the next bridge to start releases those claims at once.
@@ -543,12 +545,13 @@ when a tweak passes to another session; see [When the session goes quiet](#when-
 | `sessions` | id (agent session ID), agent, folder, label, last check-in |
 | `claims` | id, session, pattern, created |
 | `lapsed_claims` | id, session, pattern, created, lapsed at, lost to (the folder that claimed an overlapping pattern since), reported |
-| `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path |
+| `tweaks` | number, session, page, page URL, status, status at, resolved at, created/updated, targets (JSON), click anchor, screenshot path; resends and wait from (the unconfirmed-tweak wait, see [No lost tweaks](#no-lost-tweaks)); `left_*` (by, why, status, status at, capturing: the session that let go of the page, how, and the tweak's state then, so a lapsed claim's tweaks come back as they were); line (the last inbox line it had: `new` or `reply`) |
 | `entries` | tweak, from, kind, text, at |
 | `changes` | tweak (one change each), state, unrecorded files (JSON), capturing session, folder, git repo and tree, whether the check ran, conflicts (while `undo-requested`) |
-| `change_files` | change, path (once per change), contents before (or absent), contents after, path as shown, outside the project, recordable |
+| `change_files` | change, path (once per change), contents before (or absent), contents after, path as shown, outside the project, recordable, git tree of its round |
 | `events` | sequence, type, tweak or claim, payload (JSON), at |
 | `deliveries` | session, last acknowledged sequence |
+| `meta` | key, value: when the bridge was last up, when the extension was last seen, and which version wrote the file |
 
 `page` is the origin and path the tweak belongs to; `page URL` is the
 full URL it was sent from. `status at` is when the status last changed, which gives the card's time
@@ -559,9 +562,7 @@ The **click anchor** is `{x, y}`, the click point as a fraction (0 to 1) of elem
 pin follows the element when the layout moves.
 
 Targets (elements, selected text, area, with their locations, search clues and context) are JSON,
-shaped as in [Finding the source](#finding-the-source). So far they are a subset:
-`{elements: [{label, text?, selector}]}`. Later tickets add the rest, and extend `schema/create.json`
-with them.
+shaped as in [Finding the source](#finding-the-source), and in `schema/create.json`.
 
 ### No lost tweaks
 
@@ -1277,8 +1278,8 @@ why the hook records and git only checks is in
   With one, it posts the file's path to `POST /edits/before`, and the bridge saves the file's
   current contents as the **before copy**, the first time each file is touched in this tweak only (a
   file that doesn't exist yet is recorded as absent). The hook always exits 0 with no output, gives up
-  within 2 seconds (up to 5 mid-handover, which `hooks.json` allows), and never blocks an edit; if the bridge is down, the edit just goes
-  unrecorded. It never starts a bridge, and before the launcher's first download it exits at once.
+  within 1 second (up to 4 mid-handover; see "Handing over to a newer bridge"), and never blocks an
+  edit; if the bridge is down, the edit just goes unrecorded. It never starts a bridge, and before the launcher's first download it exits at once.
   The file is `tool_input.file_path` (Edit, Write) or `tool_input.notebook_path` (NotebookEdit: the
   tool's own input names it so, but the hooks reference documents no NotebookEdit fields, so it's
   still to be confirmed in a live session); a relative path is taken against the input's `cwd`.
@@ -1686,30 +1687,36 @@ the tag and any draft Release, then run it again.
 
 ## Before building
 
-- For undo: confirm the `NotebookEdit` hook input (`notebook_path`; inferred, not documented), pick
-  a Go three-way merge that fits (a diff3-style merge over lines), and note that the `/clear`
-  `SessionEnd` check below also decides whether capture ends on `/clear`.
-- Read Handle (https://github.com/tonkotsu-ai/handle, MIT): code can be reused with credit.
-- Read Agentation (https://github.com/benjitaylor/agentation) for ideas only, copying no code: its
-  licence has a non-compete clause that a competing tool would breach.
-- Check whether Proscenium or Rails already reload the page when files change.
-- Confirm a plugin skill can be invoked as plain `/tweak` as well as `/codaset:tweak`.
-- Verify the Vue 3 and Svelte dev metadata, and React 19's `_debugStack` plus source-map route, on
-  real dev builds.
-- Check `/clear` with a logging hook: which session ID `SessionEnd` (reason `clear`) receives, and
-  whether a running Monitor survives. If the hook gets the new ID, claims fall back to the 10-minute
-  lapse. Also check whether a skill's `allowed-tools` grant holds in a turn started by a Monitor
-  event, and whether events arrive mid-turn or only between turns.
-- For the launcher: confirm the exec bit on `bin/tweak` survives Claude Code's copy into the plugin
-  cache, and whether a Monitor finds `tweak` on `PATH` like the Bash tool does (if not, the skill
-  starts it as `${CLAUDE_PLUGIN_ROOT}/bin/tweak watch`).
-- Confirm a cross-compiled `darwin/arm64` binary, downloaded with `curl`, runs as-is (Go's ad-hoc
-  signature, no quarantine flag).
-- For extension self-update: confirm `chrome.runtime.reload()` re-reads an unpacked extension's
-  files from disk, and that it clears `chrome.storage.session`.
-- Confirm the e2e setup on an ubuntu-24.04 runner (verified on macOS only): Puppeteer's
-  `enableExtensions` loads the test copy, whether `--no-sandbox` is needed, and each fixture's boot
-  time.
+Status after the build. Each item is done (with where), or left for the manual checks in
+[#51](https://github.com/codaset/tweak/issues/51).
+
+- **Undo.** Done: the Go three-way merge is `internal/merge` (see [Reversing](#reversing)); the hook
+  reads `notebook_path` for `NotebookEdit` (`internal/cli/hook.go`) and ends capture on `/clear`
+  through `SessionEnd`. Left for #51: that field name and `/clear`'s `SessionEnd` input are still
+  inferred from the tool's schema and the docs, not seen in a live session.
+- **Handle** (MIT). Done: read in `research/handle`; its notice is kept in
+  `plugins/codaset/THIRD_PARTY_NOTICES.md` for any code ported.
+- **Agentation.** Done: read for ideas only, no code copied.
+- **Proscenium and Rails reload.** Done: neither reloads the page (`research/dev-reload`), which is why
+  [Reloading after a change](#reloading-after-a-change) has the extension reload it.
+- **A plain `/tweak`.** Done: the skill sets `name: tweak`, so `/tweak` and `/codaset:tweak` both work
+  (`plugins/codaset/skills/tweak/SKILL.md`; `research/claude-plugins`). Left for #51: confirm on a real
+  install.
+- **Vue 3, Svelte and React 19 metadata.** Done: the mappers run over metadata captured from real dev
+  builds, in `test/extension/fixtures/` and the `fixtures/vite-*` and `fixtures/sveltekit` e2e fixtures.
+- **`/clear` and the Monitor.** Done: `/clear` gives a new session ID and leaves a running Monitor with
+  the old one, so claims are released on `/clear` rather than re-keyed (see [Claims](#claims)). Left for
+  #51: whether a skill's `allowed-tools` grant holds in a turn a Monitor event starts.
+- **The launcher.** Done: `bin/tweak` is committed with its exec bit, and the skill starts the watcher
+  as `tweak watch`. Left for #51: that the exec bit survives Claude Code's copy into the plugin cache,
+  and that a Monitor finds `tweak` on `PATH`.
+- **`darwin/arm64` over `curl`.** Done: no quarantine flag, and Go ad-hoc signs it (see
+  [Building](#building)).
+- **Extension self-update.** Done: `chrome.runtime.reload()` re-reads the unpacked files and clears
+  `chrome.storage.session`, confirmed in Chrome 158 (see [The extension updates
+  itself](#the-extension-updates-itself)).
+- **The e2e setup on ubuntu-24.04.** Done: the `e2e` job in `.github/workflows/ci.yml` runs it; the
+  AppArmor restriction needs `--no-sandbox` (see [Testing](#testing)).
 
 ## Not in v1
 

@@ -1158,7 +1158,10 @@ Each fixture has:
 - a `package.json` with **exact** versions and a committed lockfile (`rails`: `Gemfile`,
   `Gemfile.lock`, `.ruby-version`);
 - `fixture.json`: the start command as an argv with a `{port}` placeholder (`start`), the path to
-  poll for readiness (`ready`), and the toolchain commands it needs beyond Node (`needs`, e.g. `ruby`);
+  poll for readiness (`ready`), the toolchain commands it needs beyond Node (`needs`, e.g. `ruby`),
+  and environment variables for the start command (`env`, e.g. the one that turns Rails'
+  annotations on). The ready path is polled on the host the app is opened on: for `localhost`, on
+  both `127.0.0.1` and `::1`, as Chrome tries both, so a server bound to either is ready;
 - `expected.json`: the golden cases (below).
 
 Dependabot opens monthly update PRs, grouped per fixture. A red one is the point: it means a framework
@@ -1200,11 +1203,12 @@ Files run concurrently (node's default), each with its own Chrome. For each fixt
 5. kills the process group when the file's tests finish.
 
 Chrome loads a **test copy of the extension**: the manifest with `http://localhost/*` moved into
-`host_permissions` (a pre-grant, since the prompt can't be driven headlessly), and a test-only
-message that calls the shortcut and context-menu handlers. The worker checks for `<all_urls>`, so the
-copy shows the grey `!` and **Allow access** while working on `localhost`, and doesn't inject into
-tabs already open when a claim arrives, so a test opens its page after the claim is registered. The message is sent from a
-page click the content script hears: handlers like `sidePanel.open` need a user gesture, and CDP's
+`host_permissions` (a pre-grant, since the prompt can't be driven headlessly), `DEFAULT_PORT`
+patched to the test bridge's port (the copy refuses to build while any file still names 47391), and
+a test-only message that calls the shortcut and context-menu handlers. The worker checks for
+`<all_urls>`, so the copy shows the grey `!` and **Allow access** while working on `localhost`, and
+doesn't inject into tabs already open when a claim arrives, so a test opens its page after the
+claim is registered. The message is sent from a page click the content script hears: handlers like `sidePanel.open` need a user gesture, and CDP's
 `userGesture` flag doesn't carry one to the worker. The side panel is tested as `panel.html`
 open in a tab. The `activeTab` path serves `static` a second time on `127.0.0.1`, which the copy has
 no grant for, and uses `page.triggerExtensionAction`, asserting the screenshot is captured.

@@ -78,16 +78,22 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      # The browser comes from the cache, or on a miss from the install step,
+      # never from npm ci.
       - name: Chrome for Testing version
         id: chrome
         run: echo "version=$(node -p 'require("./.puppeteerrc.cjs").chrome.version')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
+        id: chrome-cache
         with:
           path: ~/.cache/puppeteer
           key: chrome-for-testing-${{ runner.os }}-${{ steps.chrome.outputs.version }}
-      # The pinned version from .puppeteerrc.cjs; nothing to do on a cache hit.
-      - run: npx puppeteer browsers install chrome
+      - run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+      - name: Install Chrome for Testing (cache miss)
+        if: steps.chrome-cache.outputs.cache-hit != 'true'
+        run: npx puppeteer browsers install chrome
       - run: npm run e2e
 
   consistency:

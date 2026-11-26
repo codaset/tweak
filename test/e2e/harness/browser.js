@@ -1,6 +1,6 @@
 // Chrome for Testing with the extension's test copy, and the ways in.
 import puppeteer from "puppeteer";
-import { sleep } from "./fixture.js";
+import { until } from "./util.js";
 
 // Linux CI only: ubuntu-24.04's AppArmor rule on unprivileged user
 // namespaces stops Chrome's own sandbox.
@@ -31,44 +31,47 @@ export async function inWorker(browser, expression) {
   }
 }
 
-// Polls fn until it returns something truthy, or returns its last value
-// after timeout. Errors count as not yet.
-export async function until(fn, { timeout = 10_000, every = 50 } = {}) {
-  const end = Date.now() + timeout;
-  for (;;) {
-    const v = await Promise.resolve()
-      .then(fn)
-      .catch(() => false);
-    if (v || Date.now() > end) return v;
-    await sleep(every);
-  }
-}
+// What the content script's world is called, and how an expression there
+// reaches the content script's namespace and the overlay's shadow root.
+export const CONTENT_WORLD = "Codaset Tweak";
+export const NAMESPACE = "globalThis.codasetTweak";
+export const OVERLAY_ROOT = "ns?.overlay?.root";
 
 // The content script's isolated world in a page, over CDP. The overlay sits
-// in a closed shadow root, so the page can't see in; this world can, through
-// globalThis.codasetTweak.overlay.root. Expressions see `ns` and `root`.
+// in a closed shadow root, so the page can't see in; this world can.
+// Expressions see `ns` (NAMESPACE) and `root` (OVERLAY_ROOT).
 export async function contentScript(page) {
   const cdp = await page.createCDPSession();
-  const contexts = [];
+  await cdp.send("Page.enable");
+  const { frameTree } = await cdp.send("Page.getFrameTree");
+  const mainFrame = frameTree.frame.id;
+  // Only the content script's world in the main frame's current document.
+  // A navigation forgets it at once, so a call made after one never reaches
+  // the old document's world: it waits for the new one.
+  let current = null;
   cdp.on("Runtime.executionContextCreated", ({ context }) => {
-    if (context.auxData?.type === "isolated" && context.name === "Codaset Tweak" && context.auxData.isDefault === false) contexts.push(context.id);
+    const { type, frameId } = context.auxData ?? {};
+    if (type === "isolated" && frameId === mainFrame && context.name === CONTENT_WORLD) current = context.id;
   });
   cdp.on("Runtime.executionContextDestroyed", ({ executionContextId }) => {
-    const i = contexts.indexOf(executionContextId);
-    if (i >= 0) contexts.splice(i, 1);
+    if (executionContextId === current) current = null;
   });
-  cdp.on("Runtime.executionContextsCleared", () => (contexts.length = 0));
+  cdp.on("Runtime.executionContextsCleared", () => (current = null));
+  cdp.on("Page.frameNavigated", ({ frame }) => {
+    if (frame.id === mainFrame) current = null;
+  });
+  page.on("request", (req) => {
+    if (req.isNavigationRequest() && req.frame() === page.mainFrame()) current = null;
+  });
   await cdp.send("Runtime.enable");
 
-  const evaluate = async (expression, { userGesture = false } = {}) => {
-    const contextId = contexts.at(-1);
-    if (!contextId) throw new Error("the content script isn't running in this page");
+  const evaluate = async (expression) => {
+    if (!current) throw new Error("the content script isn't running in this page");
     const r = await cdp.send("Runtime.evaluate", {
-      contextId,
+      contextId: current,
       returnByValue: true,
       awaitPromise: true,
-      userGesture,
-      expression: `(async () => { const ns = globalThis.codasetTweak; const root = ns?.overlay?.root; return (${expression}); })()`,
+      expression: `(async () => { const ns = ${NAMESPACE}; const root = ${OVERLAY_ROOT}; return (${expression}); })()`,
     });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
     return r.result.value;
@@ -76,8 +79,8 @@ export async function contentScript(page) {
 
   return {
     evaluate,
-    // Polls an expression until it's truthy.
-    until: (expression, opts) => until(() => evaluate(expression), opts),
+    // Polls an expression until it's truthy, or until opts.is accepts it.
+    until: (expression, opts) => until(() => evaluate(expression), { what: expression, ...opts }),
     // The test copy's test-only message: calls a worker handler the
     // shortcuts or the toolbar's context menu call, with this tab. It's sent
     // from a real click in the page's top-left corner, so it carries a user

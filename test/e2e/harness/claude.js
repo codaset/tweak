@@ -5,8 +5,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { promisify } from "node:util";
-import { freePort, sleep } from "./fixture.js";
+import { freePort } from "./fixture.js";
+import { alive, sleep } from "./util.js";
 
 // `npm run e2e` builds it here first.
 export const BIN = process.env.TWEAK_E2E_BIN ?? resolve(import.meta.dirname, "../../../node_modules/.cache/codaset-tweak-e2e/tweak");
@@ -39,25 +39,30 @@ export async function devBridge() {
   };
 }
 
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const run = promisify(execFile);
+// Runs a command and resolves with its stdout; with `input`, that's its
+// stdin. A non-zero exit rejects, with stderr in the message.
+function run(args, { env, cwd, input }) {
+  return new Promise((done, fail) => {
+    const child = execFile(BIN, args, { env, cwd }, (err, stdout, stderr) => {
+      if (err) fail(new Error(`tweak ${args.join(" ")} failed (${err.code}): ${stderr.trim() || err.message}`));
+      else done(stdout);
+    });
+    child.stdin.end(input ?? "");
+  });
+}
 
 // The stand-in for Claude: a made-up session ID, working in the fixture copy.
 export function standIn(bridge, { folder, session = `claude-stand-in-${process.pid}` }) {
   const env = { ...bridge.env, CLAUDE_CODE_SESSION_ID: session };
   const watchers = new Set();
-  const tweak = async (...args) => (await run(BIN, args, { env, cwd: folder })).stdout;
+  const tweak = (...args) => run(args, { env, cwd: folder });
   return {
     session,
+    // tweak <args>, in the session's folder, as Claude's Bash tool runs it.
     tweak,
+    // The same, with stdin: a `-` message, or a hook's JSON for
+    // `tweak hook pre-edit` in the round trips.
+    tweakWith: (input, ...args) => run(args, { env, cwd: folder, input }),
     claim: (pattern) => tweak("claim", pattern),
     release: () => tweak("release"),
     work: (n) => tweak("work", String(n)),

@@ -259,6 +259,15 @@
       parts.text.readOnly = false;
       parts.refresh();
     },
+    // unsent ends a send whose answer can't come (the worker's port went):
+    // the composer keeps the text and says why.
+    unsent(why) {
+      if (mode?.kind !== "compose" || !mode.sending) return;
+      mode.sending = false;
+      mode.error = why;
+      parts.text.readOnly = false;
+      parts.refresh();
+    },
     // update re-renders from the page's tweaks and the connection.
     update() {
       if (mode?.kind === "card") updateCard();

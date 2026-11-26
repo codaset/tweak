@@ -68,6 +68,9 @@
       case "state":
         ns.panel.update();
         break;
+      case "closed": // the worker's port is gone: a send in flight is lost with it
+        ns.panel.unsent("Not connected to Tweak");
+        break;
       case "tweaks":
         tweaks.clear();
         for (const t of msg.tweaks) tweaks.set(t.number, t);

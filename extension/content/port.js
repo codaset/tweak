@@ -2,6 +2,8 @@
 // The worker can stop at any time; the port then disconnects and is opened
 // again, which starts the worker. If the extension itself is gone (reloaded
 // or updated), the script removes itself so a fresh copy can be injected.
+// Listeners hear a local {type: "open"} each time the port connects, and
+// {type: "closed"} each time it's lost.
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
@@ -35,6 +37,10 @@
       });
       port.onDisconnect.addListener(() => {
         port = null;
+        // Until the new port's state arrives, nothing can be sent, and
+        // whatever was waiting on the worker will never be answered.
+        ns.worker.connection = "connecting";
+        for (const fn of listeners) fn({ type: "closed" });
         if (!ns.alive()) ns.teardown();
         else setTimeout(() => ns.worker.connect(), 100);
       });

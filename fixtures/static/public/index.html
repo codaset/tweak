@@ -24,6 +24,10 @@
     </main>
     <!-- Overlay layering: a modal dialog makes the rest of the page inert, and
          a popover sits in the top layer (design.md § Overlay layering). -->
+    <dialog id="confirm" class="confirm">
+      <p>Discard your changes?</p>
+      <form method="dialog"><button id="confirm-discard" class="btn" value="discard">Discard</button></form>
+    </dialog>
     <dialog id="profile" class="profile">
       <form method="dialog">
         <h2>Edit profile</h2>

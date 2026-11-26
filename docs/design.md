@@ -818,7 +818,11 @@ Decided in [The tweak CLI and the /tweak skill](https://github.com/codaset/tweak
 - At minimum, three Claude steps per tweak: fetch the brief, edit, done.
 - Nothing the skill runs causes a permission prompt once the allow rule `Bash(tweak *)` is in the
   user's settings. A skill's `allowed-tools` grant lasts one turn, so it can't cover re-arms and
-  event turns; the first `/tweak` offers to add the rule.
+  event turns; the first `/tweak` offers to add the rule. `tweak claim` only reads the settings
+  files whose allow lists Claude Code merges: the user's (`$CLAUDE_CONFIG_DIR` or `~/.claude`),
+  the project's `.claude/settings.json`, and its `.claude/settings.local.json`, which is also read
+  at the repo root (the main checkout's for a worktree). `Bash(tweak:*)`, `Bash` and `Bash(*)` count too.
+  Managed settings, deny and ask rules aren't checked.
 - If a tweak arrives mid-task, Claude finishes its current step, handles the tweak, then resumes.
   It queues the tweak instead only when its work can't be paused.
 - Changes are never committed automatically.

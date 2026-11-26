@@ -30,6 +30,15 @@ if (read("LICENSE") !== read("plugins/codaset/LICENSE")) {
   problems.push("plugins/codaset/LICENSE differs from LICENSE");
 }
 
+// The shipped skill is design.md's agreed text, byte for byte: the
+// four-backtick markdown block under "### The /tweak skill".
+const skill = read("docs/design.md").match(/^### The \/tweak skill\n[\s\S]*?^````markdown\n([\s\S]*?)^````$/m)?.[1];
+if (skill === undefined) {
+  problems.push("docs/design.md: no ````markdown block under ### The /tweak skill");
+} else if (read("plugins/codaset/skills/tweak/SKILL.md") !== skill) {
+  problems.push("plugins/codaset/skills/tweak/SKILL.md differs from the skill text in docs/design.md § The /tweak skill");
+}
+
 if (problems.length) {
   console.error(problems.join("\n"));
   process.exit(1);

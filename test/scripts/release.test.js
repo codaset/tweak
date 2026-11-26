@@ -20,7 +20,7 @@ const stamped = [
 
 function copyOfRepo() {
   const root = mkdtempSync(join(tmpdir(), "tweak-release-"));
-  for (const file of [...stamped, ".claude-plugin/marketplace.json", "LICENSE", "plugins/codaset/LICENSE", "scripts/check-consistency.js"]) {
+  for (const file of [...stamped, ".claude-plugin/marketplace.json", "LICENSE", "plugins/codaset/LICENSE", "scripts/check-consistency.js", "docs/design.md", "plugins/codaset/skills/tweak/SKILL.md"]) {
     cpSync(join(repo, file), join(root, file));
   }
   return root;

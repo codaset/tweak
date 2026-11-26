@@ -62,7 +62,10 @@ func newSandbox(t *testing.T) *sandbox {
 	t.Helper()
 	root := t.TempDir()
 	s := &sandbox{t: t, port: freePort(t), state: filepath.Join(root, "state"), home: filepath.Join(root, "home")}
-	os.MkdirAll(s.home, 0o700)
+	// The allow rule is in the user's settings, so `tweak claim` has nothing
+	// to warn about unless a test moves them (TestClaimWarnsWhenTheAllowRuleIsMissing).
+	os.MkdirAll(filepath.Join(s.home, ".claude"), 0o700)
+	os.WriteFile(filepath.Join(s.home, ".claude", "settings.json"), []byte(`{"permissions":{"allow":["Bash(tweak *)"]}}`), 0o600)
 	t.Cleanup(s.stopBridge)
 	return s
 }
@@ -154,6 +157,30 @@ func (s *sandbox) stopBridge() {
 	}
 	s.t.Errorf("bridge %d didn't stop; killed it", f.PID)
 }
+
+// The check reads the settings of the session's Claude Code, here the user
+// file in CLAUDE_CONFIG_DIR. Without the rule, the warning comes before "now
+// run tweak watch", and the claim still succeeds.
+func TestClaimWarnsWhenTheAllowRuleIsMissing(t *testing.T) {
+	s := newSandbox(t)
+	config := filepath.Join(s.home, "claude-config")
+	s.extra = append(s.extra, "CLAUDE_CONFIG_DIR="+config)
+	ernie := s.folder("ernie")
+	r := s.tweak("s1", ernie, "claim", "https://ernie.localhost")
+	want := "claimed https://ernie.localhost/*\n" + allowRuleMissing + "\nnow run tweak watch\n"
+	if r.code != 0 || r.stdout != want {
+		t.Fatalf("exit %d, stdout %q, want %q", r.code, r.stdout, want)
+	}
+
+	os.MkdirAll(config, 0o700)
+	os.WriteFile(filepath.Join(config, "settings.json"), []byte(`{"permissions":{"allow":["Bash(tweak *)"]}}`), 0o600)
+	r = s.tweak("s1", ernie, "claim", "https://ernie.localhost")
+	if r.code != 0 || strings.Contains(r.stdout, "allow rule missing") {
+		t.Fatalf("exit %d, stdout %q", r.code, r.stdout)
+	}
+}
+
+const allowRuleMissing = `allow rule missing: add "Bash(tweak *)" to permissions.allow in your Claude Code settings, or tweak commands may stop for permission`
 
 func TestClaimStartsTheBridgeAndClaims(t *testing.T) {
 	s := newSandbox(t)

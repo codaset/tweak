@@ -12,16 +12,17 @@ import { alive, sleep } from "./util.js";
 export const BIN = process.env.TWEAK_E2E_BIN ?? resolve(import.meta.dirname, "../../../node_modules/.cache/codaset-tweak-e2e/tweak");
 
 // What a development bridge's CLI runs with: TWEAK_BIN, its own port and
-// state folder, and HOME inside that folder. None of it is inherited, so a
-// test never reaches the live bridge or its sessions. With againAfter (a Go
-// duration, such as "1s"), the bridge sends an unconfirmed tweak again after
-// that instead of 3 minutes: the test-only TWEAK_TEST_AGAIN_AFTER, which only
-// a development build reads.
+// state folder, and HOME and CLAUDE_CONFIG_DIR inside that folder. None of it
+// is inherited, so a test never reaches the live bridge or its sessions, or
+// reads the real Claude Code settings. With againAfter (a Go duration, such as
+// "1s"), the bridge sends an unconfirmed tweak again after that instead of 3
+// minutes: the test-only TWEAK_TEST_AGAIN_AFTER, which only a development
+// build reads.
 export async function devBridge({ againAfter } = {}) {
   if (!existsSync(BIN)) throw new Error(`no tweak binary at ${BIN}: run npm run e2e, which builds it`);
   const port = await freePort();
   const state = mkdtempSync(join(tmpdir(), "tweak-e2e-state-"));
-  const env = { ...process.env, TWEAK_BIN: BIN, TWEAK_PORT: String(port), TWEAK_STATE_DIR: state, HOME: state };
+  const env = { ...process.env, TWEAK_BIN: BIN, TWEAK_PORT: String(port), TWEAK_STATE_DIR: state, HOME: state, CLAUDE_CONFIG_DIR: join(state, "claude") };
   delete env.TWEAK_TEST_AGAIN_AFTER;
   if (againAfter) env.TWEAK_TEST_AGAIN_AFTER = againAfter;
   delete env.CLAUDE_CODE_SESSION_ID;

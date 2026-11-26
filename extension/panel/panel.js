@@ -68,12 +68,6 @@ function render(state) {
   }
 
   renderResolved(state);
-  // The reload setting for the site in front, when it runs Tweak.
-  const site = (state.sites ?? []).find((s) => s.tabId === activeTab)?.origin ?? "";
-  $("reload-setting").hidden = !site;
-  $("reload-setting").dataset.origin = site;
-  $("reload-site").textContent = site.replace(/^https?:\/\//, "");
-  $("auto-reload").checked = autoReload[site] !== false;
 
   // The tab in front: whether a session claims it, with the command to
   // claim it when none does (design.md § Claims; a lapsed claim has its own
@@ -86,6 +80,11 @@ function render(state) {
   $("pins-setting").dataset.origin = activeOrigin ?? "";
   $("pins-site").textContent = (activeOrigin ?? "").replace(/^https?:\/\//, "");
   $("pins-shown").checked = !pinsHidden[activeOrigin];
+  // Its reload setting, beside it, where a change can land.
+  $("reload-setting").hidden = kind === "none";
+  $("reload-setting").dataset.origin = activeOrigin ?? "";
+  $("reload-site").textContent = (activeOrigin ?? "").replace(/^https?:\/\//, "");
+  $("auto-reload").checked = autoReload[activeOrigin] !== false;
   const gone = (state.gone ?? []).filter((g) => g.tabId === activeTab);
   $("gone").hidden = gone.length === 0;
   renderGone(gone);

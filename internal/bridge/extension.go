@@ -71,15 +71,17 @@ const extensionAway = 30 * time.Second
 // extensionHello is an extension saying hello: it counts as a browser, is
 // seen now, and, back after a while away (or for the first time), each
 // session with claims hears it connected. While another is connected, it
-// was seen a moment ago: at its hello, and at every sweep since.
+// was seen a moment ago: at its hello, and at every sweep since. Its last
+// seen is read before it counts as a browser, or a sweep in between would
+// mark it seen now and the sessions wouldn't hear it.
 func (b *Bridge) extensionHello(h helloIn) {
-	b.browsers.Add(1)
-	b.log.Printf("extension %s connected", h.Version)
-	b.heardFrom(h.Version, h.ReloadedFor)
 	seen, err := b.store.ExtensionSeen()
 	if err != nil {
 		b.log.Print(err)
 	}
+	b.browsers.Add(1)
+	b.log.Printf("extension %s connected", h.Version)
+	b.heardFrom(h.Version, h.ReloadedFor)
 	b.sawExtension()
 	if seen.IsZero() || b.opts.Clock().Sub(seen) >= extensionAway {
 		if err := b.store.ExtensionConnected(); err != nil {

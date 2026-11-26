@@ -205,7 +205,7 @@ func TestAWaitingWatcherHearsTheExtensionConnectAtOnce(t *testing.T) {
 		json.Unmarshal(body, &in)
 		got <- texts(in)
 	}()
-	time.Sleep(200 * time.Millisecond) // the long-poll is held
+	eventually(t, "the long-poll held", func() bool { return h.b.listening("s1") })
 	began := time.Now()
 	h.extensionConnects()
 	select {

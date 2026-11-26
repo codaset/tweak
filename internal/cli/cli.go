@@ -46,10 +46,6 @@ func Run(args []string, env Env) int {
 	if cmd == "hook" {
 		return runHook(rest, env)
 	}
-	if cmd == "version" {
-		fmt.Fprintf(env.Stdout, "binary %s\nprotocol %d\n", version.Version, version.Protocol)
-		return 0
-	}
 	commands := map[string]func(*context, []string) error{
 		"bridge":  runBridge,
 		"claim":   claim,
@@ -64,6 +60,7 @@ func Run(args []string, env Env) int {
 		"queue":   queue,
 		"undo":    undo,
 		"undone":  undone,
+		"version": showVersion,
 	}
 	f, ok := commands[cmd]
 	if !ok {
@@ -174,4 +171,29 @@ commands:
 The session ID comes from CLAUDE_CODE_SESSION_ID, or --session. A message
 argument of - reads the message from stdin.
 `)
+}
+
+// showVersion prints the binary's version and protocol, then the running
+// bridge's version and the connected extension's, asking the bridge on
+// bridge.json's port or the configured one. It never starts a bridge.
+func showVersion(c *context, args []string) error {
+	if len(args) != 0 {
+		return usageError("usage: tweak version")
+	}
+	fmt.Fprintf(c.Stdout, "binary %s\nprotocol %d\n", version.Version, version.Protocol)
+	_, info, ok := c.find()
+	switch {
+	case !ok:
+		fmt.Fprintln(c.Stdout, "bridge not running")
+	case info.Protocol != version.Protocol:
+		fmt.Fprintf(c.Stdout, "bridge %s (protocol %d)\n", info.Version, info.Protocol)
+	default:
+		fmt.Fprintf(c.Stdout, "bridge %s\n", info.Version)
+	}
+	if info.Extension == "" {
+		fmt.Fprintln(c.Stdout, "extension not connected")
+	} else {
+		fmt.Fprintf(c.Stdout, "extension %s\n", info.Extension)
+	}
+	return nil
 }

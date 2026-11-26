@@ -121,6 +121,9 @@ type Info struct {
 	Protocol int    `json:"protocol"`
 	PID      int    `json:"pid"`
 	Port     int    `json:"port"`
+	// Extension is the version of the extension connected now, from its
+	// hello, for tweak version; none in bridge.json.
+	Extension string `json:"extension,omitempty"`
 }
 
 // Start binds the port, opens the database and writes bridge.json. Serve runs it.
@@ -350,6 +353,17 @@ func (b *Bridge) watchAgain() {
 
 func (b *Bridge) info() Info {
 	return Info{Version: b.opts.Version, Protocol: version.Protocol, PID: os.Getpid(), Port: b.Port()}
+}
+
+// liveInfo is info with the connected extension's version, for GET /bridge.
+func (b *Bridge) liveInfo() Info {
+	i := b.info()
+	if b.browsers.Load() > 0 {
+		b.heardMu.Lock()
+		i.Extension = b.heard
+		b.heardMu.Unlock()
+	}
+	return i
 }
 
 func (b *Bridge) writeBridgeFile() error {

@@ -21,6 +21,11 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 65535
+    },
+    "extension": {
+      "description": "The version of the extension connected now, from its hello, for tweak version. Left out when none is connected, and in bridge.json.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     }
   },
   "required": [

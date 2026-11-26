@@ -188,6 +188,32 @@ func TestBridgeInfo(t *testing.T) {
 	}
 }
 
+// tweak version asks the bridge for the extension's version: the one
+// connected now, from its hello, or none.
+func TestBridgeInfoNamesTheConnectedExtension(t *testing.T) {
+	h := start(t)
+	extension := func() string {
+		_, body := h.do(req{method: "GET", path: "/bridge"})
+		conforms(t, "bridge-info", body)
+		var info Info
+		json.Unmarshal(body, &info)
+		return info.Extension
+	}
+	if got := extension(); got != "" {
+		t.Fatalf("before a hello: %q", got)
+	}
+	s := h.connect()
+	s.hello(version.Protocol)
+	s.next("snapshot")
+	if got := extension(); got != "1.2.3" {
+		t.Fatalf("connected: %q", got)
+	}
+	s.leaves(h)
+	if got := extension(); got != "" {
+		t.Fatalf("gone: %q", got)
+	}
+}
+
 func TestSecurityRefusals(t *testing.T) {
 	h := start(t)
 	port := h.b.Port()

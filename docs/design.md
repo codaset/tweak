@@ -631,7 +631,8 @@ Proscenium, CSS). The same file and line from two mappers is listed once.
 **Paths**: the extension sends paths exactly as the page gives them (absolute, project-relative, or
 a dev-server URL, `/@fs/…` included). The bridge, which knows the session's folder, turns each into
 a project-relative path when it renders the brief, and checks the file exists. A path it can't place
-is shown as given, marked "not found in project", not dropped.
+is shown as given, marked "not found in project", not dropped. A symlink in the project that
+leads outside it doesn't count as in it.
 
 **Vue (file only)**: the brief gives the file and tells Claude to search that file for the element's
 search clues.

@@ -160,6 +160,25 @@
     return `:is(${parent}) :is(${selector})`;
   }
 
+  // inScope says whether el can be styled by an @scope rule: it is inside a
+  // scope root, and not past the scope's limit within that root. (An
+  // implicit scope, with no start, is kept.) The rule is still shown inside
+  // its @scope.
+  function inScope(el, rule) {
+    if (!rule.start) return true;
+    let root;
+    try {
+      root = el.closest(rule.start);
+      if (root && rule.end) {
+        const limit = el.closest(rule.end);
+        if (limit && limit !== root && root.contains(limit)) return false;
+      }
+    } catch {
+      return true; // a selector we can't evaluate: keep the rule, wrapped
+    }
+    return Boolean(root);
+  }
+
   // rules are the CSS rules matching el, in cascade source order, the
   // latest 10, nested rules included (shown inside their parent's
   // braces). Media and supports conditions are checked; a container
@@ -190,6 +209,12 @@
         } else if (rule.cssRules) {
           if (rule.media && rule.media.mediaText && !matchMedia(rule.media.mediaText).matches) continue;
           if (rule instanceof CSSSupportsRule && !CSS.supports(rule.conditionText)) continue;
+          if (typeof CSSScopeRule !== "undefined" && rule instanceof CSSScopeRule) {
+            if (!inScope(el, rule)) continue;
+            const prelude = `${rule.start ? ` (${oneLine(rule.start)})` : ""}${rule.end ? ` to (${oneLine(rule.end)})` : ""}`;
+            visit(rule.cssRules, file, parent, [...when, `@scope${prelude}`]);
+            continue;
+          }
           const container = typeof CSSContainerRule !== "undefined" && rule instanceof CSSContainerRule;
           visit(rule.cssRules, file, parent, container ? [...when, `@container ${oneLine(rule.conditionText)}`] : when);
         }

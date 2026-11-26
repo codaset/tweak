@@ -1483,7 +1483,7 @@ golden-tested in Go, not here.
 
 ### The runner
 
-Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/`.
+Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/` (split into `<fixture>-<topic>.test.js` files when long, since files run in parallel and a file's describes in series).
 A test can stop the development bridge mid-test (`bridge.shutdown()` keeps its state folder) and
 start it again with the next `tweak claim`, as `static`'s bridge-down tests do.
 Files run concurrently (node's default), each with its own Chrome. For each fixture the runner:
@@ -1582,7 +1582,7 @@ internal/â€¦                          bridge, CLI, hooks, store, brief, merge, â
 go.mod
 schema/                             JSON Schema files, and examples/
 test/extension/                     JavaScript unit and contract tests (node --test), captured metadata in fixtures/
-test/e2e/                           end-to-end runner, one test file per fixture
+test/e2e/                           end-to-end runner, one test file per fixture (or a few, when long)
 fixtures/<app>/                     fixture apps: fixture.json, expected.json, lockfile (see Testing)
 .puppeteerrc.cjs                    pinned Chrome for Testing version
 package.json                        dev only: ajv, puppeteer and the test scripts

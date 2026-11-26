@@ -1,0 +1,23 @@
+/* The plan card's theme. public/theme.css and its source map are built
+   from this file with esbuild 0.25.0:
+   esbuild src/theme.css --outfile=public/theme.css --sourcemap */
+
+.plan {
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+
+  & .plan-title {
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+}
+
+.badge {
+  color: #166534;
+}
+
+.note,
+.badge {
+  margin-left: 8px;
+}

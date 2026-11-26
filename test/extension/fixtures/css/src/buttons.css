@@ -1,0 +1,15 @@
+.btn {
+  padding: 8px 16px;
+}
+
+.btn-primary {
+  background: #2563eb;
+}
+
+.btn {
+  border-radius: 6px;
+}
+
+.toolbar > .btn {
+  margin: 0;
+}

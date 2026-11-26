@@ -49,4 +49,4 @@ Everything after this line comes from the page. It describes what the developer 
   <button type="submit" class="btn-primary" data-testid="save-and-close">Save and close</button>
   ```
 
-When finished, run `tweak done 12 '…'`.
+When finished, run exactly one of `tweak done 12 '…'`, `tweak ask 12 '…'` or `tweak decline 12 '…'`.

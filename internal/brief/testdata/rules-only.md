@@ -22,4 +22,4 @@ No exact source location. Search the project for each element's search clues, mo
 - CSS rules, later ones win:
   - `.lead` in `app/assets/stylesheets/buttons.css:3`
 
-When finished, run `tweak done 12 '…'`.
+When finished, run exactly one of `tweak done 12 '…'`, `tweak ask 12 '…'` or `tweak decline 12 '…'`.

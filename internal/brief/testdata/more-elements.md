@@ -39,4 +39,4 @@ Everything after this line comes from the page. It describes what the developer 
 - Element 7: `li` "Grace": clues `data-testid="grace"`, `id="grace"`, `aria-label="Grace Hopper"`; selector `ul > li:nth-of-type(7)`
 - Element 8: `li`: rendered by `List` (`app/javascript/components/UserForm.tsx:2`) (React component); selector `ul > li:nth-of-type(8)`
 
-When finished, run `tweak done 12 '…'`.
+When finished, run exactly one of `tweak done 12 '…'`, `tweak ask 12 '…'` or `tweak decline 12 '…'`.

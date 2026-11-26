@@ -23,3 +23,17 @@ func TestTheTimingKnobsAreForDevelopmentBuildsOnly(t *testing.T) {
 		}
 	}
 }
+
+// A test build (testBuild, stamped by the CLI tests' release builds) reads
+// them without TWEAK_BIN; a release, without the stamp, never does.
+func TestTheTimingKnobsAreForTestBuildsToo(t *testing.T) {
+	env := func(k string) string { return map[string]string{"TWEAK_TEST_HANDOVER_START": "1s"}[k] }
+	if got := testDuration(env, "TWEAK_TEST_HANDOVER_START"); got != 0 {
+		t.Fatalf("a release read the knob: %v", got)
+	}
+	testBuild = "1"
+	defer func() { testBuild = "" }()
+	if got := testDuration(env, "TWEAK_TEST_HANDOVER_START"); got != time.Second {
+		t.Fatalf("a test build: %v, want 1s", got)
+	}
+}

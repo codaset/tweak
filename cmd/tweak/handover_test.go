@@ -46,7 +46,8 @@ func release(t *testing.T, name string) string {
 		for name, broken := range builds {
 			wg.Go(func() {
 				v, _, _ := strings.Cut(name, "-")
-				flags := "-X github.com/codaset/tweak/internal/version.Version=" + v
+				// testBuild: these builds read the TWEAK_TEST_* knobs without TWEAK_BIN.
+				flags := "-X github.com/codaset/tweak/internal/version.Version=" + v + " -X github.com/codaset/tweak/internal/cli.testBuild=1"
 				if broken != "" {
 					flags += " -X github.com/codaset/tweak/internal/cli.testBridge=" + broken
 				}
@@ -157,16 +158,18 @@ func TestANewerCommandHandsOverFromAnOlderBridge(t *testing.T) {
 
 // An old bridge slow to leave (an extension socket that doesn't answer its
 // close, a watcher's long-poll) is waited out: the new bridge takes over,
-// and the old watcher carries on against it.
+// and the old watcher carries on against it. The wait is 5 seconds; here 1
+// (TWEAK_TEST_HANDOVER_STOP), shorter than the socket's 5 s close.
 func TestAHandoverWaitsOutASlowOldBridge(t *testing.T) {
 	s := releaseSandbox(t)
+	const stop = time.Second
+	s.extra = append(s.extra, "TWEAK_TEST_HANDOVER_STOP="+stop.String())
 	ernie := s.folder("ernie")
 	s.bin = s.install(oldVersion)
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost")
 	old := s.bridgeIs(oldVersion)
-	w := s.watch("s1", ernie)
+	w := s.polling("s1", ernie, "https://ernie.localhost/*")
 	stale := s.extension() // never read again
-	time.Sleep(500 * time.Millisecond)
 
 	s.bin = s.install(newVersion)
 	began := time.Now()
@@ -174,9 +177,10 @@ func TestAHandoverWaitsOutASlowOldBridge(t *testing.T) {
 	if r.code != 0 || r.stdout != claimed(ernie) || r.stderr != "" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
-	// 5 seconds for the port, then SIGTERM ends a bridge already stopping.
-	if took := time.Since(began); took > 6*time.Second {
-		t.Fatalf("the handover took %s", took)
+	// The wait for the port runs out, then SIGTERM ends a bridge already
+	// stopping, well before its socket's close would have.
+	if took := time.Since(began); took < stop || took > stop+2*time.Second {
+		t.Fatalf("the handover took %s, want %s and a moment", took, stop)
 	}
 	gone(t, old.PID)
 	s.bridgeIs(newVersion)
@@ -217,16 +221,17 @@ func TestSIGTERMEndsABridgeAlreadyShuttingDown(t *testing.T) {
 }
 
 // A new bridge that can't start (it exits at once, or doesn't answer
-// within 5 seconds) is rolled back: the previous version starts again, the
-// command says so and carries on against it, and the next command tries
-// again.
+// within 5 seconds, here 1: TWEAK_TEST_HANDOVER_START) is rolled back: the
+// previous version starts again, the command says so and carries on against
+// it, and the next command tries again.
 func TestAHandoverThatFailsKeepsTheOldBridge(t *testing.T) {
 	for _, c := range []struct{ build, why string }{
 		{newVersion + "-exit", "the bridge exited as it started"},
-		{newVersion + "-hang", "the bridge didn't start within 5 seconds"},
+		{newVersion + "-hang", "the bridge didn't start within 1 second"},
 	} {
 		t.Run(c.build, func(t *testing.T) {
 			s := releaseSandbox(t)
+			s.extra = append(s.extra, "TWEAK_TEST_HANDOVER_START=1s")
 			ernie := s.folder("ernie")
 			s.bin = s.install(oldVersion)
 			s.tweak("s1", ernie, "claim", "https://ernie.localhost")

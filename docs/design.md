@@ -589,9 +589,12 @@ Monitor research saw a burst lose one line and cut another):
   out the text from the wait and the number of resends: a delivered tweak carries `resends` and
   `againAt` (when the current wait ends), and the card says so once `resends` is 2 or more and
   `againAt` has passed. A tweak delivered afresh (a reply) starts again from none. Tests shorten the
-  3 minutes with `TWEAK_TEST_AGAIN_AFTER` (a Go duration), which only a development build reads;
+  3 minutes with `TWEAK_TEST_AGAIN_AFTER` (a Go duration), which only a development build reads
+  (or a release build the Go tests stamp with `cli.testBuild`, never a real release);
   `TWEAK_TEST_LAPSE_AFTER` and `TWEAK_TEST_UNWATCHED_AFTER` shorten the 10-minute lapse and the
-  60-second no-watcher wait the same way.
+  60-second no-watcher wait the same way, and `TWEAK_TEST_WATCH_START_AFTER`,
+  `TWEAK_TEST_HANDOVER_STOP` and `TWEAK_TEST_HANDOVER_START` the 10 seconds before `tweak watch`
+  starts a bridge and the handover's two 5-second waits.
 
 ### When the session goes quiet
 

@@ -17,6 +17,11 @@ import (
 // answers. Only those tests set it, with -ldflags -X; a release never does.
 var testBridge string
 
+// testBuild, set with -ldflags -X by the CLI tests' release builds (which run
+// without TWEAK_BIN), lets those builds read the TWEAK_TEST_* knobs too. A
+// release never sets it.
+var testBuild string
+
 // runBridge is `tweak bridge`: it runs the bridge in the foreground until it
 // is shut down, idles out, or gets SIGINT or SIGTERM.
 //
@@ -86,12 +91,18 @@ func runBridge(c *context, args []string) error {
 //     in before its claims lapse (10 minutes);
 //   - TWEAK_TEST_UNWATCHED_AFTER: how long a session with claims may have
 //     no watcher before its commands warn (60 seconds);
-//   - TWEAK_TEST_KEEP_RESOLVED: how long a resolved tweak is kept (7 days).
+//   - TWEAK_TEST_KEEP_RESOLVED: how long a resolved tweak is kept (7 days);
+//   - TWEAK_TEST_WATCH_START_AFTER: how long tweak watch goes without an
+//     answer before it starts the bridge itself (10 seconds);
+//   - TWEAK_TEST_HANDOVER_STOP and TWEAK_TEST_HANDOVER_START: how long a
+//     handover gives the old bridge to free the port, and the new one to
+//     start and answer (5 seconds each).
 //
-// Only a development build (TWEAK_BIN set) reads them; otherwise, or when
-// one isn't a positive duration, it is 0, the bridge's own.
+// Only a development build (TWEAK_BIN set) or a test build (testBuild)
+// reads them; otherwise, or when one isn't a positive duration, it is 0,
+// the default.
 func testDuration(getenv func(string) string, name string) time.Duration {
-	if getenv("TWEAK_BIN") == "" {
+	if getenv == nil || getenv("TWEAK_BIN") == "" && testBuild == "" {
 		return 0
 	}
 	d, err := time.ParseDuration(getenv(name))
@@ -99,4 +110,12 @@ func testDuration(getenv func(string) string, name string) time.Duration {
 		return 0
 	}
 	return d
+}
+
+// knob is the test-only knob name if it is set (see testDuration), else def.
+func (c *context) knob(name string, def time.Duration) time.Duration {
+	if d := testDuration(c.Getenv, name); d > 0 {
+		return d
+	}
+	return def
 }

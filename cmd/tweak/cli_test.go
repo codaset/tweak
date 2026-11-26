@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/codaset/tweak/internal/version"
 )
 
 // The CLI tests run the built binary, which starts a real bridge on a random
@@ -336,6 +338,55 @@ func TestABadPatternSaysWhy(t *testing.T) {
 	if r.code != 1 || !strings.Contains(r.stderr, "https://ernie.localhost/*") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
+}
+
+// claims is GET /claims from the sandbox's bridge, asked as no session (so
+// it checks no one in): each held claim's pattern and its session's last
+// check-in.
+func (s *sandbox) claims() map[string]string {
+	s.t.Helper()
+	r, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/claims", s.port), nil)
+	r.Header.Set("x-tweak", "1")
+	r.Header.Set("x-tweak-protocol", fmt.Sprint(version.Protocol))
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		s.t.Fatalf("GET /claims: %v", err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Claims []struct {
+			Pattern string
+			Session struct{ LastCheckIn string }
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		s.t.Fatalf("GET /claims: %v", err)
+	}
+	m := map[string]string{}
+	for _, c := range out.Claims {
+		m[c.Pattern] = c.Session.LastCheckIn
+	}
+	return m
+}
+
+// until polls cond every 20 ms, for up to 10 seconds.
+func until(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); !cond(); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+	}
+}
+
+// polling starts the session's watcher, whose session holds pattern, and
+// waits for its long-poll: the inbox request checks the session in.
+func (s *sandbox) polling(session, folder, pattern string) *watcher {
+	s.t.Helper()
+	before := s.claims()[pattern]
+	w := s.watch(session, folder)
+	until(s.t, "the watcher's long-poll", func() bool { return s.claims()[pattern] != before })
+	return w
 }
 
 func TestDevelopmentBuildRefusesTheLiveStateFolder(t *testing.T) {

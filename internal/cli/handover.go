@@ -55,7 +55,7 @@ func (c *context) handover(old *client, info bridge.Info) (*client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("couldn't start bridge %s (%v)", version.Version, err)
 	}
-	cl, newErr := c.startedFrom(exe, handoverStart, false)
+	cl, newErr := c.startedFrom(exe, c.knob("TWEAK_TEST_HANDOVER_START", handoverStart), false)
 	if newErr == nil {
 		return cl, nil
 	}
@@ -73,7 +73,7 @@ func (c *context) handover(old *client, info bridge.Info) (*client, error) {
 // meanwhile is another command's handover having won: it returns a client
 // for it.
 func (c *context) awaitFreePort(port, pid int) *client {
-	deadline := time.Now().Add(handoverStop)
+	deadline := time.Now().Add(c.knob("TWEAK_TEST_HANDOVER_STOP", handoverStop))
 	for {
 		if portFree(port) {
 			return nil
@@ -166,5 +166,8 @@ func portFree(port int) bool {
 
 // seconds is a whole-second duration as text: "5 seconds".
 func seconds(d time.Duration) string {
-	return fmt.Sprintf("%d seconds", int(d.Seconds()))
+	if n := int(d.Seconds()); n != 1 {
+		return fmt.Sprintf("%d seconds", n)
+	}
+	return "1 second"
 }

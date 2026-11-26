@@ -183,14 +183,16 @@ func TestWatchWorkDone(t *testing.T) {
 	}
 }
 
-// A watcher outlives its bridge: with none answering for 10 seconds it starts
-// one itself, says nothing about it, and carries on.
+// A watcher outlives its bridge: with none answering for 10 seconds (here
+// 2, TWEAK_TEST_WATCH_START_AFTER) it starts one itself, says nothing about
+// it, and carries on.
 func TestTheWatcherStartsAGoneBridge(t *testing.T) {
 	s := newSandbox(t)
+	const startAfter = 2 * time.Second
+	s.extra = append(s.extra, "TWEAK_TEST_WATCH_START_AFTER="+startAfter.String())
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
-	w := s.watch("s1", ernie)
-	time.Sleep(500 * time.Millisecond) // let it start its long-poll
+	w := s.polling("s1", ernie, "https://ernie.localhost/*")
 	s.stopBridge()
 	gone := time.Now()
 
@@ -202,8 +204,8 @@ func TestTheWatcherStartsAGoneBridge(t *testing.T) {
 			t.Fatal("the watcher didn't start a bridge")
 		}
 	}
-	if waited := time.Since(gone); waited < 9*time.Second {
-		t.Fatalf("started a bridge %v after the last went: want about 10 s", waited)
+	if waited := time.Since(gone); waited < startAfter*9/10 {
+		t.Fatalf("started a bridge %v after the last went: want about %v", waited, startAfter)
 	}
 	n := s.extension().create("https://ernie.localhost/", "make it green")
 	if got := w.line(); !strings.HasPrefix(got, fmt.Sprintf("tweak %d new:", n)) {
@@ -222,8 +224,7 @@ func TestANewWatcherSkipsAnOldRelease(t *testing.T) {
 	s := newSandbox(t)
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
-	first := s.watch("s1", ernie)
-	time.Sleep(500 * time.Millisecond) // let it start its long-poll
+	first := s.polling("s1", ernie, "https://ernie.localhost/*")
 	s.tweak("s1", ernie, "release")
 	first.line()
 	first.exited()
@@ -244,7 +245,7 @@ func TestAWatcherAcknowledgesWhatItPrintedBeforeExiting(t *testing.T) {
 	s.extra = append(s.extra, "TWEAK_TEST_LAPSE_AFTER=300ms")
 	ernie := s.folder("ernie")
 	s.tweak("s1", ernie, "claim", "https://ernie.localhost/*")
-	time.Sleep(700 * time.Millisecond)
+	until(t, "the claim to lapse", func() bool { return len(s.claims()) == 0 })
 	if r := s.tweak("s2", s.folder("ernie-2"), "claim", "https://ernie.localhost/*"); r.code != 0 {
 		t.Fatalf("claiming the lapsed page: %s", r.stderr)
 	}

@@ -60,12 +60,13 @@ func watch(c *context, args []string) error {
 	first, attempt := true, 0
 	var printed time.Time // when the last line went out
 	var down time.Time    // since when no bridge has answered; zero while one does
+	startAfter := c.knob("TWEAK_TEST_WATCH_START_AFTER", watchStartAfter)
 	retry := func() {
 		d := watchBackoff[min(attempt, len(watchBackoff)-1)]
 		attempt++
 		// Try again just as the wait for a start runs out, not after it.
 		if !down.IsZero() {
-			if left := down.Add(watchStartAfter).Sub(c.clock()); left > 0 && left < d {
+			if left := down.Add(startAfter).Sub(c.clock()); left > 0 && left < d {
 				d = left
 			}
 		}
@@ -80,7 +81,7 @@ func watch(c *context, args []string) error {
 			if down.IsZero() {
 				down = c.clock()
 			}
-			if c.clock().Sub(down) < watchStartAfter {
+			if c.clock().Sub(down) < startAfter {
 				retry()
 				continue
 			}

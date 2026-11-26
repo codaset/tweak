@@ -17,13 +17,34 @@
         <label>Name <input id="name" name="name" placeholder="Your name" /></label>
         <button id="save" class="btn btn-primary" type="submit" data-testid="save">Save</button>
       </form>
+      <p class="more">
+        <button id="open-profile" class="btn" type="button">Edit profile</button>
+        <button id="open-help" class="btn" type="button" popovertarget="help">Help</button>
+      </p>
     </main>
+    <!-- Overlay layering: a modal dialog makes the rest of the page inert, and
+         a popover sits in the top layer (design.md § Overlay layering). -->
+    <dialog id="profile" class="profile">
+      <form method="dialog">
+        <h2>Edit profile</h2>
+        <label>Bio <textarea id="bio" rows="4"></textarea></label>
+        <menu>
+          <button id="profile-cancel" class="btn" value="cancel">Cancel</button>
+          <button id="profile-save" class="btn btn-primary" value="save">Save profile</button>
+        </menu>
+      </form>
+    </dialog>
+    <div id="help" class="help" popover>
+      <h2>Help</h2>
+      <p>Everything on this page is a fixture for the end-to-end tests.</p>
+    </div>
     <script>
       // What reached the page, so a test can tell a swallowed click.
       window.heard = [];
       for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
         document.getElementById("save").addEventListener(type, () => heard.push(type));
       }
+      document.getElementById("open-profile").addEventListener("click", () => document.getElementById("profile").showModal());
     </script>
   </body>
 </html>

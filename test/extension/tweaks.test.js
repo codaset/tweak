@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyTweaks, forPage, forTab, pageOf, reachesTab } from "../../extension/lib/tweaks.js";
+import { applyTweaks, askedIn, forPage, forTab, pageOf, reachesTab } from "../../extension/lib/tweaks.js";
 import { apply } from "../../extension/lib/claims.js";
 
 const tweak = (number, page, status = "sent") => ({ number, page, url: page, status });
@@ -53,4 +53,33 @@ test("a tweak's changes reach the tabs showing its page or its card", () => {
   assert.equal(reachesTab(t, { page: "https://a.localhost/", card: null }), true);
   assert.equal(reachesTab(t, { page: "https://a.localhost/x", card: 1 }), true);
   assert.equal(reachesTab(t, { page: "https://a.localhost/x", card: 2 }), false);
+});
+
+// Pages and tabs: a question pops up only in the tab the tweak was sent
+// from, or as a toast in the others if that tab is gone.
+test("a new question opens only in the tab the tweak was sent from, wherever that tab is", () => {
+  const a = { tabId: 1, page: "p" };
+  const b = { tabId: 2, page: "p" };
+  const moved = { tabId: 3, page: "q" };
+  const tabs = [a, b, moved];
+  const was = tweak(7, "p", "working");
+  const asked = tweak(7, "p", "question");
+  assert.deepEqual(askedIn(was, asked, tabs, 1), { open: [a], toast: [] });
+  assert.deepEqual(askedIn(was, asked, tabs, 3), { open: [moved], toast: [] });
+});
+
+test("with the sending tab gone, a new question is a toast in every tab showing its page", () => {
+  const a = { tabId: 1, page: "p" };
+  const b = { tabId: 2, page: "p" };
+  const other = { tabId: 3, page: "q" };
+  const asked = tweak(7, "p", "question");
+  assert.deepEqual(askedIn(tweak(7, "p", "working"), asked, [a, b, other], 9), { open: [], toast: [a, b] });
+  assert.deepEqual(askedIn(tweak(7, "p", "working"), asked, [a, b, other], undefined), { open: [], toast: [a, b] });
+});
+
+test("only a change into question asks", () => {
+  const tabs = [{ tabId: 1, page: "p" }];
+  const none = { open: [], toast: [] };
+  assert.deepEqual(askedIn(tweak(7, "p", "question"), tweak(7, "p", "question"), tabs, 1), none);
+  assert.deepEqual(askedIn(tweak(7, "p", "working"), tweak(7, "p", "done"), tabs, 1), none);
 });

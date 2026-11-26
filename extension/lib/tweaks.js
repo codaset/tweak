@@ -38,3 +38,14 @@ export const reachesTab = (tweak, tab) => tweak.page === tab.page || tweak.numbe
 // forTab lists what a tab hears about, by number.
 export const forTab = (state, tab) =>
   [...state.tweaks.values()].filter((t) => reachesTab(t, tab)).sort((a, b) => a.number - b.number);
+
+// askedIn says where a question Claude has just asked pops up: open in the
+// tab the tweak was sent from (whatever page it now shows, since its card
+// stays open), or, when that tab is gone, as a toast in every tab showing
+// the tweak's page. was and tweak are the tweak before and after an event;
+// tabs are {tabId, page}; from is the sending tab's ID, if known.
+export function askedIn(was, tweak, tabs, from) {
+  if (tweak.status !== "question" || was?.status === "question") return { open: [], toast: [] };
+  const open = from === undefined ? [] : tabs.filter((t) => t.tabId === from);
+  return { open, toast: open.length ? [] : tabs.filter((t) => t.page === tweak.page) };
+}

@@ -9,7 +9,7 @@ import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
-import { applyTweaks, forTab, pageOf, reachesTab } from "./lib/tweaks.js";
+import { applyTweaks, askedIn, forTab, pageOf, reachesTab } from "./lib/tweaks.js";
 import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
 
@@ -26,6 +26,9 @@ let heardFromBridge = false; // once true, the cache is out of date
 // The open tweaks as of event seq. Kept in storage.session too, so pins and
 // cards survive a worker restart while the bridge is down.
 let tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks: [] });
+// The tab each tweak was sent from, by number: its question pops up there
+// (askedIn). Kept in storage.session too, so a worker restart keeps it.
+const senders = new Map();
 
 // ---- Listeners ----
 
@@ -50,6 +53,7 @@ chrome.runtime.onConnect.addListener((port) => {
   const ports = { panel: panels, tab: tabs }[port.name];
   if (!ports) return;
   ports.add(port);
+  port.tabId = port.sender?.tab?.id;
   port.onDisconnect.addListener(() => ports.delete(port));
   if (port.name === "tab") port.onMessage.addListener((msg) => onTabMessage(port, msg));
   port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
@@ -112,7 +116,10 @@ async function onTabMessage(port, msg) {
     case "create":
     case "reply": {
       const answered = msg.type === "create" ? "created" : "replied";
-      const ref = bridge.request(msg, (answer) => port.postMessage({ type: answered, ref: msg.ref, ...answer }));
+      const ref = bridge.request(msg, (answer) => {
+        if (msg.type === "create" && answer.number) rememberSender(answer.number, tabId);
+        port.postMessage({ type: answered, ref: msg.ref, ...answer });
+      });
       if (ref) port.onDisconnect.addListener(() => bridge.pending.forget(ref));
       break;
     }
@@ -125,18 +132,38 @@ const claimed = (url) => claimState.claims.some((c) => matches(c.pattern, url));
 
 async function restoreTweaks() {
   await selfUpdate.restored;
-  const { tweaks = [] } = await chrome.storage.session.get("tweaks").catch(() => ({}));
+  const { tweaks = [], senders: sent = {} } = await chrome.storage.session.get(["tweaks", "senders"]).catch(() => ({}));
   if (tweakState.seq === 0) tweakState = applyTweaks(undefined, { type: "snapshot", seq: 0, tweaks });
+  for (const [n, tabId] of Object.entries(sent)) if (!senders.has(Number(n))) senders.set(Number(n), tabId);
 }
 
+function rememberSender(number, tabId) {
+  if (tabId === undefined) return;
+  senders.set(number, tabId);
+  saveSenders();
+}
+const saveSenders = () => chrome.storage.session.set({ senders: Object.fromEntries(senders) });
+
 function adoptTweaks(next, msg) {
+  const was = tweakState;
   tweakState = next;
   chrome.storage.session.set({ tweaks: [...next.tweaks.values()] });
-  for (const port of tabs) {
-    if (!port.page) continue;
+  const shown = [...tabs].filter((port) => port.page);
+  for (const port of shown) {
     if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forTab(next, port), claimed: claimed(port.url) });
     else if (reachesTab(msg.tweak, port)) port.postMessage({ type: "tweak", tweak: msg.tweak });
   }
+  if (msg.type === "snapshot") {
+    // Only open tweaks can still ask, so the rest are forgotten.
+    const before = senders.size;
+    for (const n of senders.keys()) if (!next.tweaks.has(n)) senders.delete(n);
+    if (senders.size !== before) saveSenders();
+    return;
+  }
+  // A new question: it carries the tweak, as the sending tab may be on another page.
+  const { open, toast } = askedIn(was.tweaks.get(msg.tweak.number), msg.tweak, shown, senders.get(msg.tweak.number));
+  for (const port of open) port.postMessage({ type: "asked", tweak: msg.tweak });
+  for (const port of toast) port.postMessage({ type: "asked", tweak: msg.tweak, toast: true });
 }
 
 // ---- Site access and the badge ----

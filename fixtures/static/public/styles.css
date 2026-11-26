@@ -22,3 +22,29 @@ body {
   background: #2563eb;
   color: #fff;
 }
+
+.more {
+  display: flex;
+  gap: 12px;
+}
+
+/* Both fill most of the viewport, so whatever the overlay draws sits over them. */
+.profile {
+  width: 80vw;
+  height: 80vh;
+  border: 0;
+  border-radius: 12px;
+}
+
+.profile::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.help {
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  border: 0;
+  background: #fffbe6;
+}

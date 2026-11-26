@@ -71,11 +71,22 @@
   const trimHTML = (html) => cut(html.replace(/>\s+</g, "><").replace(/\s+/g, " ").trim(), HTML_CAP);
 
   // html is el's outer HTML, its long attribute values (SVG paths, data
-  // URLs) shortened; a big subtree gives the element's own tag alone.
+  // URLs) shortened; a big subtree gives the element's own tag alone. It is
+  // trimmed in an inert copy, a <template>'s contents, never in live nodes:
+  // cloning would upgrade custom elements (running the page's code) and
+  // start image fetches.
   function html(el) {
-    const deep = el.getElementsByTagName("*").length <= CLONE_LIMIT;
-    const copy = el.cloneNode(deep);
-    if (!deep) copy.textContent = "…";
+    const template = document.createElement("template");
+    let copy;
+    if (el.getElementsByTagName("*").length <= CLONE_LIMIT) {
+      template.innerHTML = el.outerHTML;
+      copy = template.content.firstElementChild;
+    } else {
+      copy = template.content.ownerDocument.createElementNS(el.namespaceURI, el.localName);
+      for (const attr of el.attributes) copy.setAttribute(attr.name, attr.value);
+      copy.textContent = "…";
+    }
+    if (!copy) return "";
     for (const node of [copy, ...copy.querySelectorAll("*")]) {
       for (const attr of [...node.attributes]) {
         if (attr.value.length > ATTR_CAP) node.setAttribute(attr.name, cut(attr.value, ATTR_CAP));

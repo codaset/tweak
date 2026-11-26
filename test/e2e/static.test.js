@@ -603,18 +603,19 @@ describe("static on 127.0.0.1, through activeTab", { skip: skipReason(fixture) ?
       what: "the 127.0.0.1 claim's scripts to be registered",
     });
     await env.page.goto(app.url("/"));
+    // The tab's real width, behind the emulated viewport.
+    const width = () => inWorker(env.browser, `chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t.width)`);
+    const before = await width();
     const [extension] = (await env.browser.extensions()).values();
     await env.page.triggerExtensionAction(extension);
-    // The button opens the side panel, which narrows the real view; an
-    // emulated viewport would hide that from the page, but not from the capture.
-    await env.page.setViewport(null);
+    // The button also opens the side panel, which narrows the real view, and
+    // with it the capture, but not the emulated viewport the page measures.
+    // Closed again, the capture is of the whole viewport, as on the granted copy.
+    await until(width, { is: (w) => w < before, what: "the side panel to open" });
+    await inWorker(env.browser, `chrome.windows.getLastFocused().then((w) => chrome.sidePanel.close({ windowId: w.id }))`);
+    await until(width, { is: (w) => w === before, what: "the tab's real view to be whole again" });
     await env.page.reload();
     await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: "the content script on 127.0.0.1" });
-    // The side panel narrows the view as it opens: wait until it has.
-    let widths = [];
-    await until(async () => (widths = [...widths, await env.page.evaluate("innerWidth")].slice(-5)).length === 5 && new Set(widths).size === 1, {
-      what: "the view's width to settle",
-    });
     const crop = await expectedCrop(env, "#save");
     const n = await sendTweak(env, { selector: "#save" }, "make the save button green");
     const shot = await storedScreenshot(env, n);

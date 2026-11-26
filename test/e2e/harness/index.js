@@ -54,6 +54,7 @@ const entryText = (kind) => text(`.panel .entry.kind-${kind} .entry-text`);
 export function setup(fixture, options = {}) {
   const extra = [];
   const env = {
+    fixture,
     async serve(host) {
       const app = await startFixture(fixture, { host });
       extra.push(app);
@@ -89,9 +90,12 @@ export function setup(fixture, options = {}) {
   return env;
 }
 
-// Opens a page of the app and waits for the content script to connect.
+// Opens a page of the app and waits for the content script to connect,
+// and for the fixture's `loaded` selector, if it has one (a page rendered on
+// the server is hydrated later: SvelteKit's metadata comes with hydration).
 export async function open(env, path = "/") {
   await env.page.goto(env.app.url(path));
+  if (env.fixture?.loaded) await env.page.waitForSelector(env.fixture.loaded);
   await env.tab.until(`Boolean(root) && ns.worker.connection === "connected"`, { what: `the content script to connect on ${path}` });
 }
 

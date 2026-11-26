@@ -1,0 +1,30 @@
+{
+  "__vnode": {
+    "ctx": {
+      "type": {
+        "__file": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-vue-fIFb7h/src/Panel.vue",
+        "__name": "Panel"
+      },
+      "parent": {
+        "type": {
+          "__file": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-vue-fIFb7h/src/App.vue",
+          "__name": "App"
+        },
+        "parent": null
+      }
+    }
+  },
+  "__vueParentComponent": {
+    "type": {
+      "__file": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-vue-fIFb7h/src/Panel.vue",
+      "__name": "Panel"
+    },
+    "parent": {
+      "type": {
+        "__file": "/private/var/folders/c4/f_jd56vn60bf888tcj7zc6500000gn/T/tweak-e2e-vite-vue-fIFb7h/src/App.vue",
+        "__name": "App"
+      },
+      "parent": null
+    }
+  }
+}

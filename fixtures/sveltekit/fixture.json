@@ -1,0 +1,5 @@
+{
+  "start": ["node", "node_modules/vite/bin/vite.js", "dev", "--port", "{port}", "--strictPort"],
+  "ready": "/",
+  "loaded": "html[data-hydrated]"
+}

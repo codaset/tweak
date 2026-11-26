@@ -607,7 +607,7 @@ Mappers, in priority order. Each finds source locations for an element from one 
 | Mapper | Clue | Needs |
 |---|---|---|
 | React | `_debugSource` (React 18: absolute path, line, column); `_debugStack` (React 19: an `Error`; frame 1, after `jsxDEV`, is the JSX call site in the served module, mapped through its source map) on fibers, read in the page's own JS world; `_debugOwner` for the chain | A React development build |
-| Vue 3 | the owning component's `type.__file` (absolute path, no line) | A Vue development build |
+| Vue 3 | the owning component's `type.__file` (absolute path, no line): the vnode's `ctx`, the component whose template wrote the element (for slot content, not the one rendering the slot); then each `parent` | A Vue development build |
 | Svelte | `__svelte_meta.loc` (project-relative file, line, column; Svelte 4 lines are 0-based), and `parent` for the usage site in Svelte 5 | A Svelte development build |
 | Rails templates | `<!-- BEGIN/END path -->` comments, balanced | `annotate_rendered_view_with_filenames` (an app setting, never required) |
 | Proscenium CSS modules | class names like `name_hash_app-components-x-module` | Proscenium's dev naming |
@@ -642,6 +642,12 @@ by file: the brief's "rendered inside" list.
 to the element in the owner's own file (its first is the element's own place). Children passed through
 another component stay with the component that wrote them.
 
+**Vue's and Svelte's chains**: Vue's is the owning component, then each `parent`, named, file only.
+Svelte 5's is the element's `parent`s of type `component`, each a `usage` at the component's tag,
+named by it; the blocks between (`if`, `each`, snippets) and components in `node_modules` (SvelteKit's
+root and layout) are left out. Svelte 4 is told apart by `char` in `loc`; its line gets 1 added. Svelte's
+0-based columns get 1 added too.
+
 **Merging**: locations from all mappers are sorted by role (`element`, then `component`, then the
 chain, then `style`), then exact before file only, then mapper priority (React, Vue, Svelte, Rails,
 Proscenium, CSS). The same file and line from two mappers is listed once.
@@ -649,7 +655,9 @@ Proscenium, CSS). The same file and line from two mappers is listed once.
 **Paths**: the extension sends paths exactly as the page gives them (absolute, project-relative, or
 a dev-server URL, `/@fs/…` included). The bridge, which knows the session's folder, turns each into
 a project-relative path when it renders the brief, and checks the file exists. A path it can't place
-is shown as given, marked "not found in project", not dropped. A symlink in the project that
+is shown as given, marked "not found in project", not dropped. A webpack source,
+`webpack://<name>/./path` (the name may be empty, `[name]` or `@scope/name`), is placed like a
+dev-server URL: the scheme, the name, any loader query and a leading `./` are dropped. A symlink in the project that
 leads outside it doesn't count as in it.
 
 **Vue (file only)**: the brief gives the file and tells Claude to search that file for the element's
@@ -661,7 +669,8 @@ search clues.
   its `sourceMappingURL` (an inline data URL, or an external `.map`, fetched too), and decodes the
   VLQ mappings with a small decoder of our own (no dependency). Decoded maps are cached per URL
   (module URL, `?t=` included, so a hot update is read again). A frame its map can't place gives the
-  module's file only. webpack's `webpack://<name>/./path` sources are passed on as given.
+  module's file only. webpack's `webpack://<name>/./path` sources are passed on as given, for the
+  bridge to place (Paths).
 - CSS: the CSSOM gives no line numbers. A rule's file comes from `<style data-vite-dev-id>` or the
   sheet's `href`. A line is attempted only when the sheet has a source map: the selector text is
   found in the fetched sheet and that line mapped. If the selector appears more than once, the file
@@ -1223,7 +1232,8 @@ Test behaviour where it lives.
   dependencies.
 - **Extension units**: `node --test` in `test/extension/`. Mapper edge cases are tested here
   against metadata captured from the fixtures and saved in `test/extension/fixtures/`: fiber dumps,
-  `__svelte_meta` (Svelte 4's 0-based lines included), Rails annotation HTML, and real source maps,
+  `__svelte_meta` (Svelte 4's 0-based lines included, captured from a Svelte 4.2 app on Vite 5, which
+  has no fixture), Vue's component instances, Rails annotation HTML, and real source maps,
   including an external webpack-style `.map` for React 19 (there is no webpack fixture). Clue order and
   the common-class filter are tested here too.
 - **End-to-end**: proves the wiring on real dev servers and the browser-only behaviour; it doesn't
@@ -1247,7 +1257,7 @@ One committed, hand-written folder per app under `fixtures/<app>/`, nothing gene
 | `vite-react19` | the React 19 `_debugStack` route through an inline source map |
 | `vite-react18` | React 18 `_debugSource` (its own app: two Reacts don't share a Vite app) |
 | `vite-vue` | Vue 3 `__file`, file only |
-| `sveltekit` | Svelte 5 `__svelte_meta`, with `parent` for the usage site |
+| `sveltekit` | Svelte 5 `__svelte_meta`, with `parent` for the usage site, on a page rendered on the server and hydrated |
 
 There is no Django-style fixture: `static` and `rails` already cover a server-rendered page without
 framework clues.
@@ -1259,7 +1269,8 @@ Each fixture has:
 - `fixture.json`: the start command as an argv with a `{port}` placeholder (`start`), the path to
   poll for readiness (`ready`), the toolchain commands it needs beyond Node (`needs`, e.g. `ruby`),
   and environment variables for the start command (`env`, e.g. the one that turns Rails'
-  annotations on). The ready path is polled on the host the app is opened on: for `localhost`, on
+  annotations on), and optionally `loaded`, a selector each page waits for once opened (SvelteKit's
+  layout marks hydration, which brings the metadata). The ready path is polled on the host the app is opened on: for `localhost`, on
   both `127.0.0.1` and `::1`, as Chrome tries both, so a server bound to either is ready;
 - `expected.json`: the golden cases (below).
 

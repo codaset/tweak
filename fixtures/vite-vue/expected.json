@@ -1,0 +1,21 @@
+[
+  {
+    "name": "export button, two components deep",
+    "pick": { "selector": ".export-button" },
+    "locations": [{ "file": "src/Button.vue", "role": "element", "via": "vue" }],
+    "clues": ["text Export", "class export-button"],
+    "brief": ["- `src/Button.vue`: element 1 (Vue, file only; search this file for its clues)"]
+  },
+  {
+    "name": "save button, written in App and passed to Panel's slot",
+    "pick": { "selector": "[data-testid=save]" },
+    "locations": [{ "file": "src/App.vue", "role": "element", "via": "vue" }],
+    "clues": ["data-testid=save", "text Save"]
+  },
+  {
+    "name": "panel heading",
+    "pick": { "selector": ".panel-title" },
+    "locations": [{ "file": "src/Panel.vue", "role": "element", "via": "vue" }],
+    "clues": ["text Profile", "class panel-title"]
+  }
+]

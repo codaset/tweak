@@ -61,6 +61,8 @@
     tweak: (number) => tweaks.get(number),
     // tweaks are the ones this page shows a pin for.
     tweaks: () => list(),
+    // here says whether a tweak is of the page the tab shows, while claimed.
+    here: (t) => claimed && t?.page === shownPage,
     // redraw puts the pins and card in step with the tweaks.
     redraw() {
       ns.pins.render(list());

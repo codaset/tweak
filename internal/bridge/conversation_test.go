@@ -46,11 +46,20 @@ func TestAQuestionAndItsReply(t *testing.T) {
 	}
 
 	s.send(map[string]any{"type": "reply", "ref": "r2", "number": 1, "text": "the outline one"})
-	if r := s.readUntil("result"); r["ref"] != "r2" || r["number"] != 1.0 {
-		t.Fatalf("result %v", r)
+	// The result and the event go out on their own; either may come first.
+	var result, replied map[string]any
+	for i := 0; i < 10 && (result == nil || replied == nil); i++ {
+		switch m := s.nextAny(); {
+		case m["type"] == "result":
+			result = m
+		case m["event"] == "tweak-replied":
+			replied = m["tweak"].(map[string]any)
+		}
 	}
-	replied := s.readUntilEvent("tweak-replied")["tweak"].(map[string]any)
-	if replied["status"] != "sent" {
+	if result["ref"] != "r2" || result["number"] != 1.0 {
+		t.Fatalf("result %v", result)
+	}
+	if replied == nil || replied["status"] != "sent" {
 		t.Fatalf("replied %v", replied)
 	}
 

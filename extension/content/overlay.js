@@ -211,7 +211,7 @@
       box-shadow: 0 1px 3px rgb(0 0 0 / 0.3), 0 0 0 1px rgb(0 0 0 / 0.06);
       cursor: pointer;
       pointer-events: auto;
-      transition: transform 120ms ease, opacity 120ms ease, background-color 200ms ease;
+      transition: transform 120ms ease, opacity 200ms ease, filter 200ms ease, background-color 200ms ease;
     }
     .pin:hover { transform: scale(1.12); }
     .pin:focus-visible { outline: 2px solid var(--outline); outline-offset: 2px; }
@@ -226,6 +226,16 @@
       animation: ripple 1.6s ease-out infinite;
     }
     .picking .pin { opacity: 0.3; pointer-events: none; }
+    /* While the bridge is down, pins and the card are from the last snapshot:
+       faded, and the card read-only. The fade waits a moment, so a short
+       reconnect doesn't flash it. */
+    .pins.offline .pin { opacity: 0.45; filter: saturate(0.35); transition-delay: 0s, 300ms, 300ms; }
+    .pins.offline .pin:hover, .pins.offline .pin.open { opacity: 0.8; }
+    .pins.offline.picking .pin { opacity: 0.3; }
+    .panel { transition: opacity 200ms ease; }
+    .panel.offline { opacity: 0.8; }
+    .panel.offline:hover, .panel.offline:focus-within { opacity: 0.94; }
+    .panel.offline .status .dot { background: var(--tone-ended); animation: none; }
 
     /* The composer and the card share one panel */
     .panel {

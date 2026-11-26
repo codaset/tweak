@@ -38,16 +38,22 @@ export async function devBridge(options = {}) {
     port,
     state,
     env,
-    // The bridge the CLI started, if it's running: POST /shutdown, then wait
-    // for its PID to go.
-    async stop() {
+    // Stops the bridge the CLI started, if it's running, keeping its state
+    // folder, so the next tweak command starts it again on the same
+    // database: POST /shutdown, then wait for its PID to go. Any tweak
+    // command starts a missing bridge, tweak watch included, so stop the
+    // watcher first to keep it down.
+    async shutdown() {
       const file = join(state, "bridge.json");
-      if (existsSync(file)) {
-        const { port: p, pid } = JSON.parse(readFileSync(file, "utf8"));
-        await fetch(`http://127.0.0.1:${p}/shutdown`, { method: "POST", headers: { "x-tweak": "1" } }).catch(() => {});
-        for (let i = 0; i < 50 && alive(pid); i++) await sleep(100);
-        if (alive(pid)) process.kill(pid, "SIGKILL");
-      }
+      if (!existsSync(file)) return;
+      const { port: p, pid } = JSON.parse(readFileSync(file, "utf8"));
+      await fetch(`http://127.0.0.1:${p}/shutdown`, { method: "POST", headers: { "x-tweak": "1" } }).catch(() => {});
+      for (let i = 0; i < 50 && alive(pid); i++) await sleep(100);
+      if (alive(pid)) process.kill(pid, "SIGKILL");
+    },
+    // The same, then the state folder goes.
+    async stop() {
+      await this.shutdown();
       rmSync(state, { recursive: true, force: true });
     },
   };

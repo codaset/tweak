@@ -9,7 +9,7 @@ import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
-import { applyTweaks, askedIn, forTab, pageOf, reachesTab } from "./lib/tweaks.js";
+import { applyTweaks, askedIn, askedSince, forTab, pageOf, reachesTab } from "./lib/tweaks.js";
 import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
 import { draw, frame, paced } from "./lib/screenshot.js";
@@ -52,7 +52,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 // Toggling pick mode on a claimed page (design.md § Toolbar button) is still
-// to come; ⌥-click picks for now.
+// to come; ⌥-click picks for now. While the bridge is down the button keeps
+// opening the side panel, as pick mode will then too.
 chrome.action.onClicked.addListener((tab) => openSidePanel(tab));
 chrome.runtime.onConnect.addListener((port) => {
   const ports = { panel: panels, tab: tabs }[port.name];
@@ -70,7 +71,13 @@ chrome.runtime.onConnect.addListener((port) => {
   port.postMessage(port.name === "panel" ? panelMessage() : tabMessage());
   if (port.name === "tab") selfUpdate.watchTab(port);
 });
-chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(cardKey(tabId)));
+chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove([cardKey(tabId), draftKey(tabId)]));
+// A tab asks for the side panel: an ⌥-click while the bridge is down. Sent
+// with runtime.sendMessage from the click, whose user gesture
+// sidePanel.open needs; it's called first, while the gesture lasts.
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type === "side-panel" && sender.tab) openSidePanel(sender.tab).catch((e) => console.warn("Codaset Tweak: couldn't open the side panel", e.message));
+});
 
 // ---- The side panel and tabs ----
 
@@ -86,7 +93,9 @@ const panelMessage = () => ({ type: "state", ...view });
 const tabMessage = () => ({ type: "state", connection: view.connection });
 
 function publish(changes) {
+  const was = view.connection;
   Object.assign(view, changes);
+  if (view.connection !== was) showBadge();
   for (const p of panels) p.postMessage(panelMessage());
   for (const p of tabs) p.postMessage(tabMessage());
 }
@@ -125,6 +134,10 @@ async function publishSuggestions() {
 // card stays open as the tab navigates, so its tweak reaches the tab too,
 // whatever page it's on (port.card).
 const cardKey = (tabId) => `card-${tabId}`;
+// And its drafts, kept as you type so they survive a reload:
+// {compose: {page, kind, selectors, anchor, selection?, area?, text} | null,
+// replies: {[number]: text}}.
+const draftKey = (tabId) => `draft-${tabId}`;
 
 async function onTabMessage(port, msg) {
   const tabId = port.sender?.tab?.id;
@@ -139,15 +152,22 @@ async function onTabMessage(port, msg) {
       publishSuggestions();
       await tweaksRestored;
       const key = cardKey(tabId);
-      const { [key]: card = null } = await chrome.storage.session.get(key);
+      const { [key]: card = null, [draftKey(tabId)]: draft = null } = await chrome.storage.session.get([key, draftKey(tabId)]);
       if (!("card" in port)) port.card = card; // a card message since then is newer
-      port.postMessage({ type: "tweaks", tweaks: forTab(tweakState, port), card: port.card, claimed: claimed(port.url) });
+      port.postMessage({ type: "tweaks", tweaks: forTab(tweakState, port), card: port.card, draft, claimed: claimed(port.url) });
       break;
     }
     case "card":
       port.card = msg.number || null;
       if (msg.number) await chrome.storage.session.set({ [cardKey(tabId)]: msg.number });
       else await chrome.storage.session.remove(cardKey(tabId));
+      break;
+    case "draft":
+      // The tab's drafts as you type them, or null once none is left;
+      // after the self-update's restore, which would put an older copy back.
+      await tweaksRestored;
+      if (msg.draft) await chrome.storage.session.set({ [draftKey(tabId)]: msg.draft });
+      else await chrome.storage.session.remove(draftKey(tabId));
       break;
     case "capture":
       capture(port, msg);
@@ -287,28 +307,41 @@ function adoptTweaks(next, msg) {
     if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forTab(next, port), claimed: claimed(port.url) });
     else if (reachesTab(msg.tweak, port)) port.postMessage({ type: "tweak", tweak: msg.tweak, event: msg.event });
   }
+  // A new question: it carries the tweak, as the sending tab may be on
+  // another page. Those asked while the socket was down come in a snapshot,
+  // compared with the cache (the hello waits for it to be read back).
+  const asked =
+    msg.type === "snapshot"
+      ? askedSince(was, next, shown, senders)
+      : [{ tweak: msg.tweak, ...askedIn(was.tweaks.get(msg.tweak.number), msg.tweak, shown, senders.get(msg.tweak.number)) }];
+  for (const { tweak, open, toast } of asked) {
+    for (const port of open) port.postMessage({ type: "asked", tweak });
+    for (const port of toast) port.postMessage({ type: "asked", tweak, toast: true });
+  }
   if (msg.type === "snapshot") {
     // Only open tweaks can still ask, so the rest are forgotten.
     const before = senders.size;
     for (const n of senders.keys()) if (!next.tweaks.has(n)) senders.delete(n);
     if (senders.size !== before) saveSenders();
-    return;
   }
-  // A new question: it carries the tweak, as the sending tab may be on another page.
-  const { open, toast } = askedIn(was.tweaks.get(msg.tweak.number), msg.tweak, shown, senders.get(msg.tweak.number));
-  for (const port of open) port.postMessage({ type: "asked", tweak: msg.tweak });
-  for (const port of toast) port.postMessage({ type: "asked", tweak: msg.tweak, toast: true });
 }
 
 // ---- Site access and the badge ----
 
 async function refreshAccess() {
   const granted = await chrome.permissions.contains(ALL_URLS);
-  const { text, color } = badge({ granted });
-  await chrome.action.setBadgeBackgroundColor({ color });
-  await chrome.action.setBadgeText({ text });
   publish({ granted });
+  await showBadge();
   return granted;
+}
+
+// showBadge shows the grey "!" until access is granted or while the bridge
+// is down (lib/badge.js).
+async function showBadge() {
+  const b = badge(view);
+  if (!b) return;
+  await chrome.action.setBadgeBackgroundColor({ color: b.color });
+  await chrome.action.setBadgeText({ text: b.text });
 }
 
 // ---- Claims and registration ----
@@ -419,7 +452,11 @@ const bridge = {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     conn.socket = ws;
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
+      // The snapshot is compared with the cached tweaks and their senders
+      // (questions asked meanwhile pop up), so those are read back first.
+      await tweaksRestored;
+      if (ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, lastSeq: 0, version: chrome.runtime.getManifest().version }));
       conn.keepalive = setInterval(() => ws.send(JSON.stringify({ type: "keepalive" })), KEEPALIVE_MS);
     };

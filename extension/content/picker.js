@@ -7,7 +7,9 @@
 //   page's own;
 // - ⌥-click on selected text picks the text;
 // - ⌥-drag draws a box over any region, empty space included, and picks the
-//   area. esc during the drag cancels it.
+//   area. esc during the drag cancels it;
+// - while the bridge is down, ⌥ outlines nothing and an ⌥-click opens the
+//   side panel instead (⇧-click still changes an open composer).
 // The whole gesture is swallowed (pointer and mouse down and up, the moves
 // of a drag, and the click), so links and buttons don't fire and the page's
 // text selection is left as it was. The listeners go on window in the
@@ -196,7 +198,7 @@
       drawDrag();
       return;
     }
-    if (!(e.altKey || adds(e)) || !enabled() || ns.overlay.contains(e)) {
+    if (!(e.altKey || adds(e)) || !enabled() || ns.overlay.contains(e) || (ns.worker.down() && !adds(e))) {
       if (hovered || (marks && !marks.hidden)) clear();
       return;
     }
@@ -224,7 +226,8 @@
     if (drag) return;
     const alt = e.key === "Alt" ? e.type === "keydown" : e.altKey;
     const shift = e.key === "Shift" ? e.type === "keydown" : e.shiftKey;
-    const on = alt || (shift && ns.panel.canAdd?.());
+    const adding = shift && ns.panel.canAdd?.();
+    const on = (alt && !ns.worker.down()) || adding;
     if (on && pointer && enabled()) hover(pointer.x, pointer.y, shift);
     else if (!on && (hovered || (marks && !marks.hidden))) clear();
   };
@@ -240,6 +243,10 @@
     if (e.button !== 0 || !(e.altKey || adds(e)) || !enabled() || ns.overlay.contains(e)) return;
     stop(e);
     swallowing = true;
+    // While the bridge is down nothing can be sent: an ⌥-click opens the
+    // side panel instead, which says how to start it. Asked now, while the
+    // press is a user gesture; the rest of the click is swallowed.
+    if (ns.worker.down() && !adds(e)) return ns.worker.openSidePanel();
     press = { x: e.clientX, y: e.clientY, alt: e.altKey }; // only ⌥ starts a drag
   };
 

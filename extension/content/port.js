@@ -14,6 +14,22 @@
 
   ns.worker = {
     connection: "connecting",
+    // down says whether the bridge is known to be down (or refused us):
+    // pins and cards fade and go read-only, and pointing opens the side
+    // panel. While the worker's port reconnects it's unknown, not down.
+    down() {
+      return this.connection === "disconnected" || this.connection === "refused";
+    },
+    // openSidePanel asks the worker for the side panel. Call it from the
+    // input event itself: runtime.sendMessage carries its user gesture,
+    // which sidePanel.open needs.
+    openSidePanel() {
+      try {
+        chrome.runtime.sendMessage({ type: "side-panel" }).catch(() => {});
+      } catch {
+        // the extension is gone: the port's teardown follows
+      }
+    },
     // on(fn) hears every message from the worker.
     on(fn) {
       listeners.add(fn);

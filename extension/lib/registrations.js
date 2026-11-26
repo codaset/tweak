@@ -22,6 +22,7 @@ export const CONTENT_FILES = [
   "content/picker.js",
   "content/pins.js",
   "content/marks.js",
+  "content/drafts.js",
   "content/card.js",
   "content/page.js",
   "content/boot.js",

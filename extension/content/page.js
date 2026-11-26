@@ -12,6 +12,7 @@
   const tweaks = new Map(); // number -> tweak: this page's, and the open card's
   let frame = 0;
   let claimed = true; // the scripts run only on claimed pages; the worker says otherwise
+  let draftsAdopted = false; // once this load has the drafts kept for its tab
   // The page is origin and path: the query and hash don't change it.
   const pageKey = () => `${location.origin}${location.pathname}`;
   let shownPage = pageKey();
@@ -76,8 +77,8 @@
         shownURL = urlKey();
         ns.worker.post({ type: "page", url: location.href, ...improvements() });
         break;
-      case "state":
-        ns.panel.update();
+      case "state": // connected or down: the pins and card fade while it's down
+        ns.page.redraw();
         break;
       case "closed": // the worker's port is gone: a send in flight is lost with it
         ns.panel.unsent("Not connected to Tweak");
@@ -87,8 +88,14 @@
         for (const t of msg.tweaks) tweaks.set(t.number, t);
         if (typeof msg.claimed === "boolean") setClaimed(msg.claimed); // absent: unchanged
         ns.page.redraw();
+        // The drafts kept for this tab come with its first tweaks after a
+        // load; a later port (a restarted worker) brings nothing new.
+        if (!draftsAdopted) ns.drafts.adopt(msg.draft);
         // The card open before a reload; on a dormant page it opens hidden.
         if (msg.card && tweaks.has(msg.card) && !ns.panel.open() && ns.panel.showing() === null) ns.panel.show(msg.card);
+        // Or the composer, with what you'd written.
+        if (!draftsAdopted && ns.panel.showing() === null && !ns.panel.open()) ns.panel.restore(ns.drafts.compose());
+        draftsAdopted = true;
         break;
       case "tweak":
         // msg.event is the bridge's event: tweak-undone means a change was

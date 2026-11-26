@@ -128,7 +128,9 @@ another page. The bridge enforces the same rule: `create` for an unclaimed page 
 the worker opens it with `setAccessLevel({accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS"})` at
 start. Pages still can't reach it. The open card is the exception: a content script doesn't know
 its tab's ID, so it tells the worker, which keeps it under `card-<tab id>` and hands it back when
-the tab's port reconnects after a reload.
+the tab's port reconnects after a reload. Drafts go the same way, under `draft-<tab id>`. A composer
+reopens from its draft only on the same page with everything it pointed at found again by selector
+(and the text, for a text pick); otherwise the draft is dropped. It reopens without a screenshot.
 
 **Overlay layering**: the overlay host is a `popover="manual"` element in the top layer, so no
 `z-index` fights. A modal `<dialog>` makes everything outside it inert, top layer included. So when
@@ -156,8 +158,9 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `create` | a `create` for the bridge, with the tab's `ref` (the worker swaps in its own), and `shot: {id, rects}` when the pick has a capture: the worker keeps that, and uploads the PNG once the number comes back |
 | | `reply` | a `reply` for the bridge, with the tab's `ref`, likewise |
 | | `busy` | `busy`: whether the tab is composing, holding a draft or picking, which holds a self-update reload back |
+| | `draft` | `draft`: the tab's drafts as you type, `{compose, replies}` (the composer's page, pick kind, selectors, anchor, selection or area, and text; each card's reply by number), or `null` once none is left |
 | | `capture` | `id`, and `viewport` (`innerWidth`, `innerHeight`): capture the tab now, its overlay hidden, and hold it under `id` |
-| | `drop` | `id`: throw that capture away (its composer closed unsent, or a new pick replaced it) || Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
+| | `drop` | `id`: throw that capture away (its composer closed unsent, or a new pick replaced it) || Worker to tab | `tweaks` | `tweaks`: every tweak of the tab's page, plus its open card's (so one can come from another page); `card`: the open card; `draft`: the tab's drafts, in answer to `page`; `claimed`: whether a claim covers the page (left out when unknown, which leaves it unchanged) |
 | | `tweak` | `tweak`: one changed tweak (a page's, or the open card's) |
 | | `captured` | `id`, `ok`: whether the capture is held |
 | | `created` | `ref`, and the `number` created or an `error` and `message` |
@@ -165,6 +168,7 @@ the extension's own parts are not in `schema/`, which is the bridge contract onl
 | | `claimed` | `claimed`, sent to every tab whenever the claims change |
 | | `asked` | `tweak`, which has just become a question: sent to the tab it was sent from, which opens its card, or with `toast: true` to the tabs showing its page when that tab is gone |
 | | `state` | `connection`: connecting, connected, refused or disconnected |
+| Tab to worker, `runtime.sendMessage` | `side-panel` | open the side panel for the tab: an ⌥-click while the bridge is down. Sent from the input event, so it carries the user gesture `sidePanel.open` needs |
 | Port, local | `open`, `closed` | made by the content script's own port when it connects and when it's lost; `open` is what sends `page`, and `closed` ends a send in flight |
 | Worker to side panel | `state` | the whole view: connection and message, bridge port, whether access is granted, the claims, any pending update |
 
@@ -301,7 +305,9 @@ Browser text calls the bridge "Tweak"; CLI and skill text call it "the bridge".
 
 **In the browser, while the bridge is down**:
 
-- Pins and cards stay on the page from the cached snapshot, faded; cards are read-only.
+- Pins and cards stay on the page from the cached snapshot, faded; cards are read-only. "Down" is
+  `disconnected` or `refused`: once down, the worker's retries stay `disconnected` until one is
+  accepted, so nothing flickers on each try.
 - The badge shows the grey `!` ("action needed").
 - Pick mode, ⌥-click and the toolbar button open the side panel instead, which says "Not connected to
   Tweak. Start it from Claude Code with `/tweak <origin>`", with the command to copy, and the port
@@ -310,7 +316,9 @@ Browser text calls the bridge "Tweak"; CLI and skill text call it "the bridge".
   undo, Send again and Resolve are disabled with "Not connected to Tweak". Drafts and half-written
   replies are kept, and sending works again once connected. Hiding pins and the per-site reload
   setting are local and keep working.
-- On reconnect the snapshot replaces the cache, and registrations are corrected as usual.
+- On reconnect the snapshot replaces the cache, and registrations are corrected as usual. A tweak
+  that became a question meanwhile (compared with the cache, which the worker reads back before its
+  `hello`) opens its card in its own tab, or is a toast when that tab is gone, as a live question.
 
 **On the CLI side**:
 
@@ -1364,7 +1372,9 @@ golden-tested in Go, not here.
 
 ### The runner
 
-Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/`.
+Puppeteer 25 (`enableExtensions`) from plain `node --test`, one test file per fixture in `test/e2e/`,
+plus `bridge-down.test.js` on `static`, which stops the development bridge mid-test
+(`bridge.shutdown()` keeps its state folder) and starts it again with the next `tweak claim`.
 Files run concurrently (node's default), each with its own Chrome. For each fixture the runner:
 
 1. copies the fixture to a temporary folder (round trips edit files), with `node_modules` and

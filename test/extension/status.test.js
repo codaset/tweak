@@ -7,7 +7,7 @@ import { nextStatus } from "../../extension/lib/status.js";
 const refused = { connection: "refused", message: "This extension speaks protocol 2; the bridge speaks 1. Reload the extension." };
 
 test("a connection goes connecting, connected, then disconnected when it closes", () => {
-  let s = { connection: "disconnected", message: "" };
+  let s = { connection: "connecting", message: "" };
   s = nextStatus(s, { type: "connecting" });
   assert.deepEqual(s, { connection: "connecting", message: "" });
   s = nextStatus(s, { type: "connected" });
@@ -33,4 +33,18 @@ test("a later try that fails without a refusal shows disconnected, not the old r
 
 test("a later try that's accepted clears the refusal", () => {
   assert.deepEqual(nextStatus(refused, { type: "connected" }), { connection: "connected", message: "" });
+});
+
+test("while the bridge is down, each retry stays disconnected until one is accepted", () => {
+  // The pins, the badge and the side panel follow it: a retry mustn't flicker them.
+  let s = { connection: "disconnected", message: "" };
+  s = nextStatus(s, { type: "connecting" });
+  assert.deepEqual(s, { connection: "disconnected", message: "" });
+  s = nextStatus(s, { type: "closed", refused: false });
+  assert.deepEqual(s, { connection: "disconnected", message: "" });
+  assert.deepEqual(nextStatus(s, { type: "connected" }), { connection: "connected", message: "" });
+});
+
+test("a new port while down tries it afresh: connecting", () => {
+  assert.deepEqual(nextStatus({ connection: "disconnected", message: "" }, { type: "reconnect" }), { connection: "connecting", message: "" });
 });

@@ -112,7 +112,10 @@ jobs:
       - run: npm ci --prefix fixtures/vite-react19
       - run: npm ci --prefix fixtures/vite-vue
       - run: npm ci --prefix fixtures/sveltekit
-      - run: npm run e2e
+      # Each test file is mostly waiting on Chrome and the bridge (about half a
+      # core), so four at once on the runner's 4 vCPUs, not node's default of 3.
+      - run: go build -o node_modules/.cache/codaset-tweak-e2e/tweak ./cmd/tweak
+      - run: node --test --test-concurrency=4 "test/e2e/*.test.js"
 
   consistency:
     runs-on: ubuntu-latest

@@ -88,7 +88,7 @@ type TransitionError struct {
 func (e *TransitionError) Error() string {
 	switch {
 	case e.From == StatusDone && e.To == StatusDone:
-		return fmt.Sprintf("tweak %d is already done", e.Number)
+		return fmt.Sprintf("tweak %d is already done: its summary is saved, so there's nothing more to do", e.Number)
 	case e.From == StatusDone:
 		return fmt.Sprintf("tweak %d is already done: there's nothing more to work on", e.Number)
 	case e.To == StatusDone:

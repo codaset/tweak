@@ -80,3 +80,15 @@ export function probe({ document, CustomEvent }, el, detail) {
   document.removeEventListener("tweak:probe-result", hear);
   return heard;
 }
+
+// A content script (extension/content/<file>) run in a fresh context: by
+// default over a codasetTweak namespace `ns`, the way the page shares one;
+// `extra` adds the globals the script uses. runScripts runs several over one
+// ready-made context.
+const script = (file) => read(`../../extension/content/${file}`);
+export function loadScript(file, ns, extra = {}) {
+  runInNewContext(script(file), { codasetTweak: ns, globalThis: { codasetTweak: ns }, ...extra });
+}
+export function runScripts(files, context) {
+  for (const file of files) runInNewContext(script(file), context);
+}

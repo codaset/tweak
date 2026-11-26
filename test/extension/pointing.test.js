@@ -2,12 +2,10 @@
 // script it is. The DOM parts run in the e2e cases on the static fixture.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { loadScript } from "./probe-world.js";
 
-const src = readFileSync(new URL("../../extension/content/pointing.js", import.meta.url), "utf8");
 const ns = { ready: false, teardowns: [] };
-runInNewContext(src, { codasetTweak: ns, globalThis: { codasetTweak: ns } });
+loadScript("pointing.js", ns);
 const { around, topLevelInside, smallestContaining } = ns.pointing;
 
 test("the text around a selection is cut furthest from it, whitespace squashed", () => {

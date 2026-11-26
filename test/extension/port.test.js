@@ -2,10 +2,8 @@
 // with a stand-in for chrome.runtime.connect.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { loadScript } from "./probe-world.js";
 
-const src = readFileSync(new URL("../../extension/content/port.js", import.meta.url), "utf8");
 
 function load() {
   const ports = [];
@@ -23,7 +21,7 @@ function load() {
     },
   };
   const ns = { ready: false, teardowns: [], alive: () => true, teardown() {} };
-  runInNewContext(src, { codasetTweak: ns, globalThis: { codasetTweak: ns }, chrome, setTimeout: () => 0 });
+  loadScript("port.js", ns, { chrome, setTimeout: () => 0 });
   return { ns, ports };
 }
 

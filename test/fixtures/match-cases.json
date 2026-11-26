@@ -1,0 +1,177 @@
+[
+ {
+  "pattern": "https://ernie.localhost/*",
+  "url": "https://ernie.localhost/",
+  "want": true
+ },
+ {
+  "pattern": "https://ernie.localhost/*",
+  "url": "https://ernie.localhost/admin/users/12?tab=2#x",
+  "want": true
+ },
+ {
+  "pattern": "https://ernie.localhost/*",
+  "url": "http://ernie.localhost/",
+  "want": false
+ },
+ {
+  "pattern": "https://ernie.localhost/*",
+  "url": "https://bert.localhost/",
+  "want": false
+ },
+ {
+  "pattern": "https://ernie.localhost/*",
+  "url": "https://x.ernie.localhost/",
+  "want": false
+ },
+ {
+  "pattern": "https://ernie.localhost/admin/*",
+  "url": "https://ernie.localhost/admin/users",
+  "want": true
+ },
+ {
+  "pattern": "https://ernie.localhost/admin/*",
+  "url": "https://ernie.localhost/admin/",
+  "want": true
+ },
+ {
+  "pattern": "https://ernie.localhost/admin/*",
+  "url": "https://ernie.localhost/admin",
+  "want": false
+ },
+ {
+  "pattern": "https://ernie.localhost/admin/*",
+  "url": "https://ernie.localhost/users",
+  "want": false
+ },
+ {
+  "pattern": "https://*.bert.localhost/*",
+  "url": "https://bert.localhost/",
+  "want": true
+ },
+ {
+  "pattern": "https://*.bert.localhost/*",
+  "url": "https://a.b.bert.localhost/x",
+  "want": true
+ },
+ {
+  "pattern": "https://*.bert.localhost/*",
+  "url": "https://notbert.localhost/",
+  "want": false
+ },
+ {
+  "pattern": "http://*/*",
+  "url": "http://anything.test/",
+  "want": true
+ },
+ {
+  "pattern": "*://localhost/*",
+  "url": "https://localhost/",
+  "want": true
+ },
+ {
+  "pattern": "*://localhost/*",
+  "url": "http://localhost/",
+  "want": true
+ },
+ {
+  "pattern": "*://localhost/*",
+  "url": "ws://localhost/",
+  "want": false
+ },
+ {
+  "pattern": "*://localhost/*",
+  "url": "ftp://localhost/",
+  "want": false
+ },
+ {
+  "pattern": "http://localhost/*",
+  "url": "http://localhost:3000/",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost/*",
+  "url": "http://localhost/",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost:3000/*",
+  "url": "http://localhost:3000/",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost:3000/*",
+  "url": "http://localhost:5173/",
+  "want": false
+ },
+ {
+  "pattern": "http://localhost:3000/*",
+  "url": "http://localhost/",
+  "want": false
+ },
+ {
+  "pattern": "http://localhost:80/*",
+  "url": "http://localhost/",
+  "want": true
+ },
+ {
+  "pattern": "https://localhost:443/*",
+  "url": "https://localhost/",
+  "want": true
+ },
+ {
+  "pattern": "http://LOCALHOST/*",
+  "url": "http://LocalHost/",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost/qq*a=1*",
+  "url": "http://localhost:3000/qq?a=1",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost/qq*a=1*",
+  "url": "http://localhost:3000/qq",
+  "want": false
+ },
+ {
+  "pattern": "http://localhost/qq*a=1*",
+  "url": "http://localhost:3000/qq#a=1",
+  "want": false
+ },
+ {
+  "pattern": "http://localhost/a?b",
+  "url": "http://localhost/a?b",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost/a?b",
+  "url": "http://localhost/axb",
+  "want": false
+ },
+ {
+  "pattern": "http://localhost/users/12",
+  "url": "http://localhost/users/12",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost/users/12",
+  "url": "http://localhost/users/123",
+  "want": false
+ },
+ {
+  "pattern": "http://localhost/*/edit",
+  "url": "http://localhost/users/12/edit",
+  "want": true
+ },
+ {
+  "pattern": "http://[::1]:3000/*",
+  "url": "http://[::1]:3000/x",
+  "want": true
+ },
+ {
+  "pattern": "http://localhost/*",
+  "url": "not a url",
+  "want": false
+ }
+]

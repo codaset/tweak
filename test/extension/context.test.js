@@ -2,12 +2,10 @@
 // The DOM parts run in the browser proof.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { loadScript, runScripts } from "./probe-world.js";
 
-const src = readFileSync(new URL("../../extension/content/context.js", import.meta.url), "utf8");
 const ns = { ready: false, teardowns: [] };
-runInNewContext(src, { codasetTweak: ns, globalThis: { codasetTweak: ns } });
+loadScript("context.js", ns);
 const { styles, trimHTML, role } = ns.context;
 
 // computed is a stand-in CSSStyleDeclaration; Chrome gives "" for a
@@ -128,7 +126,7 @@ test("in an @scope, :scope is the scope root: rules gathered from the captured s
     globalThis: page, CSSScopeRule, CSSSupportsRule: class {}, CSSContainerRule: class {},
     document: { styleSheets: [sheet], adoptedStyleSheets: [] }, matchMedia: () => ({ matches: true }),
   });
-  runInNewContext(src, page);
+  runScripts(["context.js"], page);
   const selectors = (el) => page.codasetTweak.context.rules(el).map((r) => r.selector);
   assert.deepEqual(JSON.parse(JSON.stringify({
     child: selectors(child), deeper: selectors(deeper), root: selectors(card), amp: selectors(x), outside: selectors(outside),

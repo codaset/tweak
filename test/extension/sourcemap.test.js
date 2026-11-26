@@ -2,10 +2,8 @@
 // decoder, over real maps esbuild wrote (test/extension/fixtures/css).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { read, loadScript } from "./probe-world.js";
 
-const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const fixture = (name) => read(`./fixtures/css/${name}`);
 // plain copies a value out of the script's realm, so deepEqual compares values.
 const plain = (v) => JSON.parse(JSON.stringify(v));
@@ -13,9 +11,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 // load gives a fresh copy of the classic script, with fetch stubbed.
 function load(fetch = () => Promise.reject(new Error("no fetch"))) {
   const ns = { ready: false, teardowns: [] };
-  runInNewContext(read("../../extension/content/sourcemap.js"), {
-    codasetTweak: ns, globalThis: { codasetTweak: ns }, atob, TextDecoder, URL, fetch,
-  });
+  loadScript("sourcemap.js", ns, { atob, TextDecoder, URL, fetch });
   return ns.sourcemap;
 }
 

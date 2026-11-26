@@ -24,7 +24,8 @@ export function matches(pattern, url) {
   const [, scheme, authority, path] = m;
   if (scheme !== "*" && `${scheme}:` !== u.protocol) return false;
 
-  const [, host, port] = /^(.*?)(?::(\d+))?$/.exec(authority);
+  const [, rawHost, port] = /^(.*?)(?::(\d+))?$/.exec(authority);
+  const host = rawHost.toLowerCase(); // Chrome canonicalises hosts to lower case, as Parse does
   const hostname = u.hostname.toLowerCase();
   if (host !== "*") {
     if (host.startsWith("*.")) {

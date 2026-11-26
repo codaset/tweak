@@ -34,7 +34,9 @@ jobs:
             echo "Not gofmt'd:"; echo "$unformatted"; exit 1
           fi
       - run: go vet ./...
-      - run: go test -race ./...
+      # The race detector on Linux only: a data race doesn't depend on the OS,
+      # and -race roughly doubles the slower packages on macOS's runners.
+      - run: go test ${{ runner.os == 'Linux' && '-race' || '' }} ./...
       - name: Cross-compile all targets
         if: runner.os == 'Linux'
         env:

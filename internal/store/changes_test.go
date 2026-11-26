@@ -72,6 +72,37 @@ func TestTheFirstEditIsTimedFromDelivery(t *testing.T) {
 	}
 }
 
+// A reply logged before the new line's acknowledgement doesn't move the
+// delivery to the reply's: the new line's acknowledgement is the delivery.
+func TestDeliveryIsTheFirstLinesAcknowledgementEvenWithAReplyAfter(t *testing.T) {
+	s := open(t)
+	now := time.UnixMilli(1_700_000_000_000)
+	s.SetClock(func() time.Time { return now })
+	register(t, s, "s1", "/dev/ernie")
+	s.Claim("s1", mustParse(t, "https://ernie.localhost/*"))
+	tw, _ := s.CreateTweak(newTweak("https://ernie.localhost/", "make it green"))
+	in, _ := s.Inbox("s1", -1) // the new line, printed
+	if _, err := s.Work("s1", tw.Number, nil, CaptureStart{Folder: "/dev/ernie"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetStatus("s1", tw.Number, StatusQuestion, &Entry{From: "claude", Kind: "question", Text: "outline?"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reply(tw.Number, "yes"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Second)
+	s.Inbox("s1", in.Seq) // acknowledges the new line only
+	now = now.Add(10 * time.Second)
+	if _, err := s.Work("s1", tw.Number, nil, CaptureStart{Folder: "/dev/ernie"}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.RecordBefore("s1", text("/dev/ernie/a.css", "red"))
+	if err != nil || r.First == nil || *r.First != (FirstEdit{Tweak: tw.Number, Delivered: true, After: 10 * time.Second}) {
+		t.Fatalf("%+v %+v %v", r, r.First, err)
+	}
+}
+
 // A tweak worked on before its line was acknowledged has no delivery time:
 // its first edit is still reported, without one.
 func TestAFirstEditWithoutADeliveryTime(t *testing.T) {

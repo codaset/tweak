@@ -15,6 +15,9 @@ import (
 // inboxTimeout outlasts the bridge's long-poll hold.
 const inboxTimeout = 60 * time.Second
 
+// ackTimeout bounds the acknowledgement watch sends before it exits.
+const ackTimeout = 5 * time.Second
+
 // watchBackoff is how long watch waits before asking again after the bridge
 // didn't answer: 1, 2, 5 seconds, then every 10.
 var watchBackoff = []time.Duration{time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second}
@@ -71,6 +74,12 @@ func watch(c *context, args []string) error {
 		// Asking after in.Seq next acknowledges these lines.
 		after = in.Seq
 		if in.Claims == 0 {
+			// No next poll: acknowledge now, or the next watcher prints them
+			// again. The bridge acknowledges before it would hold the request,
+			// so a short wait is enough; a failed ack only means a repeat.
+			if len(in.Lines) > 0 {
+				cl.callWithin(ackTimeout, "GET", "/inbox?after="+strconv.FormatInt(after, 10), nil, nil)
+			}
 			return nil
 		}
 	}
@@ -148,11 +157,11 @@ func (c *context) message(arg string) (string, error) {
 		return arg, nil
 	}
 	if c.Stdin == nil {
-		return "", errors.New("no stdin to read the message from")
+		return "", errors.New("no stdin to read the message from: pass the message as an argument instead")
 	}
 	raw, err := io.ReadAll(c.Stdin)
 	if err != nil {
-		return "", fmt.Errorf("couldn't read the message from stdin: %v", err)
+		return "", fmt.Errorf("couldn't read the message from stdin (%v): pass the message as an argument instead", err)
 	}
 	return strings.TrimRight(string(raw), "\r\n"), nil
 }

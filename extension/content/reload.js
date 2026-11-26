@@ -23,14 +23,16 @@
   // moment says what a tweak's change from was to now means here: "watch"
   // (Claude is working: record signals), "undo" (its undo is with Claude),
   // "settle" (done or undone: decide whether to reload), "declined" (Claude
-  // declined the undo: the change stands) or null. A tweak that changed
-  // nothing, by the git check, settles nothing.
+  // declined the undo: the change stands), "withdrawn" (its reload, if any,
+  // is dropped) or null. A tweak that changed nothing, by the git check,
+  // settles nothing, and a withdrawn one only by being undone.
   function moment(was, now) {
     const state = (t) => t?.change?.state;
+    if (state(now) === "undone" && state(was) !== "undone") return "settle";
+    if (now.status === "withdrawn") return was?.status === "withdrawn" ? null : "withdrawn";
     if (now.status === "working" && was?.status !== "working") return "watch";
     if (state(now) === "undo-requested" && state(was) !== "undo-requested") return "undo";
     if (state(was) === "undo-requested" && state(now) !== "undo-requested" && state(now) !== "undone") return "declined";
-    if (state(now) === "undone" && state(was) !== "undone") return "settle";
     // Only a tweak the tab had can end here: one it hasn't (resolved, and
     // gone from the page) settles only by being undone.
     const ended = was && (now.status === "done" || now.status === "declined") && was.status !== now.status;
@@ -284,6 +286,7 @@
       if (m === "undo") undoing(now.number);
       if (m === "settle") ended(now.number);
       if (m === "declined") notUndone(now.number);
+      if (m === "withdrawn") set(now.number, null);
     },
     // loaded is the page's first list of tweaks, with the card open before
     // the load: if its tweak is still under way, the load was a full reload

@@ -85,3 +85,11 @@ test("an element's role is its explicit one, or the implicit one", () => {
   assert.equal(role(el("h2")), "heading");
   assert.equal(role(el("div")), "");
 });
+
+test("a nested selector list nests each branch", () => {
+  const { nest } = ns.context;
+  assert.equal(nest("> .a, > .b", ".container"), ":is(.container) > .a, :is(.container) > .b");
+  assert.equal(nest("& > .a, .b", ".c"), ":is(.c) > .a, :is(.c) :is(.b)");
+  // Commas inside parentheses, brackets and strings aren't branches.
+  assert.equal(nest(':is(.a, .b) [title="x, y"]', ".c"), ':is(.c) :is(:is(.a, .b) [title="x, y"])');
+});

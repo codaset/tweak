@@ -155,30 +155,71 @@
   // nest is a nested rule's selector made absolute against its parent's
   // (CSS nesting): & is the parent; with no &, the rule is a descendant,
   // or follows its own leading combinator.
+  // A list nests branch by branch: `> .a, > .b` is two relative selectors.
   function nest(selector, parent) {
     if (!parent) return selector;
-    if (selector.includes("&")) return selector.replaceAll("&", `:is(${parent})`);
-    if (/^\s*[>+~]/.test(selector)) return `:is(${parent}) ${selector.trim()}`;
-    return `:is(${parent}) :is(${selector})`;
+    return branches(selector)
+      .map((branch) => {
+        if (branch.includes("&")) return branch.replaceAll("&", `:is(${parent})`);
+        if (/^[>+~]/.test(branch)) return `:is(${parent}) ${branch}`;
+        return `:is(${parent}) :is(${branch})`;
+      })
+      .join(", ");
   }
 
-  // inScope says whether el can be styled by an @scope rule: it is inside a
-  // scope root, and not past the scope's limit within that root. (An
-  // implicit scope, with no start, is kept.) The rule is still shown inside
-  // its @scope.
-  function inScope(el, rule) {
-    if (!rule.start) return true;
-    let root;
+  // branches are a selector list's top-level selectors: commas inside
+  // parentheses, brackets or strings don't split it.
+  function branches(selector) {
+    const out = [];
+    let depth = 0;
+    let quote = "";
+    let start = 0;
+    for (let i = 0; i < selector.length; i++) {
+      const c = selector[i];
+      if (quote) {
+        if (c === "\\") i++;
+        else if (c === quote) quote = "";
+      } else if (c === '"' || c === "'") quote = c;
+      else if (c === "\\") i++;
+      else if (c === "(" || c === "[") depth++;
+      else if (c === ")" || c === "]") depth--;
+      else if (c === "," && depth === 0) {
+        out.push(selector.slice(start, i));
+        start = i + 1;
+      }
+    }
+    out.push(selector.slice(start));
+    return out.map((s) => s.trim()).filter(Boolean);
+  }
+
+  // scopeRoot is the root an @scope rule styles el from: the nearest
+  // ancestor (or el itself) matching its start, unless el is past the
+  // scope's limit within it. It is null when el is outside the scope, and
+  // undefined when the scope can't be told (an implicit scope, with no
+  // start, or a selector we can't evaluate): then the rule is kept, still
+  // shown inside its @scope.
+  function scopeRoot(el, rule) {
+    if (!rule.start) return undefined;
     try {
-      root = el.closest(rule.start);
+      const root = el.closest(rule.start);
       if (root && rule.end) {
         const limit = el.closest(rule.end);
-        if (limit && limit !== root && root.contains(limit)) return false;
+        if (limit && limit !== root && root.contains(limit)) return null;
       }
+      return root;
     } catch {
-      return true; // a selector we can't evaluate: keep the rule, wrapped
+      return undefined;
     }
-    return Boolean(root);
+  }
+
+  // matches says whether el matches a selector. Inside an @scope, :scope
+  // (and a top-level &) is the scope root, not el, so the selector is
+  // matched from the root.
+  function matches(el, selector, root) {
+    if (!root || !/:scope|&/.test(selector)) return el.matches(selector);
+    if (el === root) return el.matches(selector);
+    for (const found of root.querySelectorAll(selector)) if (found === el) return true;
+    return false;
   }
 
   // rules are the CSS rules matching el, in cascade source order, the
@@ -187,38 +228,44 @@
   // query can't be from script, so a rule inside one keeps its condition
   // around it (`@container (min-width: 40rem) { .card }`), never shown as
   // simply matching. Cross-origin sheets can't be read and are skipped.
+  // Each rule carries, unlisted (it isn't sent), its `source`: the sheet
+  // it is in and its own selector text, for the CSS rules mapper's line.
   function rules(el) {
     const out = [];
     // parent is the enclosing style rule's absolute selector, and shown how
     // the brief names it; when are the container conditions around it,
-    // outermost first.
-    const visit = (list, file, parent = null, when = []) => {
+    // outermost first; root is the @scope root around it, if any.
+    const visit = (list, from, parent = null, when = [], root = undefined) => {
       for (const rule of list) {
         if (rule.selectorText !== undefined) {
           const absolute = nest(rule.selectorText, parent?.absolute);
           const shown = parent ? `${parent.shown} { ${oneLine(rule.selectorText)} }` : oneLine(rule.selectorText);
           let hit = false;
           try {
-            hit = el.matches(absolute);
+            hit = matches(el, absolute, root);
           } catch {}
           if (hit) {
             const selector = when.reduceRight((s, condition) => `${condition} { ${s} }`, shown);
-            out.push({ selector: cut(selector, SELECTOR_CAP), ...(file && { file }) });
+            const file = sheetFile(from);
+            const found = { selector: cut(selector, SELECTOR_CAP), ...(file && { file }) };
+            Object.defineProperty(found, "source", { value: { sheet: from, selector: rule.selectorText } });
+            out.push(found);
           }
-          if (rule.cssRules?.length) visit(rule.cssRules, file, { absolute, shown }, when);
+          if (rule.cssRules?.length) visit(rule.cssRules, from, { absolute, shown }, when, root);
         } else if (rule.styleSheet) {
           sheet(rule.styleSheet); // @import
         } else if (rule.cssRules) {
           if (rule.media && rule.media.mediaText && !matchMedia(rule.media.mediaText).matches) continue;
           if (rule instanceof CSSSupportsRule && !CSS.supports(rule.conditionText)) continue;
           if (typeof CSSScopeRule !== "undefined" && rule instanceof CSSScopeRule) {
-            if (!inScope(el, rule)) continue;
+            const scope = scopeRoot(el, rule);
+            if (scope === null) continue;
             const prelude = `${rule.start ? ` (${oneLine(rule.start)})` : ""}${rule.end ? ` to (${oneLine(rule.end)})` : ""}`;
-            visit(rule.cssRules, file, parent, [...when, `@scope${prelude}`]);
+            visit(rule.cssRules, from, parent, [...when, `@scope${prelude}`], scope ?? root);
             continue;
           }
           const container = typeof CSSContainerRule !== "undefined" && rule instanceof CSSContainerRule;
-          visit(rule.cssRules, file, parent, container ? [...when, `@container ${oneLine(rule.conditionText)}`] : when);
+          visit(rule.cssRules, from, parent, container ? [...when, `@container ${oneLine(rule.conditionText)}`] : when, root);
         }
       }
     };
@@ -230,7 +277,7 @@
       } catch {
         return;
       }
-      visit(list, sheetFile(s));
+      visit(list, s);
     };
     for (const s of [...document.styleSheets, ...(document.adoptedStyleSheets ?? [])]) sheet(s);
     return out.slice(-RULES);

@@ -1,7 +1,7 @@
 // The static fixture: no framework, a server that never reloads.
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { loadFixture, open, setup, skipReason, tracer, until } from "./harness/index.js";
+import { conversation, loadFixture, open, setup, skipReason, tracer, until } from "./harness/index.js";
 
 const fixture = loadFixture("static");
 
@@ -10,6 +10,7 @@ describe("static", { skip: skipReason(fixture) ?? false }, () => {
 
   for (const c of fixture.cases) {
     test(`${c.name}: the tracer reaches Done, checked against the brief`, () => tracer(env, c));
+    test(`${c.name}: Claude asks, the developer replies from the card, then Done`, () => conversation(env, c));
   }
 
   // The harness itself, once, here.

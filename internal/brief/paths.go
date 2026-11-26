@@ -44,22 +44,29 @@ func Place(folder, given string) (rel string, ok bool) {
 
 var windowsDrive = regexp.MustCompile(`^/[A-Za-z]:/`)
 
+// stat is os.Stat; a test watches what is looked at.
+var stat = os.Stat
+
 // inside is file relative to folder, if file is a regular file within it.
-// Symlinks are resolved on both when the plain paths don't agree, since
-// frameworks report real paths and folders (macOS /tmp) may be links.
+// Containment is checked on the path alone, against the folder as given and
+// with its symlinks resolved (frameworks report real paths, and a folder
+// such as macOS /tmp may be a link), before the disk is touched: the path
+// came from the page.
 func inside(folder, file string) (string, bool) {
-	if info, err := os.Stat(file); err != nil || !info.Mode().IsRegular() {
+	rel, ok := within(folder, file)
+	if !ok {
+		real, err := filepath.EvalSymlinks(folder)
+		if err != nil {
+			return "", false
+		}
+		if rel, ok = within(real, file); !ok {
+			return "", false
+		}
+	}
+	if info, err := stat(filepath.Join(folder, filepath.FromSlash(rel))); err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
-	if rel, ok := within(folder, file); ok {
-		return rel, true
-	}
-	realFolder, err1 := filepath.EvalSymlinks(folder)
-	realFile, err2 := filepath.EvalSymlinks(file)
-	if err1 != nil || err2 != nil {
-		return "", false
-	}
-	return within(realFolder, realFile)
+	return rel, true
 }
 
 func within(folder, file string) (string, bool) {

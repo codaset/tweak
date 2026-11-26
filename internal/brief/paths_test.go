@@ -48,6 +48,19 @@ func TestPathsArePlacedInTheProject(t *testing.T) {
 		}
 	}
 
+	// A path outside the project is refused before the bridge looks at the
+	// disk: a page can't make it touch other files, or network shares.
+	defer func(f func(string) (os.FileInfo, error)) { stat = f }(stat)
+	var looked []string
+	stat = func(p string) (os.FileInfo, error) { looked = append(looked, p); return os.Stat(p) }
+	Place(project, outside)
+	Place(project, "src/../../secret.txt")
+	for _, p := range looked {
+		if !strings.HasPrefix(p, project+string(filepath.Separator)) {
+			t.Errorf("looked outside the project: %q", p)
+		}
+	}
+
 	if _, ok := Place("", "src/App.tsx"); ok {
 		t.Error("placed a path with no project folder")
 	}

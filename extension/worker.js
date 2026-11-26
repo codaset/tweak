@@ -123,7 +123,7 @@ function adoptTweaks(next, msg) {
   chrome.storage.session.set({ tweaks: [...next.tweaks.values()] });
   for (const port of tabs) {
     if (!port.page) continue;
-    if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forPage(next, port.page) });
+    if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forPage(next, port.page), claimed: claimed(port.url) });
     else if (msg.tweak.page === port.page) port.postMessage({ type: "tweak", tweak: msg.tweak });
   }
 }

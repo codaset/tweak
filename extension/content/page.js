@@ -63,7 +63,7 @@
       case "tweaks":
         tweaks.clear();
         for (const t of msg.tweaks) tweaks.set(t.number, t);
-        setClaimed(msg.claimed !== false);
+        if (typeof msg.claimed === "boolean") setClaimed(msg.claimed); // absent: unchanged
         ns.page.redraw();
         if (claimed && msg.card && tweaks.has(msg.card) && !ns.panel.open()) ns.panel.show(msg.card);
         break;

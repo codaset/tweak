@@ -106,6 +106,13 @@ test("a lapse moves the claim to the lapsed ones, and a restore moves it back", 
   assert.deepEqual(state.claims.map((c) => c.id), [7]);
 });
 
+test("a lapsed claim whose session ended is forgotten", () => {
+  let state = apply(undefined, { type: "snapshot", seq: 3, claims: [held(4, "http://localhost/*", true)], lapsed: [lapsedClaim(4, "https://a.localhost/*")], tweaks: [] });
+  state = apply(state, { type: "event", seq: 4, event: "claim-forgotten", claim: lapsedClaim(4, "https://a.localhost/*") });
+  assert.deepEqual(state.lapsed, []);
+  assert.deepEqual(state.claims.map((c) => c.id), [4], "a held claim with the same ID stays");
+});
+
 test("a page a lapsed claim covers is lapsed, not claimed, for 24 hours from the lapse", () => {
   const state = apply(undefined, {
     type: "snapshot",

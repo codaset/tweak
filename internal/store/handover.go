@@ -534,6 +534,16 @@ func (s *Store) EndSession(session string) error {
 			return err
 		}
 	}
+	// Its lapsed claims can't come back now.
+	lapsed, err := lapsedWhere(tx, `l.session = ? AND l.lost_to IS NULL`, session)
+	if err != nil {
+		return err
+	}
+	for _, c := range lapsed {
+		if err := tx.logClaim(EventClaimForgotten, c); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec(`DELETE FROM lapsed_claims WHERE session = ?`, session); err != nil {
 		return err
 	}

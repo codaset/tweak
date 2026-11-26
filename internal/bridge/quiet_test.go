@@ -498,6 +498,20 @@ func TestTheSocketShowsFoldersFromHomeAndSaysWhenALapseIsLost(t *testing.T) {
 	}
 }
 
+// A lapsed session that ends can't come back: the socket says so, so the
+// side panel stops offering it back.
+func TestALapsedSessionEndingForgetsItsLapsedClaimsOnTheSocket(t *testing.T) {
+	h, s, c := quietBridge(t, "/dev/ernie")
+	c.advance(10 * time.Minute)
+	s.eventOf("claim-lapsed")
+	if resp, body := h.do(as("s1", req{method: "POST", path: "/sessions/end"})); resp.StatusCode != 204 {
+		t.Fatalf("end: %d %s", resp.StatusCode, body)
+	}
+	if gone := s.eventOf("claim-forgotten")["claim"].(map[string]any); gone["pattern"] != "https://ernie.localhost/*" {
+		t.Fatalf("claim-forgotten %v", gone)
+	}
+}
+
 // A marker half-written by a hook that was cut off is a temporary file:
 // the bridge leaves it out, and removes it.
 func TestAHalfWrittenReleasedMarkerIsIgnored(t *testing.T) {

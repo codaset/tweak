@@ -91,6 +91,7 @@ export function apply(state = empty, msg) {
     case "claim-lapsed": // its session stopped responding: the page is unclaimed
       return { seq: msg.seq, claims: others, lapsed: [...lapsed, lapse] };
     case "claim-lost": // another session claimed over it: it can't come back
+    case "claim-forgotten": // its session ended: it can't come back
       return { ...state, seq: msg.seq, lapsed };
     default:
       return { ...state, seq: msg.seq };

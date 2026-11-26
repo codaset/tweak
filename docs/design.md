@@ -443,8 +443,8 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   claims that can still come back (each with `lapsedAt`); `claim-lapsed` and
   `claim-restored` events carry the claim like `claim-released` and `claim-made` (a restored claim
   has a new id). A held claim says whether its session is `listening` (no watcher for about 60 s
-  is not), and `claim-listening` says when that changes; `claim-lost` says a lapsed claim can no longer
-  come back. A tweak no session has carries `left`, the
+  is not), and `claim-listening` says when that changes; `claim-lost` (another session claimed over it) and
+  `claim-forgotten` (its session ended) say a lapsed claim can no longer come back. A tweak no session has carries `left`, the
   folder and how (`lapsed`, `released`, `ended`) of the session that let go of its page. The socket
   shows every folder from `~`, as the card and side panel name it. And `tweak-created`, `tweak-handed` (passed to the session claiming its page now),
   `tweak-status`, `tweak-replied`, `tweak-again`, `tweak-undo-conflict`, `tweak-undone`, `tweak-withdrawn` and `tweak-resolved` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`

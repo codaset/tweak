@@ -22,8 +22,8 @@
 
   // The hover label's source: the mappers run once the pointer has rested
   // on an element for SOURCE_DELAY, without fetching (a line only from a
-  // source map already loaded), and it's shown if that element is still
-  // the one outlined.
+  // source map already loaded; else the latest matching rule's stylesheet),
+  // and it's shown if that element is still the one outlined.
   const SOURCE_DELAY = 60;
   let source = { el: null, text: "" };
   let sourceTimer = 0;
@@ -31,7 +31,7 @@
     clearTimeout(sourceTimer);
     source = { el, text: "" };
     sourceTimer = setTimeout(async () => {
-      const text = ns.mappers.label(await ns.mappers.run(el, { fetch: false }).catch(() => []));
+      const text = await ns.mappers.hover(el).catch(() => "");
       if (source.el !== el || !text) return;
       source.text = text;
       const shown = hovered ?? ns.picker.held;

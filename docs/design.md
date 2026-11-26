@@ -681,7 +681,9 @@ top-level elements fully inside it, each mapped too.
 the composer opens at once. Send waits for it only if it hasn't finished (bounded by the timeouts).
 The hover label uses the same mappers but skips source-map fetches: it shows the file, and a line
 only if the map is already cached. It is debounced (about 60 ms), and names the first place that
-isn't a style (else the first style) by its last two path segments.
+isn't a style (else the first style; with none, the latest matching rule's stylesheet) by its last
+two path segments. Sheets and their maps are read once per sheet object, so a replaced sheet is read
+again.
 
 - **Optional improvements**: when a page lacks an easy improvement (e.g. a Rails app without
   template annotations), the side panel suggests it once, and it can be dismissed. The app is never

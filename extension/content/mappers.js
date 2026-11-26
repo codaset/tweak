@@ -173,24 +173,35 @@
     return { line, column: found - (before.lastIndexOf("\n") + 1) };
   }
 
-  // Served sheets' text by URL, fetched once: {loading, text}.
-  const sheets = new Map();
+  // Each sheet object's text and source map, read once: {loading, text,
+  // map, done}. A dev server that replaces a sheet (even at the same URL)
+  // gives a new sheet object, so both are read again, the map reloaded.
+  const sheets = new WeakMap();
 
-  // sheetText is a sheet's text: a <style>'s own, or its URL's, fetched
-  // (or, without fetch, only if fetched before).
-  async function sheetText(sheet, fetching) {
-    if (!sheet.href) return sheet.ownerNode?.textContent ?? "";
-    let entry = sheets.get(sheet.href);
-    if (!fetching) return entry?.text ?? "";
-    if (!entry) {
-      entry = { text: "" };
-      entry.loading = fetch(sheet.href, { credentials: "same-origin" })
-        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
-        .then((text) => (entry.text = text))
-        .catch(() => (sheets.delete(sheet.href), ""));
-      sheets.set(sheet.href, entry);
-    }
+  function read(sheet) {
+    let entry = sheets.get(sheet);
+    if (entry) return entry.loading;
+    entry = { text: "", map: null, done: false };
+    entry.loading = (async () => {
+      const text = sheet.href
+        ? await fetch(sheet.href, { credentials: "same-origin" }).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
+        : sheet.ownerNode?.textContent ?? "";
+      const map = text ? await ns.sourcemap.forText(text, sheet.href ?? location.href, { reload: true }) : null;
+      return Object.assign(entry, { text, map, done: true });
+    })().catch(() => (sheets.delete(sheet), entry)); // tried again on the next pick
+    sheets.set(sheet, entry);
     return entry.loading;
+  }
+
+  // sheetMap is a sheet's {text, map}, read if need be; without fetch, only
+  // what has been read already, or a <style>'s own text and inline map.
+  async function sheetMap(sheet, fetching) {
+    if (fetching) return read(sheet);
+    const entry = sheets.get(sheet);
+    if (entry?.done) return entry;
+    if (sheet.href) return {};
+    const text = sheet.ownerNode?.textContent ?? "";
+    return { text, map: text ? await ns.sourcemap.forText(text, location.href, { fetch: false }) : null };
   }
 
   // line gives a gathered rule its source's file, line and column, when the
@@ -198,8 +209,7 @@
   async function line(rule, fetching) {
     const { sheet, selector } = rule.source ?? {};
     if (!sheet) return null;
-    const text = await sheetText(sheet, fetching);
-    const map = text && (await ns.sourcemap.forText(text, sheet.href ?? location.href, { fetch: fetching }));
+    const { text, map } = await sheetMap(sheet, fetching);
     const at = map && prelude(text, selector);
     const found = at && ns.sourcemap.lookup(map, at.line, at.column);
     if (!found) return null;
@@ -250,5 +260,14 @@
     return best.line ? `${short}:${best.line}` : short;
   }
 
-  ns.mappers = { run, label, templates, modules, prelude, suggestions };
+  // hover is the hover label's source for el: the mappers without
+  // fetching, else the file of the latest CSS rule matching it.
+  async function hover(el) {
+    const found = await run(el, { fetch: false }).catch(() => []);
+    if (found.length) return label(found);
+    const latest = [...ns.context.rules(el)].reverse().find((r) => r.file);
+    return latest ? label([{ file: latest.file, role: "style", via: "css" }]) : "";
+  }
+
+  ns.mappers = { run, hover, label, templates, modules, prelude, suggestions };
 })();

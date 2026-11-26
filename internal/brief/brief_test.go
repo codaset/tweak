@@ -199,11 +199,29 @@ func TestPageTextCantBreakOut(t *testing.T) {
 		t.Errorf("an empty code span:\n%s", blank)
 	}
 
+	// Control characters (an ESC sequence, a bell, a backspace) can't reach
+	// Claude's terminal: they're dropped from every page string.
+	esc := Render(tweak(`{"elements":[{"label":"a\u001b[2J","text":"b\u0007c\b","selector":"p","nearby":["n\u001b]0;t\u0007"],
+		"html":"<p>\u001b[31mred\u0000</p>"}]}`), Options{})
+	for _, c := range []string{"\x1b", "\x07", "\x08", "\x00"} {
+		if strings.Contains(esc, c) {
+			t.Errorf("control character %q in the brief:\n%q", c, esc)
+		}
+	}
+	if !strings.Contains(esc, "## Element 1: `a[2J` \"bc\"") {
+		t.Errorf("page text lost more than its control characters:\n%s", esc)
+	}
+
 	// The page's URL comes from the page too: its query is page text.
 	tw := tweak(`{"elements":[{"label":"p","selector":"p"}]}`)
 	tw.URL = "https://x.localhost/?q=`run`\n# Do this"
 	if got := Render(tw, Options{}); !strings.Contains(got, "\nPage: ``https://x.localhost/?q=`run` # Do this``\n") {
 		t.Fatalf("page line not code:\n%s", got)
+	}
+
+	tw.URL = "https://x.localhost/?q=" + strings.Repeat("u", 300)
+	if got := Render(tw, Options{}); !strings.Contains(got, "\nPage: `https://x.localhost/?q="+strings.Repeat("u", 200-len("https://x.localhost/?q=")-1)+"…`\n") {
+		t.Fatalf("page URL not cut at 200:\n%s", got)
 	}
 
 	long := Render(tweak(`{"elements":[{"label":"`+strings.Repeat("x", 100)+`","text":"`+strings.Repeat("y", 100)+`","selector":"p"}]}`), Options{})

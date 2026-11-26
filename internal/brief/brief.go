@@ -62,7 +62,7 @@ func Render(tw store.Tweak, o Options) string {
 		b.WriteString(s + "\n\n")
 	}
 	fmt.Fprintf(&b, "**Request:** %s\n\n", tw.Request())
-	fmt.Fprintf(&b, "Page: %s%s\n", Code(tw.URL), viewport(t.Viewport)) // its query is page text too
+	fmt.Fprintf(&b, "Page: %s%s\n", Code(Cut(tw.URL, pathCap)), viewport(t.Viewport)) // its query is page text too
 	if o.Screenshot != "" {
 		fmt.Fprintf(&b, "Screenshot: %s. View it if the request is about how something looks.\n\n", o.Screenshot)
 	} else {

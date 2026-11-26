@@ -38,6 +38,14 @@ test("the decision comes once Claude is done, or a change is undone", () => {
   assert.equal(moment(undefined, done), null);
 });
 
+test("a withdrawn tweak never reloads the page, unless its change is undone", () => {
+  const withdrawn = { status: "withdrawn", change: recorded, resolvedAt: "2026-11-26T10:00:00Z" };
+  assert.equal(moment({ status: "working" }, withdrawn), "withdrawn");
+  assert.equal(moment(withdrawn, { ...withdrawn, entries: [] }), null);
+  // The side panel's resolved list undoes it: the tab no longer has it.
+  assert.equal(moment(undefined, { ...withdrawn, change: { ...recorded, state: "undone" } }), "settle");
+});
+
 test("a tweak that changed nothing doesn't reload", () => {
   const nothing = { state: "recorded", checked: true, files: [], unrecorded: [] };
   assert.equal(moment({ status: "working" }, { status: "done", change: nothing }), null);
@@ -166,11 +174,13 @@ function page({ onReload } = {}) {
     now = end;
     await new Promise((r) => setImmediate(r));
   }
-  // event is a tweak's event as page.js passes it on.
+  // event is a tweak's event as page.js passes it on: heard first, then a
+  // resolved tweak leaves the page.
   const event = (tweak) => {
     const was = tweaks.get(tweak.number);
     ns.reload.heard(was, tweak);
-    tweaks.set(tweak.number, tweak);
+    if (tweak.resolvedAt) tweaks.delete(tweak.number);
+    else tweaks.set(tweak.number, tweak);
   };
   // signal is the probe's tweak:updated: a hot update landed.
   const signal = () => listeners.get("tweak:updated")?.();
@@ -314,9 +324,11 @@ function random(seed) {
 async function walk(seed, { signals }) {
   const rand = random(seed);
   const origin = "http://localhost:3000";
-  // The world as the bridge and the developer have it; owed is a done or
+  // The world as the bridge and the developer have it; owed1 and owed3 are
+  // a done or undone of tweak 1 or 3 since the page was last left (or, for
+  // a withdrawn tweak, since it was withdrawn).
   // undone since the page was last left.
-  const m = { t1: null, press: null, claude: false, auto: true, other: false, draft: false, owed: false, refs: 0 };
+  const m = { t1: null, press: null, claude: false, auto: true, other: false, draft: false, owed1: false, owed3: false, refs: 0 };
   const broken = [];
   const p = page({
     onReload: () => {
@@ -334,17 +346,18 @@ async function walk(seed, { signals }) {
     p.event(m.t1);
   };
   const changed = (state) => ({ ...recorded, state });
-  const recordedNow = () => m.t1?.change?.state === "recorded" && m.t1.status === "done";
+  const recordedNow = () => m.t1?.change?.state === "recorded" && m.t1.status === "done" && !m.t1.resolvedAt;
+  const resolvedAt = "2026-11-26T10:00:00Z";
   const acts = {
     work() {
-      if (m.t1?.status === "working" || m.press || m.claude) return false;
+      if (m.t1?.status === "working" || m.t1?.resolvedAt || m.press || m.claude) return false;
       t1({ status: "working" });
       return true;
     },
     done() {
       if (m.t1?.status !== "working") return false;
       t1({ status: "done", change: recorded });
-      return (m.owed = true);
+      return (m.owed1 = true);
     },
     press() {
       if (!recordedNow() || m.press || m.claude) return false;
@@ -365,7 +378,7 @@ async function walk(seed, { signals }) {
       m.press = null;
       t1({ status: "done", change: changed("undone") });
       p.ns.reload.undid({ ref, number: 1 });
-      return (m.owed = true);
+      return (m.owed1 = true);
     },
     conflict() {
       if (!m.press) return false;
@@ -392,7 +405,7 @@ async function walk(seed, { signals }) {
       if (!m.claude) return false;
       m.claude = false;
       t1({ status: "done", change: changed("undone") });
-      return (m.owed = true);
+      return (m.owed1 = true);
     },
     decline() {
       if (!m.claude) return false;
@@ -416,6 +429,24 @@ async function walk(seed, { signals }) {
       p.flags.drafting = m.draft ? "reply" : "";
       return true;
     },
+    // Withdraw and Resolve (#41): a withdrawn tweak never reloads the page;
+    // a resolved one leaves it, and the side panel can still undo it.
+    withdraw() {
+      if (m.t1?.status !== "working") return false;
+      t1({ status: "withdrawn", resolvedAt });
+      m.owed1 = false;
+      return true;
+    },
+    resolve() {
+      if (!recordedNow() || m.press || m.claude) return false;
+      t1({ ...m.t1, resolvedAt });
+      return true;
+    },
+    panelUndo() {
+      if (!m.t1?.resolvedAt || m.t1.change?.state !== "recorded") return false;
+      t1({ ...m.t1, change: changed("undone") });
+      return (m.owed1 = true);
+    },
     // A second tweak that changes the page, so one can be held while the
     // first is being undone.
     work3() {
@@ -428,11 +459,11 @@ async function walk(seed, { signals }) {
       if (m.t3 !== "working") return false;
       m.t3 = "done";
       p.event({ number: 3, page: `${origin}/`, status: "done", change: recorded });
-      return (m.owed = true);
+      return (m.owed3 = true);
     },
     leave() {
       p.ns.reload.left();
-      m.owed = false;
+      m.owed1 = m.owed3 = false;
       return true;
     },
     signal() {
@@ -465,7 +496,8 @@ async function walk(seed, { signals }) {
   const why = `seed ${seed}: ${steps.join(" ")}`;
   assert.deepEqual(broken, [], why);
   assert.ok(p.reloads.length <= 1, `${why}: reloaded ${p.reloads.length} times`);
-  if (!signals) assert.equal(p.reloads.length, m.owed ? 1 : 0, `${why}: ${m.owed ? "a change never got its reload" : "a reload for no change"}`);
+  const owed = m.owed1 || m.owed3;
+  if (!signals) assert.equal(p.reloads.length, owed ? 1 : 0, `${why}: ${owed ? "a change never got its reload" : "a reload for no change"}`);
 }
 
 test("the reload machine as a model: at most once, never while held, always once nothing holds it", async () => {

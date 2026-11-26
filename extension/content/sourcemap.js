@@ -86,7 +86,7 @@
     let best = null;
     for (const seg of map.lines[line] ?? []) {
       if (seg[0] > column) break;
-      best = seg.length === 4 ? seg : best;
+      best = seg.length === 4 ? seg : null; // a one-field segment starts unmapped code
     }
     if (!best || !map.sources[best[1]]) return null;
     return { source: map.sources[best[1]], line: best[2] + 1, column: best[3] + 1 };

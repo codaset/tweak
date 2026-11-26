@@ -37,6 +37,13 @@ test("a position in the built sheet maps to its source line and column, 1-based"
   assert.equal(sm.lookup(map, 400, 0), null);
 });
 
+test("a one-field segment starts unmapped code: a position after it maps to nothing", () => {
+  const sm = load();
+  const map = { sources: ["a.css"], lines: sm.decode("AAAA,K") };
+  assert.deepEqual(plain(sm.lookup(map, 0, 2)), { source: "a.css", line: 1, column: 1 });
+  assert.equal(sm.lookup(map, 0, 5), null);
+});
+
 test("a minified sheet's inline map is read from its data URL", async () => {
   const sm = load();
   const text = fixture("buttons.min.css");

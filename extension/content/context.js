@@ -10,6 +10,8 @@
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
 
+  // The styles read and the caps are the brief's too (internal/brief): a Go
+  // test, TestContextAgreesWithTheBrief, checks the two sides agree.
   const STYLE_KEYS = [
     "display", "position", "font-family", "font-size", "font-weight", "line-height", "color",
     "background-color", "padding", "margin", "gap", "border", "border-radius", "box-shadow",
@@ -21,6 +23,7 @@
   const SELECTOR_CAP = 200;
   const HTML_CAP = 1600;
   const ATTR_CAP = 100;
+  const LABEL_CAP = 60;
   const TEXT_CAP = 80;
   const RULES = 10;
   const NEARBY = 5;
@@ -220,7 +223,9 @@
   // fails is left out too: the tweak still goes, with what could be read.
   function element(el) {
     const out = ns.describe.element(el);
-    if (!out.text) delete out.text;
+    out.label = cut(out.label, LABEL_CAP);
+    if (out.text) out.text = cut(out.text, TEXT_CAP);
+    else delete out.text;
     const part = (key, fn, empty = (v) => !v || v.length === 0) => {
       try {
         const v = fn();

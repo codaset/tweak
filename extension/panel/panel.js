@@ -27,6 +27,7 @@ function render(state) {
   $("refusal").hidden = state.connection !== "refused";
   $("refusal").textContent = state.message;
   $("start-hint").hidden = state.connection === "refused";
+  $("command").textContent = `/tweak ${activeOrigin ?? "<your dev server's URL>"}`;
 
   $("claims").hidden = state.connection !== "connected" || state.claims.length === 0;
   $("claim-list").replaceChildren(
@@ -66,14 +67,32 @@ function listen() {
 }
 listen();
 
+// The tab in front's origin, for the /tweak command: Chrome gives its URL
+// only where the extension has access, which a page with Tweak's tools has.
+let activeOrigin = null;
+const originOf = (url) => {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.origin : null;
+  } catch {
+    return null;
+  }
+};
+function showTab(tab) {
+  activeTab = tab?.id ?? null;
+  activeOrigin = originOf(tab?.url);
+  if (last) render(last);
+}
+
 chrome.windows.getCurrent().then(async (win) => {
   const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
-  activeTab = tab?.id ?? null;
-  if (last) render(last);
+  showTab(tab);
   chrome.tabs.onActivated.addListener((info) => {
     if (info.windowId !== win.id) return;
-    activeTab = info.tabId;
-    if (last) render(last);
+    chrome.tabs.get(info.tabId).then(showTab, () => showTab({ id: info.tabId }));
+  });
+  chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+    if (tabId === activeTab && "url" in change) showTab(tab);
   });
 });
 

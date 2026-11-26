@@ -17,7 +17,11 @@
 // into it; closing it gives focus back to the pin, or to the page element a
 // just-sent tweak points at. While the composer is open or holds a draft, or
 // the reply box holds one, the tab is busy, which holds a pending self-update
-// reload back.
+// reload back. Both drafts are kept for the tab as you type (drafts.js), so
+// a reload opens them again; Send or esc clears them.
+// While the bridge is down the panel is faded and read-only: every action
+// that needs the bridge is disabled with "Not connected to Tweak", and what
+// you type is kept until it can be sent.
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
@@ -44,6 +48,7 @@
     panel?.remove();
     panel = el("div", "panel");
     panel.hidden = asleep;
+    panel.classList.toggle("offline", ns.worker.down());
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "false");
     panel.tabIndex = -1;
@@ -106,6 +111,7 @@
     text.addEventListener("input", () => {
       mode.error = "";
       ns.busy?.set("draft", text.value.trim() !== "");
+      ns.drafts.setCompose(composeDraft());
       refresh();
     });
     text.addEventListener("keydown", (e) => {
@@ -120,6 +126,19 @@
     refresh();
     requestAnimationFrame(() => text.focus({ preventScroll: true }));
   }
+
+  // composeDraft is the open composer as ns.drafts keeps it: what it points
+  // at, by selector, and its text, so it can open again after a reload.
+  const pageKey = () => `${location.origin}${location.pathname}`;
+  const composeDraft = () => ({
+    page: pageKey(),
+    kind: mode.pick.kind,
+    selectors: mode.targets.elements.map((e) => e.selector),
+    anchor: mode.anchor,
+    ...(mode.targets.selection && { selection: mode.targets.selection }),
+    ...(mode.targets.area && { area: mode.targets.area }),
+    text: parts.text.value,
+  });
 
   // drawPointed fills the composer's line about what it points at.
   function drawPointed() {
@@ -324,9 +343,13 @@
     foot.append(hint, send);
     answer.append(box, error, foot);
     answer.hidden = true;
+    // A reply half-written before a reload, or before this card was swapped
+    // for another, is back.
+    box.value = ns.drafts.reply(mode.number);
     box.addEventListener("input", () => {
       mode.replyError = "";
       ns.busy?.set("draft", box.value.trim() !== "");
+      ns.drafts.setReply(mode.number, box.value);
       refreshReply();
     });
     box.addEventListener("keydown", (e) => {
@@ -446,7 +469,8 @@
         box.value = "";
         mode.replyError = "";
         ns.busy?.set("draft", false);
-      }
+        ns.drafts.setReply(mode.number, "");
+      } else if (box.value.trim()) ns.busy?.set("draft", true); // a kept draft
     }
     refreshReply();
 
@@ -639,6 +663,7 @@
     if (!why) {
       parts.box.value = "";
       ns.busy?.set("draft", false);
+      ns.drafts.setReply(mode.number, "");
     }
     refreshReply();
   }
@@ -723,6 +748,7 @@
       const scrolled = { x: scrollX, y: scrollY };
       const located = ns.context.locate(targets, pick.elements).catch(() => {});
       mode = { kind: "compose", pick, targets, rects, scrolled, shot, located, anchor: pick.anchor, sending: false, error: "", returnTo: pick.elements[0] };
+      ns.drafts.setCompose(null); // a new pick starts a new draft
       drawCompose();
       place();
       composing(true);
@@ -735,6 +761,7 @@
       // A composer this card replaces unsent takes its capture with it; a
       // sent one's went to the worker with its create.
       if (mode?.kind === "compose" && !mode.created) ns.screenshot.drop(mode.shot);
+      if (mode?.kind === "compose") ns.drafts.setCompose(null); // sent, or replaced
       ns.picker.release();
       composing(false);
       opened++;
@@ -780,6 +807,9 @@
       // Focus goes back only if it was in the overlay: never taken from the page.
       const focused = ns.overlay.root?.activeElement;
       if (was?.kind === "compose") ns.screenshot.drop(was.shot); // cancelled: thrown away
+      // esc or ×: its draft goes too.
+      if (was?.kind === "compose") ns.drafts.setCompose(null);
+      if (was?.kind === "card") ns.drafts.setReply(was.number, "");
       mode = null;
       panel?.remove();
       panel = null;
@@ -838,8 +868,30 @@
       parts.text.readOnly = false;
       parts.refresh();
     },
+    // restore opens the composer again from its draft after a reload, on
+    // the same page, if what it pointed at is all still there (and the text,
+    // for a text pick); otherwise the draft is dropped. It has no
+    // screenshot: that was the page as it was.
+    restore(draft) {
+      if (!draft || mode || asleep || draft.page !== pageKey()) return;
+      const elements = (draft.selectors ?? []).map(find);
+      const pick = { kind: draft.kind, elements, anchor: draft.anchor ?? { x: 0.5, y: 0.5 } };
+      if (draft.kind === "text") Object.assign(pick, { selection: draft.selection, range: textIn(elements[0], draft.selection ?? {}) });
+      if (draft.kind === "area") pick.area = draft.area;
+      if (!elements.length || !elements.every(Boolean) || (draft.kind === "text" && !pick.range) || (draft.kind === "area" && !draft.area)) {
+        ns.drafts.setCompose(null);
+        return;
+      }
+      ns.picker.hold(draft.kind === "elements" && elements.length === 1 ? elements[0] : null);
+      this.compose(pick);
+      parts.text.value = draft.text;
+      ns.busy?.set("draft", draft.text.trim() !== "");
+      ns.drafts.setCompose(composeDraft());
+      parts.refresh();
+    },
     // update re-renders from the page's tweaks and the connection.
     update() {
+      panel?.classList.toggle("offline", ns.worker.down());
       if (mode?.kind === "card") updateCard();
       if (mode?.kind === "compose") parts.refresh();
     },
@@ -895,6 +947,7 @@
       mode.rects = ns.pointing.rects(pick).map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }));
       ns.picker.hold(pick.elements.length === 1 ? pick.elements[0] : null);
       drawPointed();
+      ns.drafts.setCompose(composeDraft());
       parts.heard.textContent = said;
       ns.marks.draw(marked());
       place();

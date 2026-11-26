@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyTweaks, askedIn, forPage, forTab, pageOf, reachesTab } from "../../extension/lib/tweaks.js";
+import { applyTweaks, askedIn, askedSince, forPage, forTab, pageOf, reachesTab } from "../../extension/lib/tweaks.js";
 import { apply } from "../../extension/lib/claims.js";
 
 const tweak = (number, page, status = "sent") => ({ number, page, url: page, status });
@@ -75,6 +75,22 @@ test("with the sending tab gone, a new question is a toast in every tab showing 
   const asked = tweak(7, "p", "question");
   assert.deepEqual(askedIn(tweak(7, "p", "working"), asked, [a, b, other], 9), { open: [], toast: [a, b] });
   assert.deepEqual(askedIn(tweak(7, "p", "working"), asked, [a, b, other], undefined), { open: [], toast: [a, b] });
+});
+
+test("a snapshot after downtime asks about each tweak that has become a question meanwhile, in its own tab", () => {
+  const a = { tabId: 1, page: "p" };
+  const b = { tabId: 2, page: "p" };
+  const was = applyTweaks(undefined, { type: "snapshot", seq: 3, tweaks: [tweak(1, "p", "working"), tweak(2, "p", "question"), tweak(3, "p")] });
+  const next = applyTweaks(was, { type: "snapshot", seq: 9, tweaks: [tweak(1, "p", "question"), tweak(2, "p", "question"), tweak(3, "p", "done"), tweak(4, "p", "question")] });
+  const senders = new Map([
+    [1, 2],
+    [2, 1],
+  ]);
+  // 1 has just become a question; 2 already was one; 4 is new, and its sending tab unknown.
+  assert.deepEqual(askedSince(was, next, [a, b], senders), [
+    { tweak: next.tweaks.get(1), open: [b], toast: [] },
+    { tweak: next.tweaks.get(4), open: [], toast: [a, b] },
+  ]);
 });
 
 test("only a change into question asks", () => {

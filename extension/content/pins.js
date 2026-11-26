@@ -27,6 +27,8 @@
         layer = ns.overlay.el("div", "pins");
         ns.overlay.root.prepend(layer);
       }
+      // Faded while the bridge is down: they're from the last snapshot.
+      layer.classList.toggle("offline", ns.worker.down());
       const wanted = new Set(tweaks.map((t) => t.number));
       for (const [n, p] of pins) {
         if (!wanted.has(n)) {
@@ -51,7 +53,8 @@
           pins.set(tweak.number, p);
         }
         p.tweak = tweak;
-        const { text } = ns.describe.status(tweak);
+        const { text: status } = ns.describe.status(tweak);
+        const text = ns.worker.down() ? `${status} (not connected to Tweak)` : status;
         p.el.className = `pin ${ns.describe.classes(tweak)}${ns.panel.showing() === tweak.number ? " open" : ""}`;
         p.el.title = `Tweak ${tweak.number}: ${text}`;
         p.el.setAttribute("aria-label", `Tweak ${tweak.number}: ${text}`);

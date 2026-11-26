@@ -49,3 +49,16 @@ export function askedIn(was, tweak, tabs, from) {
   const open = from === undefined ? [] : tabs.filter((t) => t.tabId === from);
   return { open, toast: open.length ? [] : tabs.filter((t) => t.page === tweak.page) };
 }
+
+// askedSince is askedIn for a snapshot: the questions asked while the socket
+// was down arrive in it, not as events, so each tweak that has become a
+// question since the state before pops up as a live one would. senders maps
+// a tweak's number to its sending tab's ID.
+export function askedSince(was, next, tabs, senders) {
+  const asked = [];
+  for (const tweak of [...next.tweaks.values()].sort((a, b) => a.number - b.number)) {
+    const { open, toast } = askedIn(was.tweaks.get(tweak.number), tweak, tabs, senders.get(tweak.number));
+    if (open.length || toast.length) asked.push({ tweak, open, toast });
+  }
+  return asked;
+}

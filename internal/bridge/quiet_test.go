@@ -458,6 +458,46 @@ func TestTheWireSaysWhoIsListeningAndWhatLapsed(t *testing.T) {
 	}
 }
 
+// The socket shows folders from ~, as the card and side panel name them
+// (the extension can't know the home folder), and says when a lapsed claim
+// is lost, so the side panel stops offering it back.
+func TestTheSocketShowsFoldersFromHomeAndSaysWhenALapseIsLost(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	h, s, c := quietBridge(t, filepath.Join(home, "dev", "ernie"))
+	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
+	s.readUntil("result")
+	folder := func(claim any) any { return claim.(map[string]any)["session"].(map[string]any)["folder"] }
+	snap := func() map[string]any {
+		x := h.connect()
+		x.hello(version.Protocol)
+		return x.next("snapshot")
+	}
+	if got := folder(snap()["claims"].([]any)[0]); got != "~/dev/ernie" {
+		t.Fatalf("a held claim's folder: %v", got)
+	}
+
+	c.advance(10 * time.Minute)
+	if got := folder(s.eventOf("claim-lapsed")["claim"]); got != "~/dev/ernie" {
+		t.Fatalf("claim-lapsed's folder: %v", got)
+	}
+	var m map[string]any
+	eventually(t, "the lapse in the snapshot", func() bool { m = snap(); return len(m["lapsed"].([]any)) == 1 })
+	if got := folder(m["lapsed"].([]any)[0]); got != "~/dev/ernie" {
+		t.Fatalf("a lapsed claim's folder: %v", got)
+	}
+	if left := m["tweaks"].([]any)[0].(map[string]any)["left"].(map[string]any); left["folder"] != "~/dev/ernie" {
+		t.Fatalf("left %v", left)
+	}
+
+	h.register("s2", filepath.Join(home, "dev", "bert"))
+	h.claim("s2", "https://ernie.localhost/admin/*")
+	lost := s.eventOf("claim-lost")["claim"].(map[string]any)
+	if lost["pattern"] != "https://ernie.localhost/*" || folder(lost) != "~/dev/ernie" {
+		t.Fatalf("claim-lost %v", lost)
+	}
+}
+
 // A marker half-written by a hook that was cut off is a temporary file:
 // the bridge leaves it out, and removes it.
 func TestAHalfWrittenReleasedMarkerIsIgnored(t *testing.T) {

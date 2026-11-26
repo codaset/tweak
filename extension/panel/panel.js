@@ -3,6 +3,7 @@
 // chrome.storage.local, which the worker watches. Its one request, Undo on a
 // resolved tweak, goes through the same port.
 import { DEFAULT_PORT, validPort } from "../lib/bridge.js";
+import { ago, coverOf } from "../lib/claims.js";
 
 // The card's own wording (content/describe.js, loaded before this module).
 const describe = globalThis.codasetTweak.describe;
@@ -20,6 +21,7 @@ const STATUS = {
 // so are the resolved tweaks, by the tab's site when its URL can be read
 // (with site access granted), else all of them.
 let activeTab = null;
+let activeURL = ""; // its URL, which the claim status is about
 let last = null; // the worker's last state, drawn again when the tab changes
 
 function render(state) {
@@ -52,6 +54,8 @@ function render(state) {
   const note = { updated: `Updated to ${update?.version}`, waiting: `Updating to ${update?.version} once you've finished` }[update?.state];
   $("update-note").hidden = !note;
   $("update-note").textContent = note ?? "";
+
+  renderCover(state);
 
   // Optional improvements for the tab in front; each kind has its section.
   const here = (state.suggestions ?? []).filter((s) => s.tabId === activeTab);
@@ -192,6 +196,24 @@ function undid(msg) {
   if (last) render(last);
 }
 
+// The claim status of the tab in front: when its page's session stopped
+// responding (design.md § When the session goes quiet), who, how long ago,
+// and the command that claims it from another session. The time ticks on
+// unannounced; the live region says only that the session stopped.
+let said = "";
+function renderCover(state) {
+  const cover = activeURL && state.connection === "connected" ? coverOf(state, activeURL) : { kind: "none" };
+  const lapsed = cover.kind === "lapsed";
+  $("lapsed").hidden = !lapsed;
+  const say = lapsed ? `The session in ${cover.folder} stopped responding` : "";
+  if (say !== said) $("page-said").textContent = said = say;
+  if (!lapsed) return;
+  $("lapsed-folder").textContent = cover.folder;
+  $("lapsed-ago").textContent = ago(cover.lapsedAt);
+  $("lapsed-command").textContent = `/tweak ${cover.pattern}`;
+}
+setInterval(() => last && renderCover(last), 15_000);
+
 // The worker can restart; reconnect when it does.
 function listen() {
   port = chrome.runtime.connect({ name: "panel" });
@@ -221,6 +243,7 @@ const originOf = (url) => {
 function showTab(tab) {
   activeTab = tab?.id ?? null;
   activeOrigin = originOf(tab?.url);
+  activeURL = tab?.url ?? "";
   if (last) render(last);
 }
 

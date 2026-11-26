@@ -50,7 +50,7 @@ type eventOut struct {
 func (b *Bridge) eventJSON(e store.Event) eventOut {
 	out := eventOut{Type: "event", Seq: e.Seq, Event: e.Type}
 	if e.Claim != nil {
-		c := claimJSON(*e.Claim)
+		c := b.shownClaimJSON(*e.Claim)
 		switch e.Type {
 		case store.EventClaimMade, store.EventClaimRestored, store.EventClaimListening:
 			c = b.heldClaimJSON(*e.Claim)
@@ -154,7 +154,7 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 		b.log.Print(err)
 	}
 	for _, cl := range lapsed {
-		snap.Lapsed = append(snap.Lapsed, claimJSON(cl))
+		snap.Lapsed = append(snap.Lapsed, b.shownClaimJSON(cl))
 	}
 	for _, tw := range tweaks {
 		if tw.ResolvedAt.IsZero() {
@@ -190,12 +190,6 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range events {
-			// A lost claim is news for its session only: the page already
-			// left the extension's claims when it lapsed.
-			if e.Type == store.EventClaimLost {
-				seq = e.Seq
-				continue
-			}
 			if write(ctx, c, b.eventJSON(e)) != nil {
 				return
 			}

@@ -4,13 +4,12 @@
 // level, so events that wake the worker reach it.
 import { plan, CONTENT_FILES, PROBE_FILES } from "./lib/registrations.js";
 import { retryDelay } from "./lib/backoff.js";
-import { apply } from "./lib/claims.js";
+import { apply, coverOf, heldBy, registered } from "./lib/claims.js";
 import { badge } from "./lib/badge.js";
 import { nextStatus } from "./lib/status.js";
 import { DEFAULT_PORT, PROTOCOL, validPort } from "./lib/bridge.js";
 import { createSelfUpdate } from "./self-update.js";
 import { applyTweaks, askedIn, askedSince, forTab, pageOf, prune, reachesTab, resolvedList } from "./lib/tweaks.js";
-import { matches } from "./lib/match.js";
 import { requests } from "./lib/requests.js";
 import { draw, frame, paced } from "./lib/screenshot.js";
 
@@ -20,9 +19,10 @@ const ALL_URLS = { origins: ["<all_urls>"] };
 const NOT_CONNECTED = "Not connected to Tweak";
 
 // What the side panel shows (see lib/status.js for connection and message).
-const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], update: null, suggestions: [], resolved: [] };
-// The claims as of event seq, from the bridge or, until it answers, the cache.
-let claimState = { seq: 0, claims: [] };
+const view = { connection: "connecting", message: "", port: DEFAULT_PORT, granted: false, claims: [], lapsed: [], update: null, suggestions: [], resolved: [] };
+// The claims (held and lapsed) as of event seq, from the bridge or, until it
+// answers, the cache.
+let claimState = { seq: 0, claims: [], lapsed: [] };
 let heardFromBridge = false; // once true, the cache is out of date
 // The open tweaks as of event seq. Kept in storage.session too, so pins and
 // cards survive a worker restart while the bridge is down.
@@ -43,7 +43,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.permissions.onAdded.addListener(async () => {
   await refreshAccess();
   // Registrations didn't inject before the grant: give open tabs the scripts.
-  injectIntoOpenTabs(claimState.claims);
+  injectIntoOpenTabs(registered(claimState));
 });
 chrome.permissions.onRemoved.addListener(() => refreshAccess());
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -158,7 +158,7 @@ async function onTabMessage(port, msg) {
       const key = cardKey(tabId);
       const { [key]: card = null, [draftKey(tabId)]: draft = null } = await chrome.storage.session.get([key, draftKey(tabId)]);
       if (!("card" in port)) port.card = card; // a card message since then is newer
-      port.postMessage({ type: "tweaks", tweaks: forTab(tweakState, port), card: port.card, draft, claimed: claimed(port.url) });
+      port.postMessage({ type: "tweaks", tweaks: tweaksFor(port), card: port.card, draft, ...cover(port.url) });
       break;
     }
     case "card":
@@ -307,9 +307,19 @@ const listed = (state) =>
     deleteAt,
   }));
 
-// claimed says whether any claim covers a URL: a tab whose page none does
-// goes dormant (no picker, no pins).
-const claimed = (url) => claimState.claims.some((c) => matches(c.pattern, url));
+// cover says whether a held claim covers a URL (claimed), or a lapsed one
+// that can still come back (lapsed). A tab whose page neither does goes
+// dormant (no picker, no pins); a lapsed one keeps its pins and cards.
+function cover(url) {
+  const { kind } = coverOf(claimState, url);
+  return { claimed: kind === "claimed", lapsed: kind === "lapsed" };
+}
+
+// A tweak as tabs get it: with heldBy, the session holding its page and
+// whether it's listening, which its card says (design.md § When the
+// session goes quiet).
+const forTabs = (tweak) => ({ ...tweak, heldBy: heldBy(claimState, tweak) });
+const tweaksFor = (port) => forTab(tweakState, port).map(forTabs);
 
 async function restoreTweaks() {
   await selfUpdate.restored;
@@ -350,8 +360,8 @@ function adoptTweaks(next, msg) {
   saveTweaks(next);
   const shown = [...tabs].filter((port) => port.page);
   for (const port of shown) {
-    if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: forTab(next, port), claimed: claimed(port.url) });
-    else if (reachesTab(msg.tweak, port)) port.postMessage({ type: "tweak", tweak: msg.tweak, event: msg.event });
+    if (msg.type === "snapshot") port.postMessage({ type: "tweaks", tweaks: tweaksFor(port), ...cover(port.url) });
+    else if (reachesTab(msg.tweak, port)) port.postMessage({ type: "tweak", tweak: forTabs(msg.tweak), event: msg.event });
   }
   // A new question: it carries the tweak, as the sending tab may be on
   // another page. Those asked while the socket was down come in a snapshot,
@@ -361,8 +371,8 @@ function adoptTweaks(next, msg) {
       ? askedSince(was, next, shown, senders)
       : [{ tweak: msg.tweak, ...askedIn(was.tweaks.get(msg.tweak.number), msg.tweak, shown, senders.get(msg.tweak.number)) }];
   for (const { tweak, open, toast } of asked) {
-    for (const port of open) port.postMessage({ type: "asked", tweak });
-    for (const port of toast) port.postMessage({ type: "asked", tweak, toast: true });
+    for (const port of open) port.postMessage({ type: "asked", tweak: forTabs(tweak) });
+    for (const port of toast) port.postMessage({ type: "asked", tweak: forTabs(tweak), toast: true });
   }
   if (msg.type === "snapshot") {
     // Only open tweaks can still ask, so the rest are forgotten.
@@ -427,20 +437,25 @@ async function injectIntoOpenTabs(list) {
 // Chrome wipes runtime registrations on install and update, so the
 // last-known claims are registered again at once, before the bridge answers.
 async function restoreFromCache() {
-  const { claims: cached = [] } = await chrome.storage.local.get("claims");
-  if (!heardFromBridge) claimState = { seq: 0, claims: cached };
-  await syncRegistrations(claimState.claims);
+  const { claims: cached = [], lapsed = [] } = await chrome.storage.local.get(["claims", "lapsed"]);
+  if (!heardFromBridge) claimState = { seq: 0, claims: cached, lapsed };
+  await syncRegistrations(registered(claimState));
 }
 
 // adoptClaims takes the bridge's claims: shows them in the panel, caches
-// them in storage.local and brings the registrations in line.
+// them in storage.local and brings the registrations in line. A tab hears
+// whether its page is claimed, and its tweaks again, as whether a session
+// is listening may have changed what their cards say.
 async function adoptClaims(next) {
   claimState = next;
   heardFromBridge = true;
-  for (const port of tabs) if (port.url) port.postMessage({ type: "claimed", claimed: claimed(port.url) });
-  publish({ claims: next.claims });
-  await chrome.storage.local.set({ claims: next.claims });
-  await syncRegistrations(next.claims);
+  for (const port of tabs) {
+    if (port.page) port.postMessage({ type: "tweaks", tweaks: tweaksFor(port), ...cover(port.url) });
+    else if (port.url) port.postMessage({ type: "claimed", ...cover(port.url) });
+  }
+  publish({ claims: next.claims, lapsed: next.lapsed });
+  await chrome.storage.local.set({ claims: next.claims, lapsed: next.lapsed });
+  await syncRegistrations(registered(next));
 }
 
 function onBridgeMessage(msg, port) {

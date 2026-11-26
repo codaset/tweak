@@ -4,7 +4,8 @@
 // pins, keeps the card in step, and runs the frame loop that keeps both on
 // their elements as the page moves. On a page no claim covers (released, or
 // navigated outside every claim) it goes dormant: no picker, no pins, and the
-// card hides until a claim covers the page again.
+// card hides until a claim covers the page again. A lapsed claim's page has
+// no picker, but keeps its pins and card.
 (() => {
   const ns = globalThis.codasetTweak;
   if (!ns || ns.ready) return;
@@ -13,6 +14,9 @@
   let frame = 0;
   let claimed = true; // the scripts run only on claimed pages; the worker says otherwise
   let draftsAdopted = false; // once this load has the drafts kept for its tab
+  // A lapsed claim's page counts as unclaimed (no picker), but keeps its
+  // pins and cards, which say the session stopped responding.
+  let kept = true;
   // The page is origin and path: the query and hash don't change it.
   const pageKey = () => `${location.origin}${location.pathname}`;
   let shownPage = pageKey();
@@ -20,9 +24,9 @@
   const urlKey = () => `${location.origin}${location.pathname}${location.search}`;
   let shownURL = urlKey();
 
-  // list is the tweaks that get a pin: this page's, while it's claimed.
+  // list is the tweaks that get a pin: this page's, while it's claimed or lapsed.
   const list = () =>
-    claimed ? [...tweaks.values()].filter((t) => t.page === shownPage).sort((a, b) => a.number - b.number) : [];
+    kept ? [...tweaks.values()].filter((t) => t.page === shownPage).sort((a, b) => a.number - b.number) : [];
 
   function loop() {
     frame = 0;
@@ -33,12 +37,17 @@
     frame = requestAnimationFrame(loop);
   }
 
-  // setClaimed wakes the page, or puts it to sleep.
-  function setClaimed(on) {
-    if (on === claimed) return;
+  // setClaimed wakes the page, or puts it to sleep: claimed, the picker
+  // works; claimed or lapsed, the pins and card show.
+  function setClaimed(on, lapsed = false) {
+    const keep = on || lapsed;
+    if (on === claimed && keep === kept) return;
     claimed = on;
     if (!on) ns.picker.release();
-    ns.panel.sleep(!on);
+    if (keep !== kept) {
+      kept = keep;
+      ns.panel.sleep(!keep);
+    }
     ns.page.redraw();
   }
   ns.picker.enable(() => claimed);
@@ -92,7 +101,7 @@
         tweaks.clear();
         for (const t of msg.tweaks) tweaks.set(t.number, t);
         if (had && !tweaks.has(card)) ns.panel.close();
-        if (typeof msg.claimed === "boolean") setClaimed(msg.claimed); // absent: unchanged
+        if (typeof msg.claimed === "boolean") setClaimed(msg.claimed, msg.lapsed); // absent: unchanged
         ns.page.redraw();
         // The drafts kept for this tab come with its first tweaks after a
         // load; a later port (a restarted worker) brings nothing new.
@@ -118,7 +127,7 @@
         ns.page.redraw();
         break;
       case "claimed":
-        setClaimed(msg.claimed);
+        setClaimed(msg.claimed, msg.lapsed);
         break;
       case "asked": {
         // Claude has asked about a tweak. Its card opens here, in the tab it
@@ -129,7 +138,7 @@
         tweaks.set(n, msg.tweak);
         ns.page.redraw();
         if (msg.toast) {
-          if (claimed) ns.toast(`Claude has a question about tweak ${n}`);
+          if (kept) ns.toast(`Claude has a question about tweak ${n}`);
         } else ns.panel.asked(n);
         break;
       }

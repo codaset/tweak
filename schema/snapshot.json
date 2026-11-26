@@ -205,7 +205,7 @@
           "$ref": "#/$defs/change"
         },
         "left": {
-          "description": "While no session has the tweak: the session that let go of its page, its folder and how.",
+          "description": "While no session has the tweak: the session that let go of its page, its folder (shown from ~) and how.",
           "type": "object",
           "properties": {
             "folder": {

@@ -452,9 +452,14 @@
     chip.hidden = !label;
     const s = ns.describe.status(tweak);
     const unanswered = ns.describe.unanswered(tweak);
-    const statusClass = `status ${ns.describe.classes(tweak)}${unanswered ? " unanswered" : ""}`;
+    const statusClass = `status ${ns.describe.classes(tweak)}${unanswered || s.quiet ? " unanswered" : ""}${s.quiet ? " quiet" : ""}`;
     if (status.className !== statusClass) status.className = statusClass;
-    if (statusText.textContent !== s.text) statusText.textContent = s.text;
+    if (statusText.textContent !== s.text) {
+      // A folder in the text shows as code.
+      const at = s.code ? s.text.indexOf(s.code) : -1;
+      if (at < 0) statusText.textContent = s.text;
+      else statusText.replaceChildren(s.text.slice(0, at), el("code", "", s.code), s.text.slice(at + s.code.length));
+    }
     const words = tweak?.entries?.find((e) => e.kind === "request")?.text ?? mode.request ?? "";
     if (request.textContent !== words) request.textContent = words;
 

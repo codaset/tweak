@@ -169,7 +169,7 @@ func TestAClaimLostMeanwhileIsSaidAndRefused(t *testing.T) {
 		t.Fatalf("s2's inbox %v", got)
 	}
 
-	const lost = "claim lost: https://ernie.localhost/* is now claimed by the session in /dev/ernie-2"
+	const lost = "claim lost: https://ernie.localhost/* is now claimed by the session in /dev/ernie-2: leave its tweaks to that session, or claim another page with /tweak <url>"
 	resp, _ := h.do(as("s1", req{method: "GET", path: "/claims"}))
 	if w := resp.Header.Values("x-tweak-warning"); len(w) != 1 || w[0] != lost {
 		t.Fatalf("warnings %v", w)
@@ -178,7 +178,9 @@ func TestAClaimLostMeanwhileIsSaidAndRefused(t *testing.T) {
 		t.Fatal("told twice")
 	}
 	code, body := status(h, "1", "done", "did it")
-	if code != 409 || !strings.Contains(string(body), lost) {
+	var refusal struct{ Message string }
+	json.Unmarshal(body, &refusal)
+	if code != 409 || refusal.Message != lost {
 		t.Fatalf("done on a lost tweak: %d %s", code, body)
 	}
 	conforms(t, "error", body)
@@ -410,5 +412,63 @@ func TestWorkWaitsForALapsesTeardown(t *testing.T) {
 	eventually(t, "s1's capture to end", func() bool { return !h.marked("s1") })
 	if resp, body := h.do(as("s2", req{method: "POST", path: "/tweaks/1/work"})); resp.StatusCode != 200 {
 		t.Fatalf("work after the teardown: %d %s", resp.StatusCode, body)
+	}
+}
+
+// What the card and side panel need (#44), on the wire: whether each
+// claim's session is listening, the lapsed claims in the snapshot, and the
+// session a waiting tweak was left by.
+func TestTheWireSaysWhoIsListeningAndWhatLapsed(t *testing.T) {
+	h, s, c := quietBridge(t, "/dev/ernie")
+	s.send(createMsg("r1", "https://ernie.localhost/", "make it green"))
+	s.readUntil("result")
+	snap := func() map[string]any {
+		x := h.connect()
+		x.hello(version.Protocol)
+		return x.next("snapshot")
+	}
+	claim := func(m map[string]any) map[string]any { return m["claims"].([]any)[0].(map[string]any) }
+	if got := claim(snap())["listening"]; got != true {
+		t.Fatalf("listening at first: %v", got)
+	}
+	c.advance(time.Minute)
+	if ev := s.eventOf("claim-listening"); ev["claim"].(map[string]any)["listening"] != false {
+		t.Fatalf("claim-listening %v", ev)
+	}
+	if got := claim(snap())["listening"]; got != false {
+		t.Fatalf("listening after a minute with no watcher: %v", got)
+	}
+	poll(t, h, -1) // the watcher is back
+	eventually(t, "listening again", func() bool { return claim(snap())["listening"] == true })
+
+	c.advance(10 * time.Minute)
+	lapsed := s.eventOf("claim-lapsed")["claim"].(map[string]any)
+	if lapsed["lapsedAt"] != stamp(c.now()) && lapsed["lapsedAt"] == nil {
+		t.Fatalf("claim-lapsed without its time: %v", lapsed)
+	}
+	var m map[string]any
+	eventually(t, "the lapse in the snapshot", func() bool { m = snap(); return len(m["lapsed"].([]any)) == 1 })
+	l := m["lapsed"].([]any)[0].(map[string]any)
+	if l["pattern"] != "https://ernie.localhost/*" || l["session"].(map[string]any)["folder"] != "/dev/ernie" || l["lapsedAt"] == nil {
+		t.Fatalf("lapsed %v", l)
+	}
+	tw := m["tweaks"].([]any)[0].(map[string]any)
+	if left, _ := tw["left"].(map[string]any); left["folder"] != "/dev/ernie" || left["why"] != "lapsed" {
+		t.Fatalf("tweak %v", tw)
+	}
+}
+
+// A marker half-written by a hook that was cut off is a temporary file:
+// the bridge leaves it out, and removes it.
+func TestAHalfWrittenReleasedMarkerIsIgnored(t *testing.T) {
+	state := t.TempDir()
+	dir := filepath.Join(state, "released")
+	os.MkdirAll(dir, 0o700)
+	tmp := filepath.Join(dir, ".s1.tmp-123")
+	os.WriteFile(tmp, nil, 0o600)
+	h := start(t, func(o *Options) { o.Config.StateDir = state })
+	h.register("s1", "/dev/ernie")
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Fatal("the half-written marker is still there")
 	}
 }

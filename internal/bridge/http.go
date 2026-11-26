@@ -270,6 +270,11 @@ type claimOut struct {
 	Pattern string     `json:"pattern"`
 	Session sessionOut `json:"session"`
 	Created string     `json:"created"`
+	// For the extension: whether a held claim's session is listening (its
+	// watcher connected, or gone for under a minute), and when a lapsed one
+	// lapsed.
+	Listening *bool  `json:"listening,omitempty"`
+	LapsedAt  string `json:"lapsedAt,omitempty"`
 }
 
 // claimReply is the reply to POST /claims: the claim, and the lines tweak
@@ -293,7 +298,20 @@ func sessionJSON(s store.Session) sessionOut {
 }
 
 func claimJSON(c store.Claim) claimOut {
-	return claimOut{ID: c.ID, Pattern: c.Pattern, Session: sessionJSON(c.Session), Created: stamp(c.Created)}
+	out := claimOut{ID: c.ID, Pattern: c.Pattern, Session: sessionJSON(c.Session), Created: stamp(c.Created)}
+	if !c.LapsedAt.IsZero() {
+		out.LapsedAt = stamp(c.LapsedAt)
+	}
+	return out
+}
+
+// heldClaimJSON is a held claim for the extension, saying whether its
+// session is listening now.
+func (b *Bridge) heldClaimJSON(c store.Claim) claimOut {
+	out := claimJSON(c)
+	listening := !b.unwatched(c.Session.ID)
+	out.Listening = &listening
+	return out
 }
 
 func reply(w http.ResponseWriter, status int, v any) {

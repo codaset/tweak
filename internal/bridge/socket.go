@@ -33,6 +33,7 @@ type snapshotOut struct {
 	Version string     `json:"version,omitempty"` // none from a development bridge
 	Folder  string     `json:"folder,omitempty"`  // where that version is, with it
 	Claims  []claimOut `json:"claims"`
+	Lapsed  []claimOut `json:"lapsed"` // lapsed claims that can still come back to their session
 	Tweaks  []tweakOut `json:"tweaks"`
 }
 
@@ -48,6 +49,10 @@ func (b *Bridge) eventJSON(e store.Event) eventOut {
 	out := eventOut{Type: "event", Seq: e.Seq, Event: e.Type}
 	if e.Claim != nil {
 		c := claimJSON(*e.Claim)
+		switch e.Type {
+		case store.EventClaimMade, store.EventClaimRestored, store.EventClaimListening:
+			c = b.heldClaimJSON(*e.Claim)
+		}
 		out.Claim = &c
 	}
 	if e.Tweak != nil {
@@ -138,9 +143,16 @@ func (b *Bridge) socket(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusInternalError, "the bridge failed")
 		return
 	}
-	snap := snapshotOut{Type: "snapshot", Seq: seq, Version: b.helloVersion(), Folder: b.helloFolder(), Claims: []claimOut{}, Tweaks: []tweakOut{}}
+	snap := snapshotOut{Type: "snapshot", Seq: seq, Version: b.helloVersion(), Folder: b.helloFolder(), Claims: []claimOut{}, Lapsed: []claimOut{}, Tweaks: []tweakOut{}}
 	for _, cl := range claims {
-		snap.Claims = append(snap.Claims, claimJSON(cl))
+		snap.Claims = append(snap.Claims, b.heldClaimJSON(cl))
+	}
+	lapsed, err := b.store.LapsedClaims()
+	if err != nil {
+		b.log.Print(err)
+	}
+	for _, cl := range lapsed {
+		snap.Lapsed = append(snap.Lapsed, claimJSON(cl))
 	}
 	for _, tw := range tweaks {
 		snap.Tweaks = append(snap.Tweaks, b.tweakJSON(tw))

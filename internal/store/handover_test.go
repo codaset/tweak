@@ -247,9 +247,9 @@ func TestAnOverlappingClaimMeanwhileLosesTheLapsedOne(t *testing.T) {
 	if err != nil || len(back.Restored) != 0 || len(back.Lost) != 1 {
 		t.Fatalf("return %+v %v", back, err)
 	}
-	want := "claim lost: https://ernie.localhost/* is now claimed by the session in /dev/ernie-2"
-	if back.Lost[0].LostLine() != want {
-		t.Fatalf("lost line %q", back.Lost[0].LostLine())
+	want := "claim lost: https://ernie.localhost/* is now claimed by the session in /dev/ernie-2: leave its tweaks to that session, or claim another page with /tweak <url>"
+	if s.LostLine(back.Lost[0]) != want {
+		t.Fatalf("lost line %q", s.LostLine(back.Lost[0]))
 	}
 	// Reported once; its status commands keep getting the same refusal.
 	if again, _ := s.Return("s1", restoreFor); len(again.Lost) != 0 {

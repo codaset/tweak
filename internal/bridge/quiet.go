@@ -44,9 +44,14 @@ func (b *Bridge) watching(session string, on bool) {
 	b.polled[session] = b.opts.Clock()
 	b.watchMu.Unlock()
 	if !on {
-		if _, err := b.store.CheckIn(session); err != nil {
-			b.log.Printf("check-in %s: %v", session, err)
-		}
+		b.checkedIn(session)
+	}
+}
+
+// checkedIn checks the session in, logging a failure.
+func (b *Bridge) checkedIn(session string) {
+	if _, err := b.store.CheckIn(session); err != nil {
+		b.log.Printf("check-in %s: %v", session, err)
 	}
 }
 
@@ -70,21 +75,14 @@ func (b *Bridge) unwatched(session string) bool {
 	if b.upSince.After(since) {
 		since = b.upSince
 	}
-	claims, err := b.store.Claims()
-	if err != nil {
+	newest, held, err := b.store.NewestClaim(session)
+	if err != nil || !held {
 		return false
 	}
-	held := false
-	for _, c := range claims {
-		if c.Session.ID != session {
-			continue
-		}
-		held = true
-		if c.Created.After(since) {
-			since = c.Created
-		}
+	if newest.After(since) {
+		since = newest
 	}
-	return held && b.opts.Clock().Sub(since) >= b.opts.UnwatchedAfter
+	return b.opts.Clock().Sub(since) >= b.opts.UnwatchedAfter
 }
 
 // returning is a session's check-in: it brings back its lapsed claims, and
@@ -95,9 +93,7 @@ func (b *Bridge) returning(session string) []string {
 	// have nothing to restore, and take no lock: the edit hook's post never
 	// waits here. A lapse just after this look waits for the next check-in.
 	if lapsed, err := b.store.HasLapsed(session); err != nil || !lapsed {
-		if _, err := b.store.CheckIn(session); err != nil {
-			b.log.Printf("check-in %s: %v", session, err)
-		}
+		b.checkedIn(session)
 		return nil
 	}
 	b.captureMu.Lock()
@@ -117,7 +113,7 @@ func (b *Bridge) returning(session string) []string {
 	}
 	var lost []string
 	for _, c := range r.Lost {
-		lost = append(lost, c.LostLine())
+		lost = append(lost, b.store.LostLine(c))
 	}
 	return lost
 }
@@ -141,9 +137,13 @@ func (b *Bridge) watchLapses() {
 }
 
 func (b *Bridge) lapse() {
+	if err := b.store.MarkUp(); err != nil {
+		b.log.Print(err)
+	}
 	if err := b.store.Expire(b.opts.RestoreFor); err != nil {
 		b.log.Print(err)
 	}
+	b.tellListening()
 	stale, err := b.store.Stale(b.opts.LapseAfter)
 	if err != nil {
 		b.log.Print(err)
@@ -204,6 +204,10 @@ func (b *Bridge) endReleased() {
 	}
 	for _, f := range files {
 		path := filepath.Join(dir, f.Name())
+		if strings.HasPrefix(f.Name(), ".") {
+			os.Remove(path) // a hook cut off before its rename: never a whole marker
+			continue
+		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -219,30 +223,45 @@ func (b *Bridge) endReleased() {
 }
 
 // endLapsedCapture ends a lapsed session's capture, unless the session has
-// checked in since and its tweak is back with it: then the capture carries
-// on. The check and the end are one step under captureMu, which a return
+// checked in since and its claims are back: then the capture carries on. The check and the end are one step under captureMu, which a return
 // also takes.
 func (b *Bridge) endLapsedCapture(session string) error {
-	g := b.prepare(session, 0)
-	b.captureMu.Lock()
-	defer b.captureMu.Unlock()
-	c, err := b.store.Capturing(session)
-	if errors.Is(err, store.ErrNotCapturing) {
-		return nil
-	}
+	// Back means its claims are back: a lapse leaves the session none. (Its
+	// tweak may never have left it: a resolved one, such as a withdrawn
+	// tweak, doesn't follow the page, and its capture must end too.)
+	return b.endCaptureUnless(session, func(store.Capture) (bool, error) {
+		_, back, err := b.store.NewestClaim(session)
+		return back, err
+	})
+}
+
+// tellListening logs claim-listening for each claimed session whose watcher
+// went for UnwatchedAfter, or came back, since it was last told.
+func (b *Bridge) tellListening() {
+	sessions, err := b.store.ClaimedSessions()
 	if err != nil {
-		return err
+		b.log.Print(err)
+		return
 	}
-	if tw, err := b.store.Tweak(c.Tweak); err != nil || tw.Session == session {
-		return err // restored meanwhile
+	held := map[string]bool{}
+	for _, s := range sessions {
+		held[s] = true
+		now := !b.unwatched(s)
+		was, known := b.told[s]
+		if !known {
+			was = true // a claim is made listening
+		}
+		if now != was {
+			if err := b.store.LogListening(s); err != nil {
+				b.log.Print(err)
+				continue
+			}
+		}
+		b.told[s] = now
 	}
-	end, err := b.ending(session, c.Tweak, g)
-	if err != nil || end == nil {
-		return err
+	for s := range b.told {
+		if !held[s] {
+			delete(b.told, s)
+		}
 	}
-	if _, err := b.store.EndCapture(session, *end); err != nil {
-		return err
-	}
-	b.unmark(session)
-	return nil
 }

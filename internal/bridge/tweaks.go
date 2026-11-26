@@ -44,6 +44,14 @@ type tweakOut struct {
 	Resends int        `json:"resends,omitempty"`
 	AgainAt string     `json:"againAt,omitempty"`
 	Change  *changeOut `json:"change,omitempty"`
+	// Left is, while no session has the tweak, the session that let go of
+	// its page: its folder, and how (lapsed, released or ended).
+	Left *leftOut `json:"left,omitempty"`
+}
+
+type leftOut struct {
+	Folder string `json:"folder"`
+	Why    string `json:"why"`
 }
 
 // changeOut is a tweak's change as its card lists it: paths and labels
@@ -81,6 +89,9 @@ func changeJSON(c *store.Change) *changeOut {
 func (b *Bridge) tweakJSON(t store.Tweak) tweakOut {
 	out := tweakOut{Number: t.Number, Page: t.Page, URL: t.URL, Status: t.Status, StatusAt: stamp(t.StatusAt),
 		Created: stamp(t.Created), Updated: stamp(t.Updated), Targets: t.Targets, Anchor: t.Anchor, Entries: []entryOut{}, Change: changeJSON(t.Change)}
+	if t.Session == "" && t.LeftWhy != "" && t.LeftFolder != "" {
+		out.Left = &leftOut{Folder: t.LeftFolder, Why: t.LeftWhy}
+	}
 	if t.Status == store.StatusDelivered {
 		out.Resends = t.Resends
 		if !t.WaitFrom.IsZero() {
@@ -148,7 +159,7 @@ func againLine(tw store.Tweak) string {
 }
 
 // line is an inbox event as the watcher prints it.
-func line(e store.Event) string {
+func (b *Bridge) line(e store.Event) string {
 	switch e.Type {
 	case store.EventTweakCreated, store.EventTweakHanded:
 		return newLine(e.Tweak.Number, e.Tweak.Page, e.Tweak.Request(), e.Tweak.Targets)
@@ -165,7 +176,7 @@ func line(e store.Event) string {
 	case store.EventClaimRestored:
 		return "claim restored: " + e.Claim.Pattern
 	case store.EventClaimLost:
-		return e.Claim.LostLine()
+		return b.store.LostLine(*e.Claim)
 	}
 	return ""
 }
@@ -224,7 +235,7 @@ func (b *Bridge) inbox(w http.ResponseWriter, r *http.Request) {
 func (b *Bridge) replyInbox(w http.ResponseWriter, in store.Inbox) {
 	out := inboxOut{Seq: in.Seq, Claims: in.Claims, Lines: []lineOut{}}
 	for _, e := range in.Events {
-		if text := line(e); text != "" {
+		if text := b.line(e); text != "" {
 			out.Lines = append(out.Lines, lineOut{Seq: e.Seq, Text: text})
 		}
 	}

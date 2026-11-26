@@ -63,6 +63,10 @@ type Tweak struct {
 	// LineReply once the developer has answered its question. An again:
 	// line repeats it.
 	Line string
+	// LeftFolder and LeftWhy are, while no session has it, the folder of
+	// the session that let go of its page and how (WhyLapsed, WhyReleased,
+	// WhyEnded).
+	LeftFolder, LeftWhy string
 }
 
 // Entry is one turn of a tweak's conversation.
@@ -355,12 +359,12 @@ func ownTweak(tx *eventTx, sessionID string, number int64) (Tweak, error) {
 		if lost, err := lostFor(tx, sessionID, tw.URL); err != nil {
 			return Tweak{}, err
 		} else if lost != nil {
-			return Tweak{}, &LostError{Claim: *lost}
+			return Tweak{}, &LostError{Claim: *lost, Line: tx.s.LostLine(*lost)}
 		}
 		e := &NotYoursError{Number: number}
 		if tw.Session != "" {
 			if se, err := sessionIn(tx, tw.Session); err == nil {
-				e.Folder = se.Folder
+				e.Folder = tx.s.Shown(se.Folder)
 			}
 		}
 		return Tweak{}, e
@@ -406,13 +410,13 @@ func sessionIn(q queryRower, id string) (Session, error) {
 	return se, err
 }
 
-const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, ''), resends, coalesce(wait_from, 0), line`
+const tweakColumns = `number, coalesce(session, ''), page, page_url, status, status_at, created, updated, targets, coalesce(click_anchor, ''), resends, coalesce(wait_from, 0), line, coalesce(left_why, ''), coalesce((SELECT folder FROM sessions WHERE id = tweaks.left_by), '')`
 
 func scanTweak(row interface{ Scan(...any) error }) (Tweak, error) {
 	var tw Tweak
 	var statusAt, created, updated, waitFrom int64
 	var targets, anchor string
-	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor, &tw.Resends, &waitFrom, &tw.Line)
+	err := row.Scan(&tw.Number, &tw.Session, &tw.Page, &tw.URL, &tw.Status, &statusAt, &created, &updated, &targets, &anchor, &tw.Resends, &waitFrom, &tw.Line, &tw.LeftWhy, &tw.LeftFolder)
 	if waitFrom != 0 && tw.Status == StatusDelivered {
 		tw.WaitFrom = fromMillis(waitFrom)
 	}

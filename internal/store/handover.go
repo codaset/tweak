@@ -40,14 +40,19 @@ const (
 // these follow the page.
 const openStatuses = `'sent', 'delivered', 'queued', 'working', 'question'`
 
-// LostError refuses a status command on a tweak of a claim the session lost.
-type LostError struct{ Claim Claim }
+// LostError refuses a status command on a tweak of a claim the session
+// lost; Line is the claim lost line.
+type LostError struct {
+	Claim Claim
+	Line  string
+}
 
-func (e *LostError) Error() string { return e.Claim.LostLine() }
+func (e *LostError) Error() string { return e.Line }
 
-// LostLine says a lapsed claim was lost, and to whom.
-func (c Claim) LostLine() string {
-	return fmt.Sprintf("claim lost: %s is now claimed by the session in %s", c.Pattern, c.LostTo)
+// LostLine says a lapsed claim was lost, to whom, and what to do.
+func (s *Store) LostLine(c Claim) string {
+	return fmt.Sprintf("claim lost: %s is now claimed by the session in %s: leave its tweaks to that session, or claim another page with /tweak <url>",
+		c.Pattern, s.Shown(c.LostTo))
 }
 
 // Returned is what a session's check-in brought back: the lapsed claims
@@ -172,11 +177,11 @@ func (t *eventTx) notice(number int64, by, why string) (string, error) {
 	var b strings.Builder
 	switch why {
 	case WhyLapsed:
-		fmt.Fprintf(&b, "The session in %s stopped responding.", se.Folder)
+		fmt.Fprintf(&b, "The session in %s stopped responding.", t.s.Shown(se.Folder))
 	case WhyEnded:
-		fmt.Fprintf(&b, "The session in %s ended.", se.Folder)
+		fmt.Fprintf(&b, "The session in %s ended.", t.s.Shown(se.Folder))
 	default:
-		fmt.Fprintf(&b, "The session in %s released this page.", se.Folder)
+		fmt.Fprintf(&b, "The session in %s released this page.", t.s.Shown(se.Folder))
 	}
 	c, err := changeOf(t, number)
 	if err != nil {
@@ -219,7 +224,7 @@ func (t *eventTx) loseLapsed(session, folder string, p pattern.Pattern) error {
 
 // lapsedWhere lists lapsed claims, with their sessions, oldest first.
 func lapsedWhere(q querier, where string, args ...any) ([]Claim, error) {
-	rows, err := q.Query(`SELECT l.id, l.pattern, l.created, coalesce(l.lost_to, ''), s.id, s.agent, s.folder, s.label, s.last_check_in
+	rows, err := q.Query(`SELECT l.id, l.pattern, l.created, l.lapsed_at, coalesce(l.lost_to, ''), s.id, s.agent, s.folder, s.label, s.last_check_in
 		FROM lapsed_claims l JOIN sessions s ON s.id = l.session WHERE `+where+` ORDER BY l.id`, args...)
 	if err != nil {
 		return nil, err
@@ -228,12 +233,12 @@ func lapsedWhere(q querier, where string, args ...any) ([]Claim, error) {
 	var out []Claim
 	for rows.Next() {
 		var c Claim
-		var created, at int64
-		if err := rows.Scan(&c.ID, &c.Pattern, &created, &c.LostTo, &c.Session.ID, &c.Session.Agent,
+		var created, lapsed, at int64
+		if err := rows.Scan(&c.ID, &c.Pattern, &created, &lapsed, &c.LostTo, &c.Session.ID, &c.Session.Agent,
 			&c.Session.Folder, &c.Session.Label, &at); err != nil {
 			return nil, err
 		}
-		c.Created, c.Session.LastCheckIn = fromMillis(created), fromMillis(at)
+		c.Created, c.LapsedAt, c.Session.LastCheckIn = fromMillis(created), fromMillis(lapsed), fromMillis(at)
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -308,6 +313,7 @@ func (s *Store) Lapse(session string, after time.Duration) ([]Claim, error) {
 		if _, err := tx.Exec(`DELETE FROM claims WHERE id = ?`, c.ID); err != nil {
 			return nil, err
 		}
+		c.LapsedAt = fromMillis(s.now())
 		if err := tx.logClaim(EventClaimLapsed, c); err != nil {
 			return nil, err
 		}
@@ -350,7 +356,7 @@ func (s *Store) Return(session string, restoreFor time.Duration) (Returned, erro
 	}
 	now := s.now()
 	for _, c := range lapsed {
-		if c.Session.LastCheckIn.UnixMilli() <= now-restoreFor.Milliseconds() {
+		if c.LapsedAt.UnixMilli() <= now-restoreFor.Milliseconds() {
 			if err := tx.expire(c); err != nil {
 				return r, err
 			}
@@ -467,14 +473,41 @@ func (t *eventTx) expire(c Claim) error {
 	return err
 }
 
-// Expire forgets the lapsed claims of sessions gone for restoreFor, and
-// lost ones restoreFor after they lapsed, however often their session has
-// checked in since.
+// Expire forgets the lapsed claims, lost or not, that lapsed restoreFor
+// ago. Only time the bridge was up counts: see Resume.
 func (s *Store) Expire(restoreFor time.Duration) error {
-	cutoff := s.now() - restoreFor.Milliseconds()
-	_, err := s.db.Exec(`DELETE FROM lapsed_claims WHERE (lost_to IS NOT NULL AND lapsed_at <= ?)
-		OR session IN (SELECT id FROM sessions WHERE last_check_in <= ?)`, cutoff, cutoff)
+	_, err := s.db.Exec(`DELETE FROM lapsed_claims WHERE lapsed_at <= ?`, s.now()-restoreFor.Milliseconds())
 	return err
+}
+
+// MarkUp records that the bridge is up now; the sweep calls it, so Resume
+// knows when the last bridge stopped.
+func (s *Store) MarkUp() error {
+	_, err := s.db.Exec(`INSERT INTO meta (key, value) VALUES ('up_at', ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, fmt.Sprint(s.now()))
+	return err
+}
+
+// Resume is the bridge starting: the time since the last one was marked up
+// is downtime, so each lapsed claim's lapse moves on by it, and the restore
+// window counts only time a bridge was up.
+func (s *Store) Resume() error {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM meta WHERE key = 'up_at'`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s.MarkUp()
+	}
+	if err != nil {
+		return err
+	}
+	var up int64
+	fmt.Sscan(raw, &up)
+	if down := s.now() - up; up > 0 && down > 0 {
+		if _, err := s.db.Exec(`UPDATE lapsed_claims SET lapsed_at = lapsed_at + ?`, down); err != nil {
+			return err
+		}
+	}
+	return s.MarkUp()
 }
 
 // EndSession is the session ending (exit or /clear): its claims are
@@ -518,4 +551,57 @@ func (s *Store) HasLapsed(session string) (bool, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT count(*) FROM lapsed_claims WHERE session = ?`, session).Scan(&n)
 	return n > 0, err
+}
+
+// LapsedClaims lists the lapsed claims that can still come back.
+func (s *Store) LapsedClaims() ([]Claim, error) { return lapsedWhere(s.db, `l.lost_to IS NULL`) }
+
+// NewestClaim is when the session's newest claim was made, if it has one.
+func (s *Store) NewestClaim(session string) (time.Time, bool, error) {
+	var at sql.NullInt64
+	err := s.db.QueryRow(`SELECT max(created) FROM claims WHERE session = ?`, session).Scan(&at)
+	if err != nil || !at.Valid {
+		return time.Time{}, false, err
+	}
+	return fromMillis(at.Int64), true, nil
+}
+
+// ClaimedSessions lists the sessions holding claims.
+func (s *Store) ClaimedSessions() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT session FROM claims ORDER BY session`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// LogListening logs claim-listening for each of the session's claims: its
+// watcher went, or came back.
+func (s *Store) LogListening(session string) error {
+	tx, err := s.begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	claims, err := listClaims(tx)
+	if err != nil {
+		return err
+	}
+	for _, c := range claims {
+		if c.Session.ID == session {
+			if err := tx.logClaim(EventClaimListening, c); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.commit()
 }

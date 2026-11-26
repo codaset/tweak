@@ -19,6 +19,7 @@ type Store struct {
 	db      *sql.DB
 	onEvent func()           // see OnEvent
 	clock   func() time.Time // see SetClock
+	home    string           // see SetHome
 }
 
 // Open opens (creating if needed) the database at path and brings it up to
@@ -146,3 +147,21 @@ func (s *Store) now() int64 {
 }
 
 func fromMillis(ms int64) time.Time { return time.UnixMilli(ms) }
+
+// SetHome sets the home folder that lines show as ~. Set it before the
+// store is shared.
+func (s *Store) SetHome(home string) { s.home = filepath.Clean(home) }
+
+// Shown is a folder as lines show it: under the home folder, from ~.
+func (s *Store) Shown(folder string) string {
+	if s.home == "" || s.home == "." || s.home == "/" {
+		return folder
+	}
+	if folder == s.home {
+		return "~"
+	}
+	if rel, err := filepath.Rel(s.home, folder); err == nil && filepath.IsLocal(rel) {
+		return "~/" + filepath.ToSlash(rel)
+	}
+	return folder
+}

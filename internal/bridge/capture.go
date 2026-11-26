@@ -199,10 +199,26 @@ func (b *Bridge) startWork(session string, n int64) (store.Tweak, error) {
 // that tweak with its change. A session that isn't capturing is fine. It's
 // what a release covering the tweak's page calls, and what a lapse or the
 // session-end hook should call.
-func (b *Bridge) endCapture(session string) error {
+func (b *Bridge) endCapture(session string) error { return b.endCaptureUnless(session, nil) }
+
+// endCaptureUnless is endCapture, unless keep (when given), asked under
+// captureMu, says the session's capture carries on.
+func (b *Bridge) endCaptureUnless(session string, keep func(store.Capture) (bool, error)) error {
 	g := b.prepare(session, 0)
 	b.captureMu.Lock()
 	defer b.captureMu.Unlock()
+	if keep != nil {
+		c, err := b.store.Capturing(session)
+		if errors.Is(err, store.ErrNotCapturing) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if kept, err := keep(c); err != nil || kept {
+			return err
+		}
+	}
 	end, err := b.ending(session, 0, g)
 	if err != nil || end == nil {
 		return err

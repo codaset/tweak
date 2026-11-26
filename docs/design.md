@@ -321,7 +321,9 @@ Browser text calls the bridge "Tweak"; CLI and skill text call it "the bridge".
 - A bridge that can't start prints one line saying why, for example `port 47391 is in use by another
   program: set TWEAK_PORT`, or the start error and the log path.
 - **Downtime doesn't count toward lapses**: on start, the bridge sets every session's last check-in to
-  now, so the 10-minute lapse and the 24-hour restore window count only time the bridge was up.
+  now, and moves each lapsed claim's lapse time on by the downtime (the sweep marks the bridge up),
+  so the 10-minute lapse and the 24-hour restore window, which runs from the lapse, count only time
+  the bridge was up. Lost claims are forgotten by the same clock.
 - **The hooks never start a bridge**. `tweak hook pre-edit` keeps its 2-second budget (the 3-second
   wait is only for a handover in progress), so edits made while the bridge is down go unrecorded.
   `tweak hook session-end`, finding no bridge, writes `~/.local/state/codaset-tweak/released/<session-id>`,
@@ -417,9 +419,12 @@ Decided in [Bridge contract: API, message schema and data model](https://github.
   when Claude isn't waiting on a question, `no-tweak` or `bad-request`. `again` is `{ref, number}`, the card's
   **Send again**, answered with the number, or `picked-up` once Claude has confirmed the tweak. `undo` is `{ref, number}`, the card's
   **Undo** or **Ask Claude to undo**, answered with the number, `not-undoable` (with why, as the card shows it) or `undo-failed`
-  (a write failed and nothing changed); a `tweak-undone` or `tweak-undo-conflict` event follows (see [Undo](#undo)). A snapshot holds only the open (unresolved) tweaks; `claim-lapsed` and
+  (a write failed and nothing changed); a `tweak-undone` or `tweak-undo-conflict` event follows (see [Undo](#undo)). A snapshot holds only the open (unresolved) tweaks, plus `lapsed`, the lapsed
+  claims that can still come back (each with `lapsedAt`); `claim-lapsed` and
   `claim-restored` events carry the claim like `claim-released` and `claim-made` (a restored claim
-  has a new id), and `tweak-created`, `tweak-handed` (passed to the session claiming its page now),
+  has a new id). A held claim says whether its session is `listening` (no watcher for about 60 s
+  is not), and `claim-listening` says when that changes. A tweak no session has carries `left`, the
+  folder and how (`lapsed`, `released`, `ended`) of the session that let go of its page. And `tweak-created`, `tweak-handed` (passed to the session claiming its page now),
   `tweak-status`, `tweak-replied`, `tweak-again`, `tweak-undo-conflict` and `tweak-undone` events carry whole tweaks, entries included, and the tweak's `change` (state, whether the git check ran, recorded and unrecorded file paths, never contents) once capture has ended for it. Their shapes, with the `GET /inbox`
   reply `{seq, claims, lines: [{seq, text}]}` (`claims` is how many the session has left, which
   `tweak watch` exits on), are in `schema/`.
@@ -540,22 +545,23 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
 - **Handed over part-way**: a `working` tweak that passes to another session keeps its one change.
   The next `tweak work` extends it, keeping the first before copies. The bridge adds a `notice` entry
   to the conversation when the next session claims the page (so a restored session's conversation
-  has none), shown on the card and in the brief: "The session in `/Users/joel/dev/ernie` stopped
-  responding. Files already changed: `app/views/x.rb`." (or "released this page", or "ended"; the
-  folder is absolute, as in every bridge message).
+  has none), shown on the card and in the brief: "The session in `~/dev/ernie` stopped
+  responding. Files already changed: `app/views/x.rb`." (or "released this page", or "ended"). Every
+  line shows a folder this way, from `~` for the home folder.
 - **While lapsed**, the card of each tweak it held says "The session stopped responding · Waiting for
   a session", plus "Files already changed: …" if there are any (no Undo there: the tweak isn't
   finished). The page counts as unclaimed (grey `!` badge), and the side panel's claim status says
   "The session in `~/dev/ernie` stopped responding 3 min ago. It gets this page back if it returns,
   or claim it from another session with `/tweak https://ernie.localhost/*`", with the command to copy.
-- **The same session comes back**: a lapsed claim is kept for 24 hours and restored at the session's
+- **The same session comes back**: a lapsed claim is kept for 24 hours from its lapse and restored at the session's
   next check-in, unless another session has since claimed an overlapping pattern. `tweak watch`
   prints `claim restored: <pattern>`. The session's tweaks return to it with their status from before
   the lapse, with no `again:` line; a `working` tweak starts capture again, extending the same change.
   Edits made during the lapse passed the hook with no marker, so the git check (whose baseline is
   still the tree from when the tweak first entered `working`) lists them as unrecorded files.
 - **Someone else claimed it meanwhile**: the session's next command, or its watcher, says
-  `claim lost: <pattern> is now claimed by the session in <folder>`, and its status commands on those
+  `claim lost: <pattern> is now claimed by the session in <folder>: leave its tweaks to that session,
+  or claim another page with /tweak <url>`, and its status commands on those
   tweaks are refused with the same message.
 - **Working with no end**: no timeout while the session is alive, since real changes can take long.
   The card shows the time: "Claude is working on it · 6 min".
@@ -953,7 +959,7 @@ bridge updated: run /reload-plugins, then /tweak https://ernie.localhost/* again
 tweak 12 withdrawn
 extension connected
 claim restored: https://ernie.localhost/*
-claim lost: https://ernie.localhost/* is now claimed by the session in ~/dev/ernie-2
+claim lost: https://ernie.localhost/* is now claimed by the session in ~/dev/ernie-2: leave its tweaks to that session, or claim another page with /tweak <url>
 ```
 
 An `again:` line repeats the whole line, `tweak 12 again: tweak 12 new: …`, or the `reply` line

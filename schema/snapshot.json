@@ -30,6 +30,13 @@
         "$ref": "#/$defs/claim"
       }
     },
+    "lapsed": {
+      "description": "The lapsed claims that can still come back to their session, with when each lapsed.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    },
     "tweaks": {
       "description": "Every unresolved tweak, by number.",
       "type": "array",
@@ -65,6 +72,15 @@
         "created": {
           "type": "string",
           "description": "RFC 3339",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+        },
+        "listening": {
+          "description": "A held claim's: whether its session is listening (its watcher connected, or gone for under a minute). Absent from a claim that was released or lapsed.",
+          "type": "boolean"
+        },
+        "lapsedAt": {
+          "description": "A lapsed claim's: when it lapsed (moved on by any time the bridge was down since).",
+          "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
         }
       },
@@ -180,6 +196,28 @@
         },
         "change": {
           "$ref": "#/$defs/change"
+        },
+        "left": {
+          "description": "While no session has the tweak: the session that let go of its page, its folder and how.",
+          "type": "object",
+          "properties": {
+            "folder": {
+              "type": "string",
+              "minLength": 1
+            },
+            "why": {
+              "enum": [
+                "lapsed",
+                "released",
+                "ended"
+              ]
+            }
+          },
+          "required": [
+            "folder",
+            "why"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

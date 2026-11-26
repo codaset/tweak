@@ -63,3 +63,15 @@ func TestCommandsWarnOnStderrWithNoWatcher(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }
+
+// The marker is written to a temporary file and renamed into place, so a
+// hook cut off mid-write never leaves an empty one.
+func TestTheReleasedMarkerIsWrittenWhole(t *testing.T) {
+	s := newSandbox(t)
+	ernie := s.folder("ernie")
+	s.hook(ernie, sessionEndJSON("s1", ernie, "other"), "hook", "session-end")
+	entries, _ := os.ReadDir(filepath.Join(s.state, "released"))
+	if len(entries) != 1 || entries[0].Name() != "s1" {
+		t.Fatalf("released/ holds %v", entries)
+	}
+}

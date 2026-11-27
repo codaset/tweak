@@ -213,13 +213,21 @@ test("a finished tweak's card says what it changed", () => {
 
 test("the card's chip says what a tweak points at", () => {
   const { pointedAt } = ns.describe;
-  const one = { elements: [{ label: "button#save", selector: "#save" }] };
-  assert.equal(pointedAt(one), "button#save");
+  const one = { elements: [{ label: "button#save", text: "Save", selector: "#save" }] };
+  assert.equal(pointedAt(one), "Button “Save”", "a name, not the tag and classes");
   assert.equal(pointedAt({ elements: [...one.elements, { label: "input#name", selector: "#name" }] }), "2 elements");
   assert.equal(pointedAt({ ...one, selection: { text: "no\n framework" } }), "“no framework”");
   assert.equal(pointedAt({ ...one, selection: { text: "x".repeat(40) } }), `“${"x".repeat(23)}…”`);
   assert.equal(pointedAt({ ...one, area: { page: { x: 0, y: 0, width: 320.4, height: 179.6 } } }), "Area 320×180");
   assert.equal(pointedAt(undefined), "");
+});
+
+test("an element's name is its kind and its text, never its tag and classes", () => {
+  const { name } = ns.describe;
+  assert.equal(name({ label: "a.nav-link.px-2", text: "Pricing" }), "Link “Pricing”");
+  assert.equal(name({ label: "img.rounded", text: "" }), "Image");
+  assert.equal(name({ label: "div.flex.gap-2", text: "Two\n  lines" }), "“Two lines”");
+  assert.equal(name({ label: "div.flex.gap-2", text: "" }), "Element");
 });
 
 test("a finished change offers Undo, then says where the undo is", () => {

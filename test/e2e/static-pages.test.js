@@ -173,45 +173,4 @@ describe("static, pages, tabs and sources", { skip: skipReason(fixture) ?? false
       later: ["app/views/pages/_later.html.erb", layout],
     });
   });
-
-  // Hovering stays cheap on a big page: 20,000 rules in a <style> with a
-  // large inline source map, and thousands of comments. Each hover is well
-  // under the label's 60 ms debounce.
-  test("repeated hovers on a page with 20,000 rules and a large inline map stay well under 60 ms", async (t) => {
-    await open(env);
-    const times = await env.tab.evaluate(`(async () => {
-      const n = 20000;
-      const css = Array.from({ length: n }, (_, i) => ".r" + i + " { color: red }").join("\\n") + "\\n#save { color: blue }";
-      const map = { version: 3, sources: ["big.css"], names: [], mappings: "AAAA" + ";AACA".repeat(n) };
-      const style = document.createElement("style");
-      style.textContent = css + "\\n/*# sourceMappingURL=data:application/json;base64," + btoa(JSON.stringify(map)) + " */";
-      const comments = document.createElement("div");
-      for (let i = 0; i < 5000; i++) comments.append(document.createComment(" note " + i));
-      document.head.append(style);
-      document.body.append(comments);
-      const el = document.getElementById("save");
-      try {
-        const first = await ns.hover.source(el);
-        const times = [];
-        for (let i = 0; i < 10; i++) {
-          const t0 = performance.now();
-          await ns.hover.source(el);
-          times.push(performance.now() - t0);
-        }
-        const t1 = performance.now();
-        for (let i = 0; i < 10; i++) ns.context.rules(el);
-        return { first, times, walk: (performance.now() - t1) / 10 };
-      } finally {
-        style.remove();
-        comments.remove();
-      }
-    })()`);
-    t.diagnostic(`hover with 20,000 rules: ${times.times.map((ms) => ms.toFixed(1)).join(", ")} ms; the CSSOM walk alone ${times.walk.toFixed(1)} ms`);
-    assert.equal(times.first, "big.css:20001", "the inline map gives #save its line");
-    const median = [...times.times].sort((a, b) => a - b)[5];
-    // What a hover repeats is cached, so it costs about the CSSOM walk the
-    // element needs anyway (about 10 ms here, 30 on a busy CI runner).
-    assert.ok(median < times.walk * 1.5 + 5, `a hover takes ${median.toFixed(1)} ms (median), the walk alone ${times.walk.toFixed(1)} ms`);
-    assert.ok(median < 60, `a hover takes ${median.toFixed(1)} ms (median): over the 60 ms debounce`);
-  });
 });

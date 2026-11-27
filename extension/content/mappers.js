@@ -10,8 +10,8 @@
 // These are the DOM mappers, which need no page code: Rails template
 // comments, Proscenium CSS-module class names, and CSS rules (with a line
 // where the sheet has a source map). The framework mappers, which ask the
-// page probe, go ahead of them. Options: fetch (false for the hover label:
-// no sheet or source-map fetches, only what has been read) and rules (the
+// page probe, go ahead of them. Options: fetch (false for no sheet or
+// source-map fetches, only what has been read) and rules (the
 // element's gathered CSS rules, so the CSSOM is walked once).
 //
 // What a hover repeats is cached: each document's annotation comments
@@ -27,7 +27,7 @@
   // A deadline is when a pick's mappers stop being waited for: they run
   // while you type, so each one's TIMEOUT starts at Send (start()), or at
   // its own start if that's later (an element added after a send was given
-  // back). Without one (the hover label), TIMEOUT starts now.
+  // back). Without one, TIMEOUT starts now.
   function deadline() {
     let start;
     const sent = new Promise((done) => (start = done));

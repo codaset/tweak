@@ -86,21 +86,6 @@
       transition: inset 60ms ease-out, width 60ms ease-out, height 60ms ease-out;
     }
     .outline.picked { transition: none; border-style: solid; background: color-mix(in srgb, var(--outline) 5%, transparent); }
-    .tag {
-      position: fixed;
-      max-width: 360px;
-      padding: 2px 7px;
-      border-radius: 5px;
-      background: var(--outline);
-      color: var(--accent-text);
-      font: 500 11.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .tag .size { opacity: 0.75; margin-left: 6px; }
-    .tag .source { opacity: 0.9; margin-left: 6px; padding-left: 6px; border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
-    .tag .hint-word { font-family: system-ui, -apple-system, sans-serif; font-weight: 650; margin-right: 6px; }
     .outline.adding { border-style: dashed; }
 
     /* Selected text under the pointer while ⌥ is held, and the drag box */
@@ -167,7 +152,7 @@
       font: 700 10.5px/1 system-ui, -apple-system, sans-serif;
       font-variant-numeric: tabular-nums;
     }
-    .picked .what { min-width: 0; flex: 1; color: var(--muted); font: 11.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .picked .what { min-width: 0; flex: 1; color: var(--muted); font-size: 12.5px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .picked .remove {
       flex: none;
       width: 20px;
@@ -198,7 +183,7 @@
     }
     .pointed-at { display: grid; gap: 8px; }
     .pointed { margin: 0; color: var(--muted); font-size: 12px; }
-    .pointed code { font: 11.5px ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); }
+    .pointed .named { color: var(--text); font-weight: 550; }
     .tip { margin: 0; color: var(--muted); font-size: 11.5px; }
 
     /* Pins */
@@ -287,7 +272,7 @@
     /* The composer and the card share one panel */
     .panel {
       position: fixed;
-      width: 320px;
+      width: 380px;
       max-width: calc(100vw - 16px);
       display: grid;
       gap: 10px;
@@ -312,7 +297,8 @@
       border-radius: 5px;
       background: var(--surface);
       color: var(--muted);
-      font: 11.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.6;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -335,8 +321,8 @@
     .close:focus-visible, .send:focus-visible { outline: 2px solid var(--outline); outline-offset: 1px; }
     textarea {
       width: 100%;
-      min-height: 64px;
-      max-height: 240px;
+      min-height: 84px;
+      max-height: 280px;
       resize: none;
       padding: 8px 10px;
       border: 1px solid var(--line);

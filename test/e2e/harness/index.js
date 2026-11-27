@@ -134,6 +134,22 @@ export async function pick(env, target) {
     const box = await (await page.waitForSelector(selector, { visible: true })).boundingBox();
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   };
+  // uncovered is a point on selector's element that the open composer doesn't
+  // cover, the one nearest its centre: where a person would ⇧-click it.
+  const uncovered = async (selector) => {
+    await page.waitForSelector(selector, { visible: true });
+    const at = await page.evaluate((sel) => {
+      const target = document.querySelector(sel);
+      const r = target.getBoundingClientRect();
+      const points = [];
+      for (let i = 1; i < 10; i++) for (let j = 1; j < 4; j++) points.push({ x: r.left + (r.width * i) / 10, y: r.top + (r.height * j) / 4 });
+      const mid = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      points.sort((a, b) => Math.hypot(a.x - mid.x, a.y - mid.y) - Math.hypot(b.x - mid.x, b.y - mid.y));
+      return points.find((p) => target.contains(document.elementFromPoint(p.x, p.y))) ?? null;
+    }, selector);
+    if (!at) throw new Error(`the composer covers all of ${selector}`);
+    return at;
+  };
   const selectors = target.selectors ?? (target.selector ? [target.selector] : null);
   let at = null;
   if (target.text) at = await select(page, target.text, target.in ?? "body");
@@ -152,7 +168,7 @@ export async function pick(env, target) {
       await page.mouse.click(at.x, at.y);
       if (selectors?.length > 1) await env.tab.until(`ns.panel.targets()?.elements.length === 1`, { what: "the composer on element 1" });
       for (const [i, s] of (selectors ?? []).slice(1).entries()) {
-        const c = await centre(s);
+        const c = await uncovered(s);
         await page.keyboard.down("Shift");
         try {
           await page.mouse.click(c.x, c.y);

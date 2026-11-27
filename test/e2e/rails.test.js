@@ -17,18 +17,6 @@ describe("rails, annotations on", { skip }, () => {
     test(`${c.name}: the tracer reaches Done, checked against the brief`, () => tracer(env, c));
   }
 
-  test("the hover label shows the template, once the pointer rests", async () => {
-    await open(env);
-    const box = await (await env.page.waitForSelector("[data-testid=signup]")).boundingBox();
-    await env.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await env.page.keyboard.down("Alt");
-    try {
-      await env.tab.until(`root.querySelector(".tag .source")?.textContent`, { is: (t) => t === "pages/_signup.html.erb", what: "the template in the hover label" });
-    } finally {
-      await env.page.keyboard.up("Alt");
-    }
-  });
-
   test("an annotated app needs no suggestion", async () => {
     await open(env);
     assert.deepEqual(await env.tab.evaluate("ns.improvements.suggestions()"), []);

@@ -16,8 +16,8 @@ function load({ fetch = () => Promise.reject(new Error("no fetch")), rules = () 
     codasetTweak: ns, globalThis: { codasetTweak: ns }, setTimeout, clearTimeout, URL, Promise, atob, TextDecoder, fetch,
     location: { href: "http://localhost:3000/" },
   };
-  runScripts(["sourcemap.js", "mappers.js", "hover.js"], context);
-  return { ...ns.mappers, ...ns.hover };
+  runScripts(["sourcemap.js", "mappers.js"], context);
+  return ns.mappers;
 }
 const mappers = load();
 
@@ -125,27 +125,9 @@ test("a mapper started after Send (an element added once a send was given back) 
   assert.deepEqual(plain(got), [loc("rails")]);
 });
 
-test("the hover label names the strongest place's file, its line only when there is one", () => {
-  const { label } = mappers;
-  assert.equal(label([]), "");
-  assert.equal(label([
-    { file: "http://localhost:3000/src/theme.css", line: 10, role: "style", via: "css" },
-    { file: "app/views/pages/_signup.html.erb", role: "component", via: "rails" },
-  ]), "pages/_signup.html.erb");
-  assert.equal(label([{ file: "http://localhost:3000/src/theme.css?v=2", line: 10, column: 3, role: "style", via: "css" }]), "src/theme.css:10");
-  assert.equal(label([{ file: "/Users/joel/app/components/Card.tsx", line: 4, role: "element", via: "react" }]), "components/Card.tsx:4");
-});
-
 // rule is a gathered CSS rule as context.js gives it: its source unlisted.
 const rule = (selector, file, sheet) => Object.defineProperty({ selector, file }, "source", { value: { sheet, selector } });
 const served = (text) => ({ ok: true, text: async () => text });
-
-test("the hover label falls back to the stylesheet of the latest rule when nothing maps without fetching", async () => {
-  const sheet = { href: "http://localhost:3000/styles.css" };
-  const m = load({ rules: () => [rule(".btn", "http://localhost:3000/styles.css", sheet), rule(".btn-primary", "http://localhost:3000/theme.css", sheet)] });
-  assert.equal(await m.source({}), "theme.css");
-  assert.equal(await load().source({}), "");
-});
 
 test("a stylesheet replaced at the same URL is read again, and so is its map", async () => {
   const map = JSON.parse(read("./fixtures/css/theme.css.map"));

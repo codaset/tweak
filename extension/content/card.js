@@ -205,18 +205,18 @@
     const chip = panel.querySelector(".chip");
     chip.textContent = ns.describe.pointedAt(targets);
     chip.hidden = !chip.textContent;
-    const code = (s) => el("code", "", s);
+    const named = (e) => el("span", "named", ns.describe.name(e));
     if (pick.kind === "text") {
       const quote = el("p", "selection-quote", targets.selection.text);
       quote.setAttribute("aria-label", `Selected text: ${targets.selection.text}`);
       pointed.replaceChildren(quote, el("p", "pointed", ""));
-      pointed.lastChild.append("In ", code(targets.elements[0].label));
+      pointed.lastChild.append("In ", named(targets.elements[0]));
       return;
     }
     if (pick.kind === "area") {
       const inside = targets.elements.length - 1;
       const line = el("p", "pointed");
-      line.append("Inside ", code(targets.elements[0].label), ", ");
+      line.append("Inside ", named(targets.elements[0]), ", ");
       line.append(inside === 0 ? "over empty space" : `with ${inside} ${inside === 1 ? "element" : "elements"} in it`);
       pointed.replaceChildren(line);
       return;
@@ -240,14 +240,14 @@
         item.addEventListener("focusout", (ev) => hot(item.contains(ev.relatedTarget) || item.matches(":hover")));
         const remove = el("button", "remove", "×");
         remove.type = "button";
-        remove.setAttribute("aria-label", `Remove element ${i + 1}, ${e.label}`);
+        remove.setAttribute("aria-label", `Remove element ${i + 1}, ${ns.describe.name(e)}`);
         remove.addEventListener("click", () => {
           ns.panel.add(mode.pick.elements[i]);
           // Keep the focus in the list, or give it back to the text.
           const buttons = parts.pointed.querySelectorAll(".remove");
           (buttons[Math.min(i, buttons.length - 1)] ?? parts.text).focus({ preventScroll: true });
         });
-        item.append(el("span", "n", String(i + 1)), el("span", "what", e.label), remove);
+        item.append(el("span", "n", String(i + 1)), el("span", "what", ns.describe.name(e)), remove);
         list.append(item);
       });
     }
@@ -1032,13 +1032,6 @@
     canCompose: () => !(mode?.kind === "compose" && mode.sending),
     // canAdd says whether ⇧-click would change the open composer's elements.
     canAdd: () => addable(),
-    // adding is what ⇧-click on target would do to the composer: "Add as
-    // 3", "Remove 2", or "" when there's no composer of elements to change.
-    adding(target) {
-      if (!addable()) return "";
-      const i = mode.pick.elements.indexOf(target);
-      return i >= 0 ? `Remove ${i + 1}` : `Add as ${mode.pick.elements.length + 1}`;
-    },
     // add puts target in the composer as the next element, or takes it out
     // if it's there; taking the last one out closes the composer. It says
     // whether it did anything.
@@ -1055,7 +1048,7 @@
         const [gone] = targets.elements.splice(i, 1);
         pick.elements.splice(i, 1);
         if (i === 0) mode.anchor = { x: 0.5, y: 0.5 }; // the pin moves to the new element 1
-        said = `Element ${i + 1}, ${gone.label}, taken out. ${pick.elements.length} left.`;
+        said = `Element ${i + 1}, ${ns.describe.name(gone)}, taken out. ${pick.elements.length} left.`;
       } else {
         pick.elements.push(target);
         const added = ns.context.element(target);
@@ -1063,7 +1056,7 @@
         // Its mappers run too; Send waits for them as for the rest.
         const locating = ns.context.locate({ elements: [added] }, [target], mode.until).catch(() => {});
         mode.located = Promise.all([mode.located, locating]);
-        said = `Element ${pick.elements.length} added: ${targets.elements.at(-1).label}.`;
+        said = `Element ${pick.elements.length} added: ${ns.describe.name(targets.elements.at(-1))}.`;
       }
       mode.returnTo = pick.elements[0];
       // In the capture's viewport, which the page may have scrolled from since.

@@ -691,13 +691,13 @@ watcher counts as checking in, a lapse in practice means the watcher has been go
 ## Pointing at things
 
 - **Pick an element**: hold ⌥ and click, or toggle pick mode with the toolbar button or **⌥⇧C**. The
-  click is swallowed so links and buttons don't fire. A hover outline is labelled with the element
-  and its source where known.
+  click is swallowed so links and buttons don't fire. The hover outline is just an outline, with no
+  label; it is dashed where ⇧-click would add or take out an element.
 - **Several elements**: **⇧-click** adds elements, numbered. One tweak covers them all; each
   element's context is numbered to match, and the pin sits on element 1.
 - **Text**: select text, then tweak it ("reword this"). Claude gets the exact selected text.
 - **Area**: drag a box over any region, including empty space ("put a button here"). Claude gets the
-  box, the elements inside it, and the screenshot.
+  box, the elements inside it, and the screenshot. Like the hover outline, the box has no label.
 - **The gestures**: ⇧-click (or ⌥⇧-click) is ours only while a composer of elements is open: it
   adds the element, or takes it out again. Otherwise a plain ⇧-click is the page's, and ⌥⇧-click
   picks like ⌥-click. ⌥-click on selected text picks the text; **⌥-drag** draws the box, and esc
@@ -819,13 +819,10 @@ width, height}`; the elements follow the same numbering (`content/pointing.js`).
 **When mapping runs**: at pick time, alongside the screenshot, in the background while you type, so
 the composer opens at once. Send waits for it only if it hasn't finished: a pick's 300 ms timeouts
 count from Send, so a slow source map fetched while you type still counts.
-The hover label uses the same mappers but skips source-map fetches: it shows the file, and a line
-only if the map is already cached. It is debounced (about 60 ms), and names the first place that
-isn't a style (else the first style; with none, the latest matching rule's stylesheet) by its last
-two path segments. Sheets and their maps are read once per sheet object, so a replaced sheet is read
-again. A hover gathers the rules once for every mapper, and each sheet's text, map and rule
-preludes are indexed once; the Rails mapper keeps a document's annotation comments indexed until a
-comment changes. On a page with 20,000 rules a hover takes about 10 ms.
+The hover outline is only an outline: it names nothing, so hovering runs no mappers. Sheets and
+their maps are read once per sheet object, so a replaced sheet is read again. A pick gathers the
+rules once for every mapper, and each sheet's text, map and rule preludes are indexed once; the
+Rails mapper keeps a document's annotation comments indexed until a comment changes.
 
 - **Optional improvements**: when a page lacks an easy improvement (e.g. a Rails app without
   template annotations), the side panel suggests it once, and it can be dismissed. The app is never

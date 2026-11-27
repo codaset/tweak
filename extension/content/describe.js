@@ -263,8 +263,28 @@
   // element is one element as a tweak's targets carry it (schema/create.json).
   const element = (el) => ({ label: label(el), text: text(el), selector: selector(el) });
 
+  // KINDS name the elements people recognise by their tag; any other tag has
+  // no name of its own.
+  const KINDS = {
+    a: "Link", button: "Button", input: "Field", textarea: "Field", select: "Menu", label: "Label",
+    img: "Image", picture: "Image", svg: "Icon", video: "Video", canvas: "Canvas",
+    h1: "Heading", h2: "Heading", h3: "Heading", h4: "Heading", h5: "Heading", h6: "Heading",
+    p: "Paragraph", li: "List item", ul: "List", ol: "List", table: "Table", tr: "Row", td: "Cell", th: "Cell",
+    nav: "Navigation", header: "Header", footer: "Footer", main: "Main content", section: "Section", aside: "Sidebar", form: "Form",
+  };
+
+  // name is how the composer shows an element (a target, {label, text}) to
+  // the person: what kind of element it is and its text, Button “Save”,
+  // never its tag and classes, which only Claude needs.
+  function name(e) {
+    const kind = KINDS[/^[a-z][a-z0-9-]*/i.exec(e?.label ?? "")?.[0]?.toLowerCase()];
+    const said = e?.text?.replace(/\s+/g, " ").trim();
+    if (!said) return kind ?? "Element";
+    return kind ? `${kind} “${said}”` : `“${said}”`;
+  }
+
   // pointedAt is what a tweak's targets point at, as the composer's chip says
-  // it: element 1's label, "3 elements", the selected text quoted, or the
+  // it: element 1's name, "3 elements", the selected text quoted, or the
   // area's size.
   function pointedAt(targets) {
     const els = targets?.elements ?? [];
@@ -274,8 +294,8 @@
       return `“${s.length > 24 ? `${s.slice(0, 23).join("")}…` : s.join("")}”`;
     }
     if (els.length > 1) return `${els.length} elements`;
-    return els[0]?.label ?? "";
+    return els[0] ? name(els[0]) : "";
   }
 
-  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, span, ago, origin, OPEN, ENDED_BY_CLAUDE, WITH_CLAUDE, FINAL, UNRECORDED, OUTSIDE, label, text, selector, element, pointedAt };
+  ns.describe = { status, unanswered, resendOffer, classes, thread, change, undo, finish, kept, span, ago, origin, OPEN, ENDED_BY_CLAUDE, WITH_CLAUDE, FINAL, UNRECORDED, OUTSIDE, label, text, selector, element, name, pointedAt };
 })();

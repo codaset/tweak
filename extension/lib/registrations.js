@@ -16,7 +16,6 @@ export const CONTENT_FILES = [
   "content/frameworks.js",
   "content/context.js",
   "content/mappers.js",
-  "content/hover.js",
   "content/improvements.js",
   "content/pointing.js",
   "content/picker.js",

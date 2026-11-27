@@ -25,9 +25,7 @@
   const MIN_AREA = 8; // a box smaller than this either way is no area
 
   let outline = null;
-  let tag = null;
   let box = null; // the drag rectangle
-  let boxTag = null;
   let marks = null; // the selected text's line boxes, while ⌥ is over it
   let hovered = null;
   let pointer = null; // the last pointer position, to outline at once on ⌥
@@ -47,59 +45,28 @@
     return pickable(found) ? found : null;
   }
 
-  // The hover label's source: the mappers run once the pointer has rested
-  // on an element for SOURCE_DELAY, without fetching (a line only from a
-  // source map already loaded; else the latest matching rule's stylesheet),
-  // and it's shown if that element is still the one outlined.
-  const SOURCE_DELAY = 60;
-  let source = { el: null, text: "" };
-  let sourceTimer = 0;
-  function findSource(el) {
-    clearTimeout(sourceTimer);
-    source = { el, text: "" };
-    sourceTimer = setTimeout(async () => {
-      const text = await ns.hover.source(el).catch(() => "");
-      if (source.el !== el || !text) return;
-      source.text = text;
-      const shown = hovered ?? ns.picker.held;
-      if (shown === el && outline && !outline.hidden) draw(el, el !== hovered);
-    }, SOURCE_DELAY);
-  }
-
   function ensure() {
     const root = ns.overlay.root;
     if (!root) return false;
     if (!outline) {
       outline = el("div", "outline");
-      tag = el("div", "tag");
-      root.append(outline, tag);
+      root.append(outline);
     }
     return true;
   }
 
-  // place puts a label above a box, or inside its top edge when there's no room.
-  function placeTag(t, r) {
-    const top = r.top >= 24 ? r.top - 22 : Math.max(2, r.top + 2);
-    Object.assign(t.style, { left: `${Math.max(2, Math.min(r.left, innerWidth - 200))}px`, top: `${top}px` });
-  }
-
-  // draw outlines el; hint, when given, leads its label ("Add as 2").
-  function draw(target, picked = false, hint = "") {
+  // draw outlines el, and only outlines it: no label. adding dashes the
+  // outline, for an element ⇧-click would add or take out.
+  function draw(target, picked = false, adding = false) {
     if (!ensure()) return;
     const r = target.getBoundingClientRect();
     Object.assign(outline.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
     outline.classList.toggle("picked", picked);
-    outline.classList.toggle("adding", Boolean(hint));
-    const parts = [el("span", "", ns.describe.label(target)), el("span", "size", `${Math.round(r.width)}×${Math.round(r.height)}`)];
-    if (hint) parts.unshift(el("span", "hint-word", hint));
-    if (source.el === target && source.text) parts.push(el("span", "source", source.text));
-    else if (source.el !== target) findSource(target);
-    tag.replaceChildren(...parts);
-    placeTag(tag, r);
-    outline.hidden = tag.hidden = false;
+    outline.classList.toggle("adding", adding);
+    outline.hidden = false;
   }
 
-  // drawText marks the selected text's line boxes, labelled.
+  // drawText marks the selected text's line boxes.
   function drawText(range) {
     if (!ensure()) return;
     if (!marks) {
@@ -116,14 +83,10 @@
     );
     marks.hidden = false;
     outline.hidden = true;
-    const chars = [...range.toString()].length;
-    tag.replaceChildren(el("span", "", "Selected text"), el("span", "size", `${chars} ${chars === 1 ? "character" : "characters"}`));
-    if (rects[0]) placeTag(tag, rects[0]);
-    tag.hidden = false;
   }
 
   function hideHover() {
-    if (outline) outline.hidden = tag.hidden = true;
+    if (outline) outline.hidden = true;
     if (marks) marks.hidden = true;
   }
 
@@ -155,7 +118,7 @@
     hovered = target;
     setPicking(true);
     if (marks) marks.hidden = true;
-    draw(target, false, shift ? ns.panel.adding(target) : "");
+    draw(target, false, Boolean(shift && ns.panel.canAdd?.()));
   }
 
   // The drag rectangle, from where the press was to the pointer, kept in
@@ -168,25 +131,23 @@
     return { x: x1, y: y1, width: Math.max(0, x2 - x1), height: Math.max(0, y2 - y1) };
   }
 
+  // drawDrag draws the box being dragged, and only the box: no label.
   function drawDrag() {
     const root = ns.overlay.root;
     if (!root) return;
     if (!box) {
       box = el("div", "area-box dragging");
-      boxTag = el("div", "tag area-tag");
       box.setAttribute("aria-hidden", "true");
-      root.append(box, boxTag);
+      root.append(box);
     }
     const b = dragBox();
     Object.assign(box.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.width}px`, height: `${b.height}px` });
-    boxTag.replaceChildren(el("span", "", "Area"), el("span", "size", `${Math.round(b.width)}×${Math.round(b.height)}`));
-    placeTag(boxTag, { left: b.x, top: b.y });
-    box.hidden = boxTag.hidden = false;
+    box.hidden = false;
   }
 
   function endDrag() {
     drag = null;
-    if (box) box.hidden = boxTag.hidden = true;
+    if (box) box.hidden = true;
   }
 
   const onMove = (e) => {
@@ -297,7 +258,7 @@
     if (e.shiftKey && ns.panel.add) {
       const target = under(e.clientX, e.clientY);
       if (target && ns.panel.add(target)) {
-        hover(e.clientX, e.clientY, true); // the label now says what ⇧ does next
+        hover(e.clientX, e.clientY, true); // still dashed: ⇧-click again takes it out
         return;
       }
     }
@@ -426,11 +387,8 @@
   };
   ns.teardowns.push(() => {
     for (const [type, fn] of listeners) window.removeEventListener(type, fn, opts);
-    clearTimeout(sourceTimer);
     outline?.remove();
-    tag?.remove();
     box?.remove();
-    boxTag?.remove();
     marks?.remove();
     hint?.remove();
   });

@@ -161,7 +161,7 @@ describe("static, picking and marks", { skip: skipReason(fixture) ?? false }, ()
         is: (w) => w === "300px",
         what: "the drag box, 300px wide",
       });
-      assert.equal(await env.tab.evaluate(`root.querySelector(".area-tag").textContent`), "Area300×80");
+      assert.equal(await env.tab.evaluate(`root.querySelector(".area-tag")`), null, "the drag box has no label");
       await env.page.keyboard.press("Escape");
       await env.tab.until(`root.querySelector(".area-box").hidden`, { what: "esc to cancel the drag" });
       await env.page.mouse.move(380, 240, { steps: 2 });
